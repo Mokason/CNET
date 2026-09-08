@@ -2,6 +2,7 @@
 import tempfile
 from pathlib import Path
 import unittest
+from unittest.mock import patch, Mock
 
 from monitor import assess, record_observation
 
@@ -16,6 +17,33 @@ def sample(**changes):
 
 
 class MonitorTests(unittest.TestCase):
+    def test_opt_in_learning_failure_is_an_alert_not_hidden_capture_health(self):
+        import monitor
+        with patch.dict("os.environ", {"CNET_DISCORD_LEARNING_ROOT": "", "CNET_DISCORD_LEARNING_PIN": ""}):
+            self.assertIsNone(monitor.learning_health())
+        with patch.dict("os.environ", {"CNET_DISCORD_LEARNING_ROOT": "/fixture", "CNET_DISCORD_LEARNING_PIN": "a"*64}), \
+                patch.object(monitor, "Bridge") as bridge:
+            self.assertTrue(monitor.learning_health())
+            bridge.return_value.require_owner.assert_called_once()
+            bridge.return_value.require_owner.side_effect = ValueError("private detail")
+            self.assertFalse(monitor.learning_health())
+        self.assertIn("learning_unavailable", assess(sample(learning_healthy=False)))
+
+    def test_learning_adapter_dependencies_are_in_capture_source_closure(self):
+        import monitor
+        names = ("monitor.py", "gateway.py", "journal.py", "dataset.py", "evidence.py",
+                 "learning_bridge.py", "unicode_queries.py", "unicode_evidence.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name in names:
+                (root / name).write_bytes(b"fixture")
+            with patch.object(monitor, "__file__", str(root / "monitor.py")):
+                before = monitor.release_pin()
+                for name in names[5:]:
+                    (root / name).write_bytes(b"changed")
+                    self.assertNotEqual(before, monitor.release_pin(), name)
+                    (root / name).write_bytes(b"fixture")
+
     def test_idle_is_healthy_and_thresholds_are_actionable(self):
         self.assertEqual(assess(sample()), [])
         for change, expected in [(dict(connected=False), "bridge_down"),

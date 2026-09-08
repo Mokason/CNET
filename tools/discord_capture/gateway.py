@@ -12,6 +12,9 @@ Env:
   CNET_DISCORD_PREFIX     if set, only handle messages starting with prefix (e.g. !m )
   CNET_DISCORD_CAPTURE_DIR / CNET_DISCORD_CAPTURE_OWNER / CNET_DISCORD_CAPTURE_CHANNEL
     Optional owner-only DM journal; all three are required when any is set.
+  CNET_DISCORD_LEARNING_ROOT / CNET_DISCORD_LEARNING_PIN
+    Optional separate private learner and SHA256 of its immutable bridge.json.
+    Requires the verified owner-only DM capture; both values are mandatory.
 
 Requires: MESSAGE CONTENT intent enabled in Discord Developer Portal.
 """
@@ -31,6 +34,7 @@ from pathlib import Path
 
 import websocket  # Existing dependency; never install packages at runtime.
 from journal import CaptureError, Journal, snowflake
+from learning_bridge import Bridge
 
 API = "https://discord.com/api/v10"
 UA = "CNET-Marble-Peer (local, 1.0)"
@@ -193,8 +197,18 @@ def channel_allowed(cid: str) -> bool:
     return cid in allow
 
 
+def configured_learner(journal):
+    root = os.environ.get("CNET_DISCORD_LEARNING_ROOT", "")
+    pin = os.environ.get("CNET_DISCORD_LEARNING_PIN", "")
+    if not root and not pin:
+        return None
+    if not root or not pin or journal is None:
+        raise CaptureError("incomplete_learning_policy")
+    return Bridge(root, pin)
+
+
 class Gateway:
-    def __init__(self, token: str, journal=None):
+    def __init__(self, token: str, journal=None, learner=None):
         self.token = token
         self.ws = None
         self.seq = None
@@ -202,6 +216,7 @@ class Gateway:
         self.me_id = None
         self._hb_stop = threading.Event()
         self.journal = journal
+        self.learner = learner
         self.fatal = False
         self._last_journal_heartbeat = None
 
@@ -281,14 +296,16 @@ class Gateway:
         cid = str(d.get("channel_id", ""))
         if not channel_allowed(cid):
             return
-        content = (d.get("content") or "").strip()
+        # Only ordinary outer spaces are presentation padding. Preserve tabs,
+        # newlines and Unicode whitespace for strict learning-command refusal.
+        content = (d.get("content") or "").strip(" ")
         if not content:
             return
         prefix = os.environ.get("CNET_DISCORD_PREFIX", "").strip()
         if prefix:
             if not content.startswith(prefix):
                 return
-            content = content[len(prefix) :].strip()
+            content = content[len(prefix) :].strip(" ")
             if not content:
                 return
         captured = self.journal is not None and self.journal.selected(d)
@@ -298,7 +315,8 @@ class Gateway:
         author = d.get("author", {}).get("username") or "user"
         stamp_last_origin(cid, author)
         print("[discord] request captured=", captured, flush=True)
-        ans, peer_status = peer_ask(author, content)
+        learned = self.learner.answer(content) if captured and self.learner is not None else None
+        ans, peer_status = peer_ask(author, content) if learned is None else learned
         # Discord message max 2000
         if len(ans) > 1900:
             ans = ans[:1900] + "…"
@@ -370,8 +388,8 @@ def main() -> int:
         if not channel_allowed(channel):
             raise CaptureError("capture_channel_not_served")
         journal = Journal(root, owner, channel)
-    gateway = Gateway(tok, journal)
     try:
+        gateway = Gateway(tok, journal, configured_learner(journal))
         gateway.run()
     finally:
         if journal:

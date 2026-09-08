@@ -1,0 +1,16 @@
+[Unit]
+Description=CNET isolated owner-approved learning daemon %i
+
+[Service]
+Type=simple
+WorkingDirectory=%h/%i
+UMask=0077
+NoNewPrivileges=yes
+RestrictAddressFamilies=AF_UNIX
+CPUQuota=100%
+MemoryMax=1G
+TasksMax=128
+LimitCORE=0
+Restart=no
+ExecStart=/usr/bin/env -i CNET_PACKS_ROOT=%h/%i/packs CNET_MINIMAL_ROOT=%h/%i CNET_SOCK=%h/%i/ipc/ask.sock CNET_CAPSULE_CONTROL_SOCK=%h/%i/ipc/control.sock CNET_CAPSULE_SETS_DIR=%h/%i/work/sets CNET_CAPSULE_STATE_DIR=%h/%i/work/state CNET_CAPSULE_DATA_ROOT=%h/%i/work/data CNET_SELF_ANSWER=0 CNET_TEACHER_ON_MISS=0 CNET_CORE_AUTO_EVOLVE=0 %h/%i/native/cnetd
+TimeoutStopSec=15

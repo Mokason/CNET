@@ -1,0 +1,19 @@
+[Unit]
+Description=CNET original-budget learning owner %i
+BindsTo=cnet-learning-daemon@%i.service
+After=cnet-learning-daemon@%i.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/%i
+UMask=0077
+NoNewPrivileges=yes
+RestrictAddressFamilies=AF_UNIX
+CPUQuota=100%
+MemoryMax=1G
+TasksMax=128
+LimitCORE=0
+Restart=no
+ExecStart=/usr/bin/env -i %h/dotnet/dotnet %h/%i/managed/cnet-control.dll learning run %h/%i
+KillMode=mixed
+TimeoutStopSec=60

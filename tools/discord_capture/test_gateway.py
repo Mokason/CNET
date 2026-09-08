@@ -43,6 +43,65 @@ class GatewayTests(unittest.TestCase):
         self.assertEqual(readiness(self.root)["unfinished"], 0)
         self.assertNotIn("private", log.getvalue())
 
+    def test_owner_learning_is_captured_before_single_dispatch_and_no_peer_fallback(self):
+        def learn(text):
+            self.assertEqual(readiness(self.root)["unfinished"], 1)
+            self.assertEqual(text, "unicode upper 181")
+            return "ABSTAIN: request recorded", "peer_ok"
+        learner = Mock()
+        learner.answer.side_effect = learn
+        self.gw.learner = learner
+        data = dict(message(), content="unicode upper 181")
+        with patch.object(gateway, "peer_ask") as peer, patch.object(gateway, "api", return_value={}), \
+                patch.object(gateway, "stamp_last_origin"):
+            self.gw.handle_message(data)
+            self.gw.handle_message(data)
+        learner.answer.assert_called_once()
+        peer.assert_not_called()
+
+    def test_learning_authority_never_leaks_outside_selected_owner_dm(self):
+        for changes in (dict(channel_id="555555555555555555"), dict(author={"id": "555555555555555555"}),
+                        dict(guild_id="555555555555555555"), dict(webhook_id="555555555555555555"),
+                        dict(message_snapshots=[{}])):
+            self.gw.learner = Mock()
+            with patch.object(gateway, "peer_ask", return_value=("answer", "peer_ok")), \
+                    patch.object(gateway, "api", return_value={}), patch.object(gateway, "stamp_last_origin"):
+                self.gw.handle_message(dict(message(), content="unicode upper 181", **changes))
+            self.gw.learner.answer.assert_not_called()
+
+    def test_learning_preserves_nonspace_whitespace_for_strict_parser_and_capture(self):
+        learner = Mock()
+        learner.answer.return_value = ("ABSTAIN: malformed", "peer_error")
+        self.gw.learner = learner
+        for i, text in enumerate(("unicode upper 181\n", "unicode\tupper 181", "unicode upper 181\u00a0")):
+            with patch.object(gateway, "peer_ask") as peer, patch.object(gateway, "api", return_value={}), \
+                    patch.object(gateway, "stamp_last_origin"), patch.dict(os.environ, {"CNET_DISCORD_PREFIX": "!c"}):
+                self.gw.handle_message(dict(message(), id=str(333333333333333334 + i), content="!c " + text))
+            learner.answer.assert_called_with(text)
+            peer.assert_not_called()
+            delivered = self.journal.db.execute("SELECT delivered_text FROM requests ORDER BY ord DESC LIMIT 1").fetchone()[0]
+            self.assertEqual(delivered, text)
+
+    def test_learning_unknown_outcome_and_reply_failure_do_not_retry_or_fall_back(self):
+        self.gw.learner = Mock()
+        self.gw.learner.answer.return_value = ("ABSTAIN: outcome unknown", "peer_unknown")
+        with patch.object(gateway, "peer_ask") as peer, patch.object(gateway, "api", side_effect=TimeoutError), \
+                patch.object(gateway, "stamp_last_origin"):
+            self.gw.handle_message(dict(message(), content="unicode upper 181"))
+        self.gw.learner.answer.assert_called_once()
+        peer.assert_not_called()
+        self.assertEqual(self.journal.db.execute("SELECT peer_status,reply_status FROM requests").fetchone(),
+                         ("peer_unknown", "reply_unknown"))
+
+    def test_learning_config_is_opt_in_complete_and_requires_verified_capture_scope(self):
+        with patch.dict(os.environ, {"CNET_DISCORD_LEARNING_ROOT": "", "CNET_DISCORD_LEARNING_PIN": ""}):
+            self.assertIsNone(gateway.configured_learner(None))
+        for root, pin, journal in (("/tmp/fixture", "", self.journal), ("", "a"*64, self.journal),
+                                   ("/tmp/fixture", "a"*64, None)):
+            with patch.dict(os.environ, {"CNET_DISCORD_LEARNING_ROOT": root, "CNET_DISCORD_LEARNING_PIN": pin}), \
+                    self.assertRaises(CaptureError):
+                gateway.configured_learner(journal)
+
     def test_fatal_capture_refusal_never_invokes_peer(self):
         with patch.object(self.journal, "begin", side_effect=CaptureError("fixture")), \
                 patch.object(gateway, "peer_ask") as ask:

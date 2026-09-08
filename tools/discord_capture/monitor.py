@@ -14,6 +14,7 @@ import time
 from dataset import write_private
 from evidence import canonical
 from journal import private_file, private_root, check_store, validate_store
+from learning_bridge import Bridge
 
 LEGACY_FILES = (
     Path("/home/marble/.local/share/cnet-minimal/var/miss_log.jsonl"),
@@ -40,7 +41,22 @@ def assess(sample):
         alerts.append("reconnect_burst")
     if not sample["legacy_private"]:
         alerts.append("legacy_privacy")
+    if sample.get("learning_healthy") is False:
+        alerts.append("learning_unavailable")
     return alerts
+
+
+def learning_health():
+    root, pin = os.environ.get("CNET_DISCORD_LEARNING_ROOT", ""), os.environ.get("CNET_DISCORD_LEARNING_PIN", "")
+    if not root and not pin:
+        return None
+    try:
+        if not root or not pin:
+            return False
+        Bridge(root, pin).require_owner()
+        return True
+    except Exception:
+        return False
 
 
 def legacy_private():
@@ -83,12 +99,14 @@ def sample_capture(root):
                 db_bytes=(root/"capture.sqlite").stat().st_size, requests=count, events=events,
                 free_bytes=space.f_bavail*space.f_frsize, recent_starts=starts,
                 legacy_private=legacy_private(), segment=segment[0], last_gap=last_gap,
-                policy_sha256=hashlib.sha256(policy.encode()).hexdigest())
+                policy_sha256=hashlib.sha256(policy.encode()).hexdigest(), learning_healthy=learning_health(),
+                learning_bridge_sha256=os.environ.get("CNET_DISCORD_LEARNING_PIN", ""))
 
 
 def release_pin():
     root = Path(__file__).parent
-    files = ("monitor.py", "gateway.py", "journal.py", "dataset.py", "evidence.py")
+    files = ("monitor.py", "gateway.py", "journal.py", "dataset.py", "evidence.py",
+             "learning_bridge.py", "unicode_queries.py", "unicode_evidence.py")
     return hashlib.sha256(canonical({name: hashlib.sha256((root / name).read_bytes()).hexdigest()
                                      for name in files})).hexdigest()
 
@@ -115,7 +133,7 @@ def record_observation(root, sample, boot_id, boot_seconds):
                          or previous["observer_sha256"] != observer_pin):
             alerts.append("observation_gap")
         if previous and any(previous["metrics"].get(key) != sample.get(key)
-                            for key in ("segment", "last_gap", "policy_sha256")):
+                            for key in ("segment", "last_gap", "policy_sha256", "learning_bridge_sha256")):
             alerts.append("capture_discontinuity")
         healthy = 0
         if previous and not previous["alerts"] and not alerts:

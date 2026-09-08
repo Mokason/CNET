@@ -2,8 +2,11 @@
 
 `gateway.py` is the versioned successor to the existing local Discord PEER
 bridge. `journal.py` records selected request evidence in SQLite. It is not a
-learner or allocator activation path. The separate offline evidence tools below
-provide explicit independent labels and development-only exports.
+learner or allocator activation path by default. The separate offline evidence
+tools below provide explicit independent labels and development-only exports.
+An explicit [owner-only learning opt-in](../../docs/DISCORD_VERIFIED_LEARNING.md)
+routes four approved finite Unicode query forms to a separate bounded learner;
+it does not enable the learned allocator or grant authority to other channels.
 The [decision and sequence](../../plans/cnet_discord_capture_20260907.md) govern it.
 
 ## Configuration

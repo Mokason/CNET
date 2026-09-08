@@ -22,6 +22,10 @@ deployment, staged truthful source expansions and real-duration monitoring.
 Its scoped workload evidence is separate from product acceptance and genuine
 allocator demand.
 
+The separate [owner-DM adapter](DISCORD_VERIFIED_LEARNING.md) can expose these
+four already-approved datasets through Discord with typed inputs, independent
+answer checks and original-budget admission. It must not target the frozen soak.
+
 The learned allocator remains inactive after its failed improvement gate.
 `allocator_enabled=true` refuses. Completing a run budget does not certify
 learning gain or 72-hour acceptance. See the [plan](../plans/cnet_autonomous_learning_20260906.md)

@@ -6,7 +6,7 @@ Evidence, scope and dependencies: [plan.md](plan.md).
 
 - [x] RED and independently pinned four-dataset query/evidence tests
 - [x] Versioned evidence extension without reclassifying old receipts
-- [ ] RED and owner-only, single-attempt, fail-closed Discord learning bridge
+- [x] RED and owner-only, single-attempt, fail-closed Discord learning bridge
 - [ ] Separate bounded installation and actual native acquisition/answer rehearsal
 - [ ] Frozen live rollout, capture continuity declaration and operator controls
 - [ ] Requalify captured demand; do not fit without eligible native headroom
