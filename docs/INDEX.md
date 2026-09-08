@@ -17,6 +17,7 @@ host. For measured claims, follow dated evidence and check its bound source.
 | Understand CNET | [README](../README.md), [architecture](ARCHITECTURE.md) |
 | Build and choose tests | [Build and verification](BUILD_AND_TEST.md) |
 | Teach, compose and inspect capsules | [Capsule core](CAPSULE_CORE.md) |
+| Export a verified workflow's capsule subset for offline reuse | [Composition reuse](COMPOSITION_REUSE.md) |
 | Acquire bounded source facts | [Source evidence](CNET_SOURCE_EVIDENCE.md) |
 | Retrieve untrusted public evidence through MCP | [MCP read brick](MCP_READ_BRICK.md) |
 | Operate private table learning | [Policy-bounded learning](AUTONOMOUS_LEARNING.md) |

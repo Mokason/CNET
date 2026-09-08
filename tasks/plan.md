@@ -1,5 +1,16 @@
 # Current CNET work plan
 
+## Source complete: useful bounded composition reuse
+
+The [September 9 composition slice](../plans/cnet_composition_reuse_20260909.md)
+exports only the existing capsules selected by a verified request, with staged
+identity/replay checks before publication. [The operator guide](../docs/COMPOSITION_REUSE.md)
+and [measured handoff](../result/cnet_composition_reuse_20260909.md) cover two-hop
+numeric reuse, unchanged coverage and retained source freshness. Live services
+and the frozen soak remain untouched. Next source milestone: independently
+frozen paraphrase/OOD evaluation; richer task inputs and dependency-aware source
+replacement remain open before targeted, evidence-gated AMD experiments.
+
 ## Source complete: captured task linkage and recurring gaps
 
 Follow [the September 9 continuation](../plans/cnet_capture_task_inbox_20260909.md):
@@ -19,7 +30,7 @@ and 127 capture/bridge tests. Source lives on `feature/verified-task-core-202609
 it is not a migration or deployment of the existing live installations.
 
 Next: independently frozen
-paraphrase evaluation, useful certified composition reuse, dependency-aware
+paraphrase evaluation, richer composition inputs, dependency-aware
 freshness, then measured AMD task-selection candidates. Measured learning costs,
 real origin review and a separate captured-task rollout remain open. The concrete gate
 sequence is in the task-core plan. ECC TDD/verification and Graft discovery were

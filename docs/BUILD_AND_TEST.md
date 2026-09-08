@@ -32,6 +32,7 @@ of the deterministic capsule runtime.
 | `make unified` | Native/.NET/MCP CPU integration and generated claims |
 | `make capability_cert` | Declared capability manifests and evidence integrity |
 | `make capsule_core capsule_tool` | Build local capsule tools/library |
+| `make capsule_reuse capsule_reuse_coverage` | Verified subset export, actual-native offline replay, fault checks and scoped line coverage |
 | `make capsule_product_closure capsule_control` | Resident lifecycle, crashes, source freshness, same-PID swaps and owner client |
 | `make capsule_product_sanitize` | Private full-linked-C ASan/UBSan build and lifecycle checks |
 | `make native_workflows_test cnet_minimal_deploy_gate` | Private native package/harvest and safe deployment fixtures |

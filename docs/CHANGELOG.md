@@ -3,6 +3,15 @@
 Entries describe bounded repository changes. They are not live-deployment
 attestations or a list of claims automatically revalidated at each release.
 
+## 2026-09-09 — Verified composition reuse
+
+Added explicit export of the capsule dependencies selected by a verified request.
+Original capsule bytes/assets are preserved; staged identity and guarded replay
+checks precede atomic publication. Two-hop hours/minutes/seconds reuse, coverage
+misses, unused-capability exclusion and retained source freshness have native
+regression tests. No new package format, training labels or live activation.
+[Operator guide](COMPOSITION_REUSE.md), [measured scope](../result/cnet_composition_reuse_20260909.md).
+
 ## 2026-09-08 — Bounded MCP read brick
 
 Added a portable two-action dispatch capsule, strict native MCP evidence

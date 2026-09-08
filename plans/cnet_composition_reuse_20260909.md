@@ -40,3 +40,13 @@ or certify a broader composed domain from one successful request.
 No live services, frozen soak, genuine capture, schemas or allocator gates change.
 Independent frozen paraphrase evaluation, richer task inputs, dependency-aware
 source replacement and measured AMD task-selection improvement remain separate.
+
+## Completion
+
+Executed RED checkpoint `315c101`; GREEN subset publication `17142c6` and
+operator reuse `6c89b6a`; expanded fault/coverage fixtures `d2e1054`.
+[The handoff](../result/cnet_composition_reuse_20260909.md) records native,
+managed, capture, sanitizer and source-line coverage results. Fresh-context
+Astra review required whole-source validation and isolated negative fixtures;
+those findings were actionable and resolved. The last bounded review found no
+remaining concrete issue. Broader learned-quality and live gates are unchanged.

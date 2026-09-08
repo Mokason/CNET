@@ -83,6 +83,14 @@ The public contracts are in [cnet_capsule_core.h](../include/cnet_capsule_core.h
 
 ## Daemon integration and swaps
 
+An explicit `reuse ABS_SOURCE ABS_DESTINATION REQUEST` command can export only
+the dependencies selected by a verified execution. The original capsule files
+and assets are retained; a staged fresh-core identity/replay check precedes
+publication. Later asks still plan and check coverage at every hop. See
+[composition reuse](COMPOSITION_REUSE.md) for the two-hop unit-conversion example,
+ownership/source-freshness limits and refusal behavior. This command does not
+activate a snapshot or change live daemon state.
+
 Configure a capsule inventory in the daemon's effective environment to enable
 requests over its existing ASK socket. JSON: `{"q":"capsule minutes seconds 3"}`.
 Only successful certified execution returns `source=LOCAL, verified=true`.

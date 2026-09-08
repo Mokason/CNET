@@ -1,5 +1,13 @@
 # Current CNET checklist
 
+## Completed source: bounded useful composition reuse
+
+- [x] Export selected canonical capsule files without a new packaging format
+- [x] Fresh staged identity and guarded replay checks before publication
+- [x] Independent arithmetic labels, offline two-hop reuse and per-hop refusal
+- [x] Unused-capability exclusion, source assets/freshness and publication faults
+- [x] Native regressions, sanitizer/coverage checks and operator documentation
+
 ## Completed source: captured task inbox continuation
 
 - [x] Bounded read-only grouped gaps with separate origin populations
@@ -23,14 +31,15 @@
 
 - [ ] Genuine origin review, proposed-source UX and measured learning costs
 - [ ] Independently frozen paraphrase/OOD evaluation and broader semantic proposer
-- [ ] Useful reusable multi-step compositions using existing capsule contracts
+- [x] Useful reusable numeric compositions using existing capsule contracts
+- [ ] Richer multi-field/document workflows beyond the finite numeric boundary
 - [ ] Dependency-aware freshness/conflict arbitration and staged source replacement
 - [ ] AMD task-selection/clarification/composition/abstention shadow experiments
 - [ ] Demonstrated improvement and separate deployment/promotion approval
 - [ ] Reviewed schema migration and owner-DM rollout; current services unchanged
 
 Dependencies and evidence: [plan.md](plan.md). Current source handoff:
-[captured task inbox](../result/cnet_capture_task_inbox_20260909.md). Previous live
+[composition reuse](../result/cnet_composition_reuse_20260909.md). Previous live
 handoff: [verified learning ingress](../result/cnet_verified_learning_ingress_20260908.md).
 
 ## Completed: verified learning ingress
