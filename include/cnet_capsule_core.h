@@ -48,6 +48,17 @@ int cnet_capsule_core_validate_growth_cell(CnetCapsuleCore *before,CnetCapsuleCo
  * All refusal paths zero reply.verified and never return a partial answer. */
 int cnet_capsule_core_ask(CnetCapsuleCore *core, const char *request,
                          CnetCapsuleCoreReply *reply);
+/* Explicit operator export, never invoked by ask. Linux absolute owner-private
+ * source/destination directories must already exist and remain owner-stable.
+ * Copy only the <=8 distinct capsules selected by a successful bounded request
+ * (<=255 bytes), preserving original files/assets. Reopen the staged subset,
+ * check selected identities and replay through the guarded planner before
+ * no-clobber publication at destination/digest. No training or activation.
+ * Returns zero on success; refusal clears digest/bytes and answer fields.
+ * A post-rename durability error may retain a complete snapshot: identical
+ * retry repairs durability, never overwrites. Source freshness still applies. */
+int cnet_capsule_core_reuse(const char *source,const char *destination,
+    const char *request,char digest[65],size_t *bytes,CnetCapsuleCoreReply *reply);
 /* Executes the same certified request, then emits its exact bound decoder or
  * a decimal value for numeric-only units. No arbitrary prose, no reply-struct
  * ABI change. Source evidence is checked per used hop and again before output.

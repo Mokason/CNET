@@ -211,7 +211,8 @@ $(BIN_DIR)/cnet_capsule_core: tools/cnet_capsule_core_main.c $(BIN_DIR)/libcnet_
 		-L$(BIN_DIR) -lcnet_capsule_core -Wl,-rpath,'$$ORIGIN' $(LDFLAGS)
 
 CORE_CANDIDATE_SRC = src/serve/cnet_core_cell.c src/serve/cnet_core_selector.c src/serve/cnet_cell_capsule.c src/serve/cnet_core_candidate.c src/serve/cnet_core_host.c src/serve/cnet_capsule_snapshot.c src/serve/cnet_capsule_store.c src/serve/cnet_capsule_evidence.c src/serve/cnet_capsule_table.c src/serve/cnet_learning_sandbox.c src/cce/cce_campaign_provenance.c
-$(BIN_DIR)/libcnet_capsule_core.so: mk/authority.mk $(LIBCCE) $(AUTHORITY_CORE_SRC) $(CAPSULE_SRC) $(CORE_CANDIDATE_SRC) src/memory/cnet_semantic_cortex.c src/memory/cnet_shared_workspace.c src/serve/cnet_capsule_core.c src/serve/cnet_capsule_demand.c $(wildcard include/*.h include/*/*.h)
+CORE_CANDIDATE_SRC += src/serve/cnet_capsule_reuse.c
+$(BIN_DIR)/libcnet_capsule_core.so: mk/authority.mk $(LIBCCE) $(AUTHORITY_CORE_SRC) $(CAPSULE_SRC) $(CORE_CANDIDATE_SRC) src/memory/cnet_semantic_cortex.c src/memory/cnet_shared_workspace.c src/serve/cnet_capsule_core.c src/serve/cnet_capsule_demand.c $(wildcard include/*.h include/*/*.h src/serve/*.h)
 	$(CC) $(CFLAGS) -fPIC -shared -o $@ $(AUTHORITY_CORE_SRC) $(CAPSULE_SRC) \
 		src/serve/cnet_capsule_core.c src/serve/cnet_capsule_demand.c $(CORE_CANDIDATE_SRC) $(SEMANTIC_CORTEX_SRC) $(SHARED_WORKSPACE_SRC) $(LIBCCE) $(LDFLAGS) $(MCP_LDFLAGS) -pthread
 
@@ -223,6 +224,13 @@ capsule_core_growth: tests/test_capsule_core_growth.c
 		-Wl,-rpath,'$$ORIGIN' $(LDFLAGS) $(MCP_LDFLAGS) -ldl -pthread
 	@$(BIN_DIR)/test_capsule_core_growth | tee logs/capsule_core_growth.log
 	@grep -q '^CAPSULE_CORE_GROWTH_PASS' logs/capsule_core_growth.log
+
+.PHONY: capsule_reuse
+capsule_reuse: capsule_core
+	@mkdir -p logs
+	@python3 tests/test_capsule_reuse.py > logs/capsule_reuse.log 2>&1 || { cat logs/capsule_reuse.log; exit 1; }
+	@cat logs/capsule_reuse.log
+authority: capsule_reuse
 
 .PHONY: capsule_resident_lifecycle
 capsule_resident_lifecycle: $(BIN_DIR)/libcnet_capsule_core.so tests/test_capsule_resident_lifecycle.c tests/test_knowledge_capsule.c

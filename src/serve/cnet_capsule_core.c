@@ -3,6 +3,7 @@
 #include "cnet_capsule_evidence.h"
 #include "cnet_capsule_table.h"
 #include "cnet_core_selector.h"
+#include "cnet_capsule_reuse_internal.h"
 #include "cce/cce_campaign_provenance.h"
 #include <ctype.h>
 #include <dirent.h>
@@ -64,6 +65,7 @@ struct CnetCapsuleCore {
      * A merged base can reuse a descriptor name with different source ports;
      * that order-dependent registry metadata is not capsule identity. */
     char payload_identity[CORE_CAPSULES][65];
+    char *directory_names[CORE_CAPSULES];
 };
 
 static CnetCapsuleEvidence *find_evidence(const CnetCapsuleCore *c,const char *unit) {
@@ -245,7 +247,32 @@ static int import_capsule(CnetCapsuleCore *c, const char *path, char *error, siz
         c->evidence[at].evidence=e;c->evidence[at].table=table;
     }
     free(asset);
+    const char *name=strrchr(path,'/');name=name?name+1:path;
+    c->directory_names[original_index]=strdup(name);
+    if(!c->directory_names[original_index]) {
+        if(error&&cap)snprintf(error,cap,"directory_identity_allocation_failed");
+        return -1;
+    }
     return 0;
+}
+
+int cnet_capsule_core_selected_directories(const CnetCapsuleCore *c,
+    const CnetCapsuleCoreReply *reply,const char *names[8],size_t *count) {
+    if(count)*count=0;
+    if(!c||!reply||!names||!count||!reply->verified||!reply->hops||reply->hops>8||
+       strnlen(reply->units,sizeof reply->units)==sizeof reply->units)return -1;
+    char units[512];snprintf(units,sizeof units,"%s",reply->units);
+    char *save=NULL;size_t hops=0;
+    for(char *unit=strtok_r(units,",",&save);unit;unit=strtok_r(NULL,",",&save)) {
+        if(++hops>8)return -1;
+        size_t index=0;
+        while(index<c->base.unit_count&&strcmp(c->base.units[index].name,unit))index++;
+        if(index==c->base.unit_count||!c->directory_names[index])return -1;
+        const char *directory=c->directory_names[index];
+        size_t i=0;while(i<*count&&strcmp(names[i],directory))i++;
+        if(i==*count)names[(*count)++]=directory;
+    }
+    return hops==reply->hops?0:-1;
 }
 
 static int source_interfaces_bound(const CnetCapsuleCore *c) {
@@ -405,6 +432,7 @@ void cnet_capsule_core_close(CnetCapsuleCore *c) {
         hybrid_ai_free(c->coverage[bank]);
         free(c->coverage[bank]);
     }
+    for(size_t i=0;i<c->base.unit_count;i++)free(c->directory_names[i]);
     cnb_free(&c->base);
     for(size_t i=0;i<c->evidence_count;i++){
         cnet_capsule_evidence_close(c->evidence[i].evidence);free(c->evidence[i].table);

@@ -216,6 +216,15 @@ static int inspect(const char *path) {
     cnb_free(&b); return 0;
 }
 int main(int argc, char **argv) {
+    if(argc==5&&!strcmp(argv[1],"reuse")) {
+        char digest[65];size_t bytes=0;CnetCapsuleCoreReply reply;
+        if(cnet_capsule_core_reuse(argv[2],argv[3],argv[4],digest,&bytes,&reply)) {
+            fprintf(stderr,"REUSE_REFUSED reason=%s\n",reply.reason);return 3;
+        }
+        if(printf("REUSE verified=1 snapshot_sha256=%s bytes=%zu value=%u hops=%zu units=%s\n",
+                  digest,bytes,reply.value,reply.hops,reply.units)<0||fflush(stdout))return 3;
+        return 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "teach")) return teach(argc, argv);
     if (argc == 3 && !strcmp(argv[1], "inspect")) return inspect(argv[2]);
     if (argc == 4 && !strcmp(argv[1], "ask")) {
@@ -229,6 +238,7 @@ int main(int argc, char **argv) {
     }
     fprintf(stderr, "usage: %s ask ROOT 'capsule INPUT_TAG OUTPUT_TAG N'\n"
         "       %s teach ROOT UNIT INPUT_TAG OUTPUT_TAG INPUT_BITS OUTPUT_BITS user_correction|verified_tool ROWS_TSV\n"
-        "       %s inspect BASE\n", argv[0], argv[0], argv[0]);
+        "       %s inspect BASE\n"
+        "       %s reuse ABS_SOURCE ABS_DESTINATION 'capsule INPUT_TAG OUTPUT_TAG N'\n", argv[0], argv[0], argv[0], argv[0]);
     return 2;
 }
