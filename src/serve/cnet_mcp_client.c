@@ -1,6 +1,7 @@
 #include "../../include/cnet_mcp_client.h"
 #include "../../include/cnet_json_escape.h"
 #include "../../include/cnet_platform.h"
+#include "../../include/cnet_mcp_evidence_internal.h"
 
 #include <ctype.h>
 #include <errno.h>
@@ -184,7 +185,9 @@ static int mcp_write_all(int fd, const char *data, size_t size,
                          int64_t deadline) {
     size_t written = 0;
     while (written < size) {
-        ssize_t count = write(fd, data + written, size - written);
+        /* A closed peer is an ordinary refusal, never a process-wide SIGPIPE.
+         * Keep the signal policy socket-local rather than changing handlers. */
+        ssize_t count = send(fd, data + written, size - written, MSG_NOSIGNAL);
         if (count > 0) {
             written += (size_t)count;
             continue;
@@ -277,6 +280,56 @@ int cnet_mcp_call(const char *tool, const char *args_json, char *out, size_t cap
     if (!mcp_rpc(req, raw, sizeof raw)) return 0;
     if (strstr(raw, "\"error\"")) return 0;
     return extract_mcp_text(raw, out, cap);
+}
+
+int cnet_mcp_read_call(const char *tool, const char *args_json, char *out, size_t cap) {
+    char req[16384];
+    char *raw;
+    const char *enabled = getenv("CNET_MCP_READ_ENABLED");
+    if (out && cap) out[0] = 0;
+    if (!out || cap < 2 || !enabled || strcmp(enabled, "1") ||
+        !cnet_mcp_client_enabled() || !read_arguments(tool, args_json)) return 0;
+    int n = snprintf(req, sizeof req,
+        "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\","
+        "\"params\":{\"name\":\"%s\",\"arguments\":%s}}", tool, args_json);
+    if (n < 0 || (size_t)n >= sizeof req) return 0;
+    raw = calloc(262144, 1);
+    if (!raw) return 0;
+    int ok = mcp_rpc(req, raw, 262144) && read_response(raw, tool, out, cap);
+    free(raw);
+    if (!ok) out[0] = 0;
+    return ok ? (int)strlen(out) : 0;
+}
+
+int cnet_mcp_read_summary(const char *evidence, char *out, size_t cap) {
+    ReadSource source;
+    if (out && cap) out[0] = 0;
+    if (!out || cap < 128 || !read_evidence(evidence, NULL, &source)) return 0;
+    /* Escape/control-free display; data is never routed back through the tool
+     * selector. UTF-8 is cut only at a character boundary. */
+    for (size_t i = 0; source.text[i]; i++) {
+        if ((unsigned char)source.text[i] < 32 || source.text[i] == 127)
+            source.text[i] = ' ';
+        if ((unsigned char)source.text[i] == 0xc2 &&
+            (unsigned char)source.text[i+1] >= 0x80 && (unsigned char)source.text[i+1] <= 0x9f)
+            source.text[i] = source.text[i+1] = ' ';
+        if ((unsigned char)source.text[i] == 0xe2 && (unsigned char)source.text[i+1] == 0x80 &&
+            ((unsigned char)source.text[i+2] == 0xa8 || (unsigned char)source.text[i+2] == 0xa9))
+            source.text[i] = source.text[i+1] = source.text[i+2] = ' ';
+    }
+    /* One line even when used inside cnetd's line-oriented text protocol. */
+    int n = snprintf(out, cap, "[Untrusted web evidence; not CERT] %s | ", source.url);
+    if (n < 0 || (size_t)n + 16 >= cap) { out[0] = 0; return 0; }
+    size_t room = cap - (size_t)n - 1, len = strlen(source.text);
+    int clipped = len > room;
+    if (clipped) {
+        len = room - 4;
+        while (len && ((unsigned char)source.text[len] & 0xc0) == 0x80) len--;
+    }
+    memcpy(out + n, source.text, len);
+    out[n + len] = 0;
+    if (clipped) strcat(out, "...");
+    return (int)strlen(out);
 }
 
 static void clip_speak(const char *prefix, const char *body, char *out, size_t cap) {

@@ -50,6 +50,7 @@
 #include "../include/cnet_showrunner.h"
 #include "../include/cnet_marble_live.h"
 #include "../include/cnet_mcp_client.h"
+#include "../include/cnet_mcp_read_brick.h"
 #include "../include/cnet_json_escape.h"
 #include "../include/cnet_domain_route.h"
 #include "../include/cnet_probe_shortcircuit.h"
@@ -3639,6 +3640,30 @@ static void handle_client(int cfd, CdState *S) {
         /* Allowlisted chat actions run before CERT and answer as SOURCE ACTION.
          * Anything they do not claim falls through to the sealed path. */
         memset(&rep, 0, sizeof rep);
+        /* Explicit read requests are a terminal permission boundary BEFORE
+         * legacy actions, retrieval and residuals. Even a refusal cannot route
+         * into the older unrestricted lookup path. Web evidence is display
+         * data, never a local answer or an acquisition/training label. */
+        int mcp_read_handled = cnet_mcp_read_brick_ask(q, NULL, 0);
+        if (mcp_read_handled) {
+            char *evidence = calloc(262144, 1);
+            if (!evidence || !cnet_mcp_read_brick_ask(q, evidence, 262144) ||
+                !cnet_mcp_read_summary(evidence, rep.answer, sizeof rep.answer)) {
+                snprintf(rep.answer, sizeof rep.answer,
+                    "MCP read refused (not CERT). Check the enabled policy, dispatch capsule and MCP endpoint.");
+                snprintf(rep.utterance, sizeof rep.utterance, "%s",
+                    "MCP read refused (not CERT). Check the read policy, capsule and endpoint.");
+            } else if (!cnet_mcp_read_summary(evidence, rep.utterance, sizeof rep.utterance)) {
+                snprintf(rep.utterance, sizeof rep.utterance,
+                    "Untrusted web evidence (not CERT); see the answer for its source.");
+            }
+            free(evidence);
+            snprintf(rep.source, sizeof rep.source, "MCP_READ");
+            snprintf(rep.skill, sizeof rep.skill, "mcp_read_dispatch_v1");
+            rep.miss = 1;
+            rep.verified = 0;
+            goto kb_answered;
+        }
         if (!cd_action(S, q, &rep)) {
             if (cd_ask(S, q, &rep) != 0) {
                 (void)full_write(cfd, "{\"ok\":false,\"error\":\"ask_failed\"}\n", 34);
@@ -3768,8 +3793,10 @@ static void handle_client(int cfd, CdState *S) {
     kb_answered:
         /* Surface who asked. Set after cd_ask so the answer cannot depend on it. */
         snprintf(rep.peer, sizeof rep.peer, "%s", S->dialog.peer_name);
-        cd_gap_learn(S, q, &rep);
-        cd_starve_leftover(S, q, &rep);
+        if (!mcp_read_handled) {
+            cd_gap_learn(S, q, &rep);
+            cd_starve_leftover(S, q, &rep);
+        }
         cnet_dialog_ctx_update(&S->dialog, q, rep.skill, "-", !rep.miss);
         /* Showrunner sees every turn: mood, cooldown, last-N ring. */
         cnet_sr_on_turn(&S->show, rep.peer[0] ? rep.peer : "-", q, rep.answer,

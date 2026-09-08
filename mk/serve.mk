@@ -55,15 +55,53 @@ cnetd_protocol_boundary: tests/test_cnetd_protocol.c include/cnetd_protocol.h \
 
 .PHONY: cnet_mcp_transport
 cnet_mcp_transport: tests/test_cnet_mcp_transport.c \
-		src/serve/cnet_mcp_client.c include/cnet_mcp_client.h
+		src/serve/cnet_mcp_client.c include/cnet_mcp_client.h \
+		include/cnet_mcp_evidence_internal.h include/cnet_json_internal.h \
+		src/cce/cce_campaign_provenance.c
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(filter-out -DCNET_HAVE_CURL=%,$(CFLAGS)) \
 		-DCNET_HAVE_CURL=0 -Werror -Iinclude \
-		-Wl,--wrap=write -o $(BIN_DIR)/test_cnet_mcp_transport \
-		tests/test_cnet_mcp_transport.c src/serve/cnet_mcp_client.c \
+		-Wl,--wrap=send -o $(BIN_DIR)/test_cnet_mcp_transport \
+		tests/test_cnet_mcp_transport.c src/serve/cnet_mcp_client.c src/cce/cce_campaign_provenance.c \
 		$(LDFLAGS)
 	@./$(BIN_DIR)/test_cnet_mcp_transport | tee logs/cnet_mcp_transport.log
 	@grep -q '^MCP_CLIENT_TRANSPORT_PASS' logs/cnet_mcp_transport.log
+
+.PHONY: mcp_read_protocol mcp_read_brick
+mcp_read_protocol: tests/test_mcp_read_protocol_main.c tests/test_mcp_read_protocol.py \
+		src/serve/cnet_mcp_client.c include/cnet_mcp_client.h \
+		include/cnet_mcp_evidence_internal.h include/cnet_json_internal.h \
+		src/cce/cce_campaign_provenance.c
+	@mkdir -p $(BIN_DIR)
+	$(CC) $(filter-out -DCNET_HAVE_CURL=%,$(CFLAGS)) -DCNET_HAVE_CURL=0 \
+		-Werror -Iinclude tests/test_mcp_read_protocol_main.c \
+		src/serve/cnet_mcp_client.c src/cce/cce_campaign_provenance.c \
+		-o $(BIN_DIR)/test_mcp_read_protocol $(LDFLAGS)
+	$(PYTHON) tests/test_mcp_read_protocol.py -v
+
+$(BIN_DIR)/cnet_mcp_read: tools/cnet_mcp_read_main.c src/serve/cnet_mcp_read_brick.c \
+		src/serve/cnet_mcp_client.c include/cnet_mcp_read_brick.h \
+		include/cnet_mcp_client.h include/cnet_mcp_evidence_internal.h \
+		include/cnet_json_internal.h $(BIN_DIR)/libcnet_capsule_core.so
+	$(CC) $(filter-out -DCNET_HAVE_CURL=%,$(CFLAGS)) -DCNET_HAVE_CURL=0 \
+		-Werror -Iinclude tools/cnet_mcp_read_main.c src/serve/cnet_mcp_read_brick.c \
+		src/serve/cnet_mcp_client.c -o $@ $(LDFLAGS) \
+		-L$(BIN_DIR) -lcnet_capsule_core -Wl,-rpath,'$$ORIGIN'
+
+mcp_read_brick: $(BIN_DIR)/cnet_mcp_read capsule_core mcp_read_protocol
+	$(PYTHON) tests/test_cnet_mcp_read_brick.py -v
+
+.PHONY: cnetd_mcp_read
+cnetd_mcp_read: cnetd
+	CNETD_BIN=$(BIN_DIR)/cnetd $(PYTHON) tests/test_cnetd_mcp_read.py -v
+
+# Default integration is hermetic; public Wikipedia requires an explicit
+# CNET_MCP_LIVE_TEST=1 when running tests/test_mcp_read_integration.py.
+.PHONY: mcp_read_verify
+mcp_read_verify: mcp_read_brick cnetd_mcp_read cnet_mcp_transport soul_host_test
+	dotnet build dotnet/CnetMcpServer.Tests/CnetMcpServer.Tests.csproj -t:Rebuild --nologo -v:q
+	dotnet test dotnet/CnetMcpServer.Tests/CnetMcpServer.Tests.csproj --no-build --nologo
+	$(PYTHON) tests/test_mcp_read_integration.py -v
 
 .PHONY: cnetd
 cnetd: $(BIN_DIR)/cnetd
@@ -75,7 +113,9 @@ $(BIN_DIR)/cnetd: $(BIN_DIR)/libcnet_capsule_core.so $(ROE_ASI_SRC) tools/cnetd.
 		src/cnet_cert_solver.c \
 		src/cnet_roe_gold.c src/serve/cnet_showrunner.c \
 		src/serve/cnet_marble_live.c src/memory/cnet_md_memory.c \
-		src/serve/cnet_mcp_client.c src/memory/cnet_chat_lookup.c \
+		src/serve/cnet_mcp_client.c src/serve/cnet_mcp_read_brick.c \
+		include/cnet_mcp_read_brick.h include/cnet_mcp_evidence_internal.h \
+		src/memory/cnet_chat_lookup.c \
 		src/memory/cnet_lookup.c src/cce/cce_campaign_provenance.c \
 		src/serve/cnet_c_speak.c src/cce/cce_wordlm.c \
 		src/cnet_skill_lane.c src/memory/cnet_capsule_loop.c \
@@ -105,7 +145,7 @@ $(BIN_DIR)/cnetd: $(BIN_DIR)/libcnet_capsule_core.so $(ROE_ASI_SRC) tools/cnetd.
 		src/cnet_typed_en.c src/cnet_ffi_convert.c src/cnet_cert_solver.c \
 		src/cnet_roe_gold.c \
 		src/serve/cnet_showrunner.c src/serve/cnet_marble_live.c \
-		src/memory/cnet_md_memory.c src/serve/cnet_mcp_client.c \
+		src/memory/cnet_md_memory.c src/serve/cnet_mcp_client.c src/serve/cnet_mcp_read_brick.c \
 		src/memory/cnet_chat_lookup.c src/memory/cnet_lookup.c \
 		src/cce/cce_campaign_provenance.c src/serve/cnet_c_speak.c \
 		src/cce/cce_wordlm.c src/cnet_skill_lane.c \

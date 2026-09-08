@@ -338,7 +338,10 @@ int main(void) {
             contract_free(&c2[k]);
             btn_free(&extra[k]);
         }
-        remove("tmp_soul_host2.cnb");
+        /* Managed generation-reload tests use this certified synthetic base,
+         * not an operator's private flagship model. Match the first fixture's
+         * existing opt-in retention contract. */
+        if (!getenv("CNET_KEEP_TEST_BASE")) remove("tmp_soul_host2.cnb");
     }
 
     printf("SOUL_HOST_UNIFIED_%s\n", failures ? "FAIL" : "PASS");

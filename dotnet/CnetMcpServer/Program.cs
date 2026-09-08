@@ -24,6 +24,7 @@ class Program
         string basePath = Environment.GetEnvironmentVariable("CNET_BASE_PATH")
             ?? "/home/marble/AI/CNET/soul_gemma4v2_final.cnb";
         var tools = new CnetTools(basePath);
+        using var safeWeb = SafeWebTools.FromEnvironment();
 
         // The toolGate serializes access to the native SoulHost / registry,
         // which is single-threaded state. Only operations that actually
@@ -394,6 +395,28 @@ class Program
                                         },
                                         required = new[] { "query" }
                                     }
+                                },
+                                new
+                                {
+                                    name = "cnet_safe_wiki_search",
+                                    description = "Opt-in read-only Wikipedia search. Bounded untrusted cited evidence; never certified knowledge. Server host/IP policy is mandatory.",
+                                    inputSchema = (object)new
+                                    {
+                                        type = "object", additionalProperties = false,
+                                        properties = new { query = new { type = "string", minLength = 1, maxLength = 200 } },
+                                        required = new[] { "query" }
+                                    }
+                                },
+                                new
+                                {
+                                    name = "cnet_safe_web_read",
+                                    description = "Opt-in single-page HTTPS GET from an exact approved public host. No redirects, scripts, recursive crawling, authentication or writes. Untrusted cited evidence only.",
+                                    inputSchema = (object)new
+                                    {
+                                        type = "object", additionalProperties = false,
+                                        properties = new { url = new { type = "string", minLength = 1, maxLength = 2048 } },
+                                        required = new[] { "url" }
+                                    }
                                 }
                             }
                         }
@@ -433,6 +456,18 @@ class Program
                         if (!isNotification)
                             await WriteError(writer, writerGate, idElement, -32602,
                                 "Invalid params: arguments must be an object");
+                        continue;
+                    }
+
+                    if (toolName is "cnet_safe_wiki_search" or "cnet_safe_web_read")
+                    {
+                        // Tools/call is a request, not a fire-and-forget action.
+                        // No native registry lock and no unbounded Task.Run queue:
+                        // CallAsync takes a non-waiting concurrency permit before
+                        // its first network await; excess calls return busy.
+                        if (isNotification) continue;
+                        pendingOperations.Add(WriteSafeRead(safeWeb, toolName,
+                            toolArgs.Clone(), idElement.Clone(), writer, writerGate, jsonOpts));
                         continue;
                     }
 
@@ -604,6 +639,25 @@ class Program
             }
             operations.RemoveAt(index);
         }
+    }
+
+    static async Task WriteSafeRead(SafeWebTools safeWeb, string tool,
+        JsonElement arguments, JsonElement id, StreamWriter writer,
+        SemaphoreSlim writerGate, JsonSerializerOptions jsonOptions)
+    {
+        object result;
+        try { result = await safeWeb.CallAsync(tool, arguments); }
+        catch (Exception)
+        {
+            // Never log query/page content or silently lose an async request.
+            Console.Error.WriteLine("[CNET MCP] safe_read_failed code=internal_error");
+            await WriteError(writer, writerGate, id, -32603, "Safe read failed");
+            return;
+        }
+        await WriteFrame(writer, writerGate, JsonSerializer.Serialize(new
+        {
+            jsonrpc = "2.0", id, result
+        }, jsonOptions));
     }
 
     /// <summary>

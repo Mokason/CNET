@@ -19,16 +19,21 @@
 #include "../include/cnet_mcp_client.h"
 
 static int fails;
-static int shorten_next_write;
+static int shorten_next_send;
+static int break_next_send;
 
-ssize_t __real_write(int fd, const void *buf, size_t count);
+ssize_t __real_send(int fd, const void *buf, size_t count, int flags);
 
-ssize_t __wrap_write(int fd, const void *buf, size_t count) {
-    if (shorten_next_write && count > 8) {
-        shorten_next_write = 0;
+ssize_t __wrap_send(int fd, const void *buf, size_t count, int flags) {
+    if (break_next_send) {
+        break_next_send = 0;
+        if (shutdown(fd, SHUT_WR)) _exit(31);
+    }
+    if (shorten_next_send && count > 8) {
+        shorten_next_send = 0;
         count = 8;
     }
-    return __real_write(fd, buf, count);
+    return __real_send(fd, buf, count, flags);
 }
 
 static void check(int ok, const char *name) {
@@ -147,13 +152,33 @@ int main(void) {
     if (child == 0) partial_write_server(listener);
     if (child > 0) {
         int result;
-        shorten_next_write = 1;
+        shorten_next_send = 1;
         result = cnet_mcp_call("partial_write_probe", "{}",
                                answer, sizeof answer);
-        shorten_next_write = 0;
+        shorten_next_send = 0;
         check(result > 0 && strcmp(answer, "complete request") == 0,
               "short first write is completed before reading reply");
         check(finish_child(child), "server received the complete JSON-RPC request");
+    }
+    if (listener >= 0) close(listener);
+    unlink(socket_path);
+
+    listener = start_listener(socket_path);
+    check(listener >= 0, "create broken-pipe fake MCP server");
+    child = listener >= 0 ? fork() : -1;
+    check(child >= 0, "fork default-SIGPIPE MCP client");
+    if (child == 0) {
+        close(listener);
+        alarm(3);
+        signal(SIGPIPE, SIG_DFL);
+        break_next_send = 1;
+        int result = cnet_mcp_call("broken_pipe_probe", "{}", answer, sizeof answer);
+        _exit(result == 0 ? 0 : 30);
+    }
+    if (child > 0) {
+        int survived = finish_child(child);
+        check(survived, "closed peer returns refusal without process SIGPIPE");
+        if (!survived) puts("MCP_CLIENT_TRANSPORT_RED broken_pipe_kills_client");
     }
     if (listener >= 0) close(listener);
     unlink(socket_path);
@@ -184,6 +209,6 @@ int main(void) {
         printf("MCP_CLIENT_TRANSPORT_FAIL fails=%d\n", fails);
         return 1;
     }
-    printf("MCP_CLIENT_TRANSPORT_PASS full_write bounded_exchange\n");
+    printf("MCP_CLIENT_TRANSPORT_PASS full_write bounded_exchange sigpipe_refusal\n");
     return 0;
 }
