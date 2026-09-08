@@ -1,5 +1,13 @@
 # Current CNET checklist
 
+## Active: captured task inbox continuation
+
+- [ ] Bounded read-only grouped gaps with separate origin populations
+- [ ] Opt-in captured task dispatch after durable capture/deduplication
+- [ ] Read-only linkage inspection without raw-text export or inferred eligibility
+- [ ] Actual native rehearsal, ECC RED/GREEN/coverage and full regression
+- [ ] Boundary review, Graft freshness and operator documentation
+
 ## Completed source milestone: verified task core
 
 - [x] Durable deduplicated native observations with no automatic learning demand

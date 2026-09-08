@@ -1,5 +1,12 @@
 # Current CNET work plan
 
+## Active: captured task linkage and recurring gaps
+
+Follow [the September 9 continuation](../plans/cnet_capture_task_inbox_20260909.md):
+read-only grouped gaps, opt-in captured task dispatch, then bounded linked-history
+inspection. Test each slice before moving on. Existing live code, schemas,
+frozen soak and all genuine-evidence/gain gates remain unchanged.
+
 ## Completed source milestone; next extension
 
 The first [verified task-core milestone](../plans/cnet_verified_task_core_20260908.md)
