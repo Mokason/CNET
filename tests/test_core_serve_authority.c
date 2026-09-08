@@ -21,6 +21,10 @@ int main(void) {
     }
     float table[16];
     for (unsigned i = 0; i < 16; i++) table[i] = (float)i;
+    if (cnet_serve_save_lut(dir, "audit", "raw_table", table) == 0) {
+        puts("publisher accepted an invalid prior bank"); failed++;
+    }
+    if (unlink(path) != 0) return 2; /* remove only the deliberately malformed fixture */
     if (cnet_serve_save_lut(dir, "audit", "raw_table", table) != 0) return 2;
     cnet_serve_bank_load_dir(&bank, dir);
     cnet_serve_result(&bank, "audit 3", &result);

@@ -6,6 +6,10 @@ Decision history remains in [plans/](../plans/). Current documentation starts at
 
 ## Current experiment: chronological allocator evidence
 
+Current owner request: publish completed commits, prune only proven-merged branch
+refs, then repair the Discord 24/24 legacy brick-bank failure. Ordered contract:
+[brick capacity repair](../plans/cnet_brick_capacity_20260908.md).
+
 The owner approved the full [capture evidence/operations sequence](../plans/cnet_capture_evidence_20260908.md):
 versioned native mapping and independent labels, immutable episode exports,
 local health alerts/legacy privacy repair, then evidence-gated qualification.

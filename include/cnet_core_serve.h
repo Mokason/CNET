@@ -14,7 +14,8 @@
 extern "C" {
 #endif
 
-#define CNET_SERVE_MAX_BRICKS 24
+/* Keep aligned with the factory bank; changing this requires a full rebuild. */
+#define CNET_SERVE_MAX_BRICKS 256
 #define CNET_SERVE_TAG 32
 #define CNET_SERVE_NAME 64
 #define CNET_SERVE_TEXT 256
@@ -48,7 +49,11 @@ typedef struct {
 
 void cnet_serve_bank_init(CnetServeBank *b);
 int cnet_serve_bank_load_dir(CnetServeBank *b, const char *dir);
-int cnet_serve_bank_reload(CnetServeBank *b); /* re-read dir */
+/* Single-owner reload: publish a complete snapshot or retain the previous bank. */
+int cnet_serve_bank_reload(CnetServeBank *b);
+/* POSIX publisher: serialize cooperating writers, enforce capacity, atomically
+ * replace complete valid tables. A directory fsync failure may follow publish.
+ * Windows refuses with ENOSYS until an equivalent atomic publisher is available. */
 int cnet_serve_save_lut(const char *dir, const char *tag, const char *name,
                         const float lut[16]);
 int cnet_serve_result(CnetServeBank *b, const char *turn, CnetServeResult *out);

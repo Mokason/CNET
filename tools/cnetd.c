@@ -3871,7 +3871,9 @@ int main(int argc, char **argv) {
         return 1;
     }
     if (cnet_serve_global_load_env() == 0)
-        fprintf(stderr, "cnetd: core serve bricks loaded\n");
+        fprintf(stderr, "{\"event\":\"brick_bank_loaded\",\"count\":%d,"
+                        "\"capacity\":%d,\"certified\":0}\n",
+                cnet_serve_global()->n, CNET_SERVE_MAX_BRICKS);
     curl_global_init(CURL_GLOBAL_DEFAULT);
 
     if (!foreground) {

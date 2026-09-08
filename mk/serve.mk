@@ -1,5 +1,25 @@
 # Fast, model-free serving boundary gates.
 
+.PHONY: core_brick_capacity
+core_brick_capacity: tests/test_core_brick_capacity.c include/cnet_core_bus.h \
+        include/cnet_core_serve.h src/serve/cnet_core_serve.c src/serve/cnet_core_bus.c \
+        src/cnet_weight_convert.c src/router/registry.c $(CCE_GGUF)
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -ffunction-sections -fdata-sections -Iinclude \
+		-o $(BIN_DIR)/test_core_brick_capacity tests/test_core_brick_capacity.c \
+		src/serve/cnet_core_serve.c src/serve/cnet_core_bus.c src/cnet_weight_convert.c \
+		src/router/registry.c $(CCE_GGUF) $(LDFLAGS) -Wl,--gc-sections
+	@$(BIN_DIR)/test_core_brick_capacity | tee logs/core_brick_capacity.log
+	@grep -q '^BRICK_CAPACITY_PASS' logs/core_brick_capacity.log
+
+.PHONY: cnetd_brick_capacity
+cnetd_brick_capacity: cnetd tests/test_cnetd_brick_capacity.py
+	CNETD_BIN=$(BIN_DIR)/cnetd $(PYTHON) tests/test_cnetd_brick_capacity.py -v
+
+.PHONY: core_evolve_brick_capacity
+core_evolve_brick_capacity: cnet_core_evolve tests/test_core_evolve_brick_capacity.py
+	CNET_EVOLVE_BIN=$(BIN_DIR)/cnet_core_evolve $(PYTHON) tests/test_core_evolve_brick_capacity.py -v
+
 .PHONY: core_bus_untagged
 core_bus_untagged: tests/test_core_bus_untagged.c src/serve/cnet_core_bus.c \
 		include/cnet_core_bus.h

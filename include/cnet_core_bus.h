@@ -33,7 +33,8 @@ extern "C" {
 
 #define CNET_CORE_BUS_NAME 64
 #define CNET_CORE_BUS_TEXT 768
-#define CNET_CORE_BUS_MAX_BRICKS 24
+/* Bounded storage, not a certification floor; rebuild consumers on change. */
+#define CNET_CORE_BUS_MAX_BRICKS 256
 
 typedef enum {
     CNET_CORE_BUS_IDLE = 0,

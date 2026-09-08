@@ -251,6 +251,14 @@ int cnet_core_bus_park_brick(CnetCoreBus *b, const char *domain_tag) {
         return -1;
     if (b->wo.bound || b->wo.lease != 0) return -1;
     if (b->n_bricks >= CNET_CORE_BUS_MAX_BRICKS) return -1;
+    /* Persist before moving any student/registry ownership. A refused publish
+     * must reach the factory caller, with the pending student intact. */
+    {
+        const char *dir = getenv("CNET_CORE_BUS_BRICKS_DIR");
+        const char *tag = domain_tag && domain_tag[0] ? domain_tag : b->domain_tag;
+        if (dir && dir[0] && cnet_serve_save_lut(dir, tag, b->name, b->lut_table) != 0)
+            return -1;
+    }
     br = &b->bricks[b->n_bricks];
     memset(br, 0, sizeof *br);
     copy_text(br->name, sizeof br->name, b->name);
@@ -275,11 +283,6 @@ int cnet_core_bus_park_brick(CnetCoreBus *b, const char *domain_tag) {
     br->specialist.name = br->name;
     br->live = 1;
     br->certified = 1;
-    {
-        const char *dir = getenv("CNET_CORE_BUS_BRICKS_DIR");
-        if (dir && dir[0])
-            (void)cnet_serve_save_lut(dir, br->domain_tag, br->name, br->lut_table);
-    }
     memset(&b->student, 0, sizeof b->student);
     memset(&b->reg, 0, sizeof b->reg);
     registry_init(&b->reg);

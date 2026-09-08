@@ -1,4 +1,4 @@
-/* A CERT brick must never answer a turn it was not addressed by.
+/* A raw table must never answer a turn it was not addressed by.
  *
  * RED marker: CORE_SERVE_UNTAGGED_RED
  *
@@ -52,7 +52,7 @@ static void add_brick(CnetServeBank *b, const char *tag, const char *name,
     memset(br, 0, sizeof *br);
     snprintf(br->tag, sizeof br->tag, "%s", tag);
     snprintf(br->name, sizeof br->name, "%s", name);
-    for (i = 0; i < 16; ++i) br->lut[i] = base + (float)i;
+    for (i = 0; i < 16; ++i) br->lut[i] = (float)(((unsigned)base + (unsigned)i) & 15u);
     br->live = 1;
 }
 
@@ -61,7 +61,7 @@ int main(void) {
     CnetServeResult r;
     char det[160];
 
-    printf("=== CERT brick must not answer an unaddressed turn ===\n");
+    printf("=== Raw table selection never grants certification ===\n");
 
     cnet_serve_bank_init(&b);
     /* Two bricks so "first in the bank" is a real, arbitrary choice. */
@@ -73,13 +73,15 @@ int main(void) {
     cnet_serve_result(&b, "alpha 3", &r);
     snprintf(det, sizeof det, "proved=%d brick=%s out=%u", r.proved, r.brick,
              r.out_nibble);
-    check(r.proved == 1 && strcmp(r.brick, "alpha_v1") == 0,
-          "addressed turn 'alpha 3' still proves", det);
+    check(r.proved == 0 && r.claimed_cert == 0 && !r.abstained && r.out_nibble == 7 &&
+          strcmp(r.brick, "alpha_v1") == 0,
+          "addressed alpha calculates without certification", det);
 
     memset(&r, 0, sizeof r);
     cnet_serve_result(&b, "beta 3", &r);
     snprintf(det, sizeof det, "proved=%d brick=%s", r.proved, r.brick);
-    check(r.proved == 1 && strcmp(r.brick, "beta_v1") == 0,
+    check(r.proved == 0 && r.claimed_cert == 0 && !r.abstained && r.out_nibble == 11 &&
+          strcmp(r.brick, "beta_v1") == 0,
           "addressed turn 'beta 3' picks beta not alpha", det);
 
     /* A tag that matches nothing must abstain -- this already worked. */

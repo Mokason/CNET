@@ -2,6 +2,15 @@
 
 Evidence, scope and dependencies: [plan.md](plan.md).
 
+## Discord brick-capacity repair
+
+- [x] Publish 24 completed commits to origin/master, preserving dirty local data
+- [x] Remove 8 local and 14 remote merged refs with expected-tip guards
+- [x] Read owner-DM diagnostic and corroborate the actual 24-file capacity failure
+- [x] RED boundary/reload/publication/factory tests and bounded 256-entry repair
+- [ ] Regression, isolated deployment verification and documented rollback
+- [ ] Source/result publication and owner-visible handoff
+
 ## Current chronological allocator experiment
 
 - [x] Bounded metadata audit and independent legacy-source eligibility review

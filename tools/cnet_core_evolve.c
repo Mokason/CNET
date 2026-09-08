@@ -27,7 +27,7 @@
 
 static int count_luts(const char *dir) {
     CnetServeBank b;
-    if (cnet_serve_bank_load_dir(&b, dir) != 0) return 0;
+    if (cnet_serve_bank_load_dir(&b, dir) != 0) return -1;
     return b.n;
 }
 
@@ -71,6 +71,10 @@ int main(int argc, char **argv) {
            dirn.allow_goals, dirn.max_new_per_tick);
 
     n0 = count_luts(dir);
+    if (n0 < 0) {
+        fprintf(stderr, "BRICK_BANK_INVALID stage=before capacity=%d\n", CNET_SERVE_MAX_BRICKS);
+        return 1;
+    }
     cnet_core_bus_init(&bus);
     setenv("CNET_CORE_BUS_BRICKS_DIR", dir, 1);
 
@@ -316,6 +320,10 @@ int main(int argc, char **argv) {
 
     cnet_core_bus_free(&bus);
     n1 = count_luts(dir);
+    if (n1 < 0) {
+        fprintf(stderr, "BRICK_BANK_INVALID stage=after capacity=%d\n", CNET_SERVE_MAX_BRICKS);
+        return 1;
+    }
     printf("CNET_CORE_EVOLVE_OK luts_before=%d luts_after=%d did=%d "
            "direction=%s\n",
            n0, n1, did, dirn.loaded_from);
