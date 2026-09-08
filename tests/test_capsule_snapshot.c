@@ -5,15 +5,24 @@
 #include <dlfcn.h>
 #include <fcntl.h>
 
+static int validator_calls;
+static int reject_snapshot(int fd,void *context) {
+    struct stat st;validator_calls++;
+    return fstat(fd,&st)||!S_ISDIR(st.st_mode)||!context?-1:*(int *)context;
+}
+
 int main(void) {
     const char *library=getenv("CNET_TEST_CORE_LIBRARY");
     void *lib=dlopen(library?library:"bin/libcnet_capsule_core.so",RTLD_NOW|RTLD_LOCAL);
     int (*snapshot)(int,int,const char *,char [65],size_t *);
     int (*verify)(int,const char *,size_t *);
+    int (*selected)(int,int,const char *const *,size_t,int (*)(int,void *),void *,char [65],size_t *);
     if(!lib){puts("CAPSULE_SNAPSHOT_RED missing_runtime");return 1;}
     *(void **)(&snapshot)=dlsym(lib,"cnet_capsule_snapshot_create");
     *(void **)(&verify)=dlsym(lib,"cnet_capsule_snapshot_verify");
+    *(void **)(&selected)=dlsym(lib,"cnet_capsule_snapshot_selected");
     if(!snapshot||!verify){puts("CAPSULE_SNAPSHOT_RED missing_secure_acquisition");return 1;}
+    if(!selected){puts("CAPSULE_SNAPSHOT_RED missing_validated_subset");return 1;}
     char root[]="/tmp/cnet-snapshot-XXXXXX",source[256],dest[256],unit[300];
     if(!mkdtemp(root))return 2;
     snprintf(source,sizeof source,"%s/source",root);snprintf(dest,sizeof dest,"%s/snapshots",root);
@@ -24,6 +33,32 @@ int main(void) {
     check(!chmod(unit,0700),"owner seals source directory permissions");
     int src=open(source,O_RDONLY|O_DIRECTORY),dst=open(dest,O_RDONLY|O_DIRECTORY);
     char digest[65]={0},again[65]={0};size_t bytes=0;
+    const char *names[]={"offset"},*bad[]={"../offset"},*duplicate[]={"offset","offset"},*absent[]={"absent"};
+    int validation=-1;
+    check(selected(src,dst,names,1,reject_snapshot,&validation,again,&bytes)!=0&&!again[0]&&validator_calls==1,
+          "validator rejects before any digest publication");
+    struct dirent **published=NULL;int published_count=scandir(dest,&published,NULL,alphasort);
+    check(published_count==2,"rejected subset leaves no published or temporary inventory");
+    for(int i=0;i<published_count;i++)free(published[i]);free(published);
+    validation=0;
+    check(!selected(src,dst,names,1,reject_snapshot,&validation,digest,&bytes)&&validator_calls==2,
+          "selected publication runs staged validation");
+    validation=-1;
+    check(selected(src,dst,names,1,reject_snapshot,&validation,again,&bytes)!=0&&!again[0],
+          "existing digest does not bypass staged validation");
+    validation=0;
+    check(selected(src,dst,names,0,reject_snapshot,&validation,again,&bytes)!=0,
+          "empty selection refuses");
+    check(selected(src,dst,names,9,reject_snapshot,&validation,again,&bytes)!=0,
+          "selection above route bound refuses before dereferencing entries");
+    check(selected(src,dst,bad,1,reject_snapshot,&validation,again,&bytes)!=0,
+          "selection traversal refuses");
+    check(selected(src,dst,duplicate,2,reject_snapshot,&validation,again,&bytes)!=0,
+          "duplicate selection refuses");
+    check(selected(src,dst,absent,1,reject_snapshot,&validation,again,&bytes)!=0,
+          "missing selected member refuses");
+    check(selected(src,dst,names,1,NULL,NULL,again,&bytes)!=0,
+          "selected export requires semantic validator");
     check(src>=0&&dst>=0&&!snapshot(src,dst,NULL,digest,&bytes)&&bytes>0,"copy complete inventory through pinned descriptors");
     check(!snapshot(src,dst,NULL,again,&bytes)&&!strcmp(digest,again),"identical source resolves exact immutable identity");
     char payload[350],linkpath[350];snprintf(payload,sizeof payload,"%s/unit.cnb",unit);
