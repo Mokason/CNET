@@ -19,6 +19,74 @@ public sealed class LearningUnicodeWorkloadTests : IClassFixture<LearningCommand
     private static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
 
     [Fact]
+    public async Task ThreeTruthfulSourceStagesReplaceTwoTablesWhileSymbolicCapsulesRemainVerified()
+    {
+        var repository = LearningTestRepository.RequireBuilt(LearningCommandInstallation.NativeNames);
+        var corpus = Path.Combine(repository, "data/unicode17");
+        const string vocabulary = "ba3fe8b2440a6065c04e714136c1ff742e7e7ab772902ff4558fe3b2699b6984";
+        var ids = new[] { "unicode17_upper_latin1", "unicode17_lower_latin1", "ascii_category", "ascii_bidi" };
+        var datasets = string.Join(',', ids.Select(id => id.StartsWith("ascii_", StringComparison.Ordinal)
+            ? JsonSerializer.Serialize(new { id, authority = "verified_tool", symbol_vocabulary_sha256 = vocabulary })
+            : JsonSerializer.Serialize(new { id, authority = "verified_tool" })));
+        var policy = LearningPolicyTests.Valid.Replace("{\"id\":\"calibration\",\"authority\":\"verified_tool\"}", datasets)
+            .Replace("\"tick_seconds\":30", "\"tick_seconds\":1")
+            .Replace("\"attempts_per_hour\":4", "\"attempts_per_hour\":8");
+        using var deployment = installation.Deploy();
+        deployment.Put("policy.json", Encoding.UTF8.GetBytes(policy));
+        Assert.Equal(0, (await deployment.Command("initialize")).Code);
+        await deployment.StartDaemon();
+        ulong previousRevision = 0;
+        for (var stage = 0; stage < 3; stage++)
+        {
+            foreach (var id in stage == 0 ? ids : ids[..2])
+            {
+                var symbolic = id.StartsWith("ascii_", StringComparison.Ordinal);
+                var lines = File.ReadAllLines(Path.Combine(corpus, id + (symbolic ? ".symbols.tsv" : ".tsv")));
+                var rows = lines.Skip(6).Take(symbolic || stage == 2 ? 256 : stage == 0 ? 16 : 32).ToArray();
+                lines[5] = "rows " + rows.Length.ToString(CultureInfo.InvariantCulture);
+                var bytes = Encoding.ASCII.GetBytes(string.Join('\n', lines.Take(6).Concat(rows)) + "\n");
+                // Explicit synthetic operator refresh, not real elapsed observation.
+                deployment.Put("work/data/" + id + ".tsv", bytes);
+                var demand = rows[^1].Split('\t')[0];
+                var asked = await deployment.Command(symbolic ? "lookup" : "ask", id, demand);
+                Assert.True(asked.Code == 0, "UNICODE_SOAK_STAGES_RED demand: " + asked.Error);
+                using var answer = JsonDocument.Parse(asked.Output);
+                Assert.False(answer.RootElement.GetProperty("verified").GetBoolean());
+            }
+            var settled = false;
+            for (var attempt = 0; attempt < 60; attempt++)
+            {
+                var tick = await deployment.Command("tick");
+                Assert.True(tick.Code == 0, "UNICODE_SOAK_STAGES_RED tick: " + tick.Error);
+                var status = await deployment.Command("status");
+                Assert.Equal(0, status.Code);
+                using var value = JsonDocument.Parse(status.Output);
+                var row = value.RootElement;
+                Assert.True(row.GetProperty("jobs").GetInt32() <= 4 + 2 * stage, "UNICODE_SOAK_STAGES_RED unexpected retry");
+                settled = row.GetProperty("jobs").GetInt32() == 4 + 2 * stage
+                    && row.GetProperty("outstanding_state").ValueKind == JsonValueKind.Null
+                    && row.GetProperty("pending_intent").ValueKind == JsonValueKind.Null;
+                if (settled) break;
+                await Task.Delay(1000);
+            }
+            Assert.True(settled, "UNICODE_SOAK_STAGES_RED stage deadline");
+            ulong? revision = null;
+            foreach (var id in ids)
+            {
+                var verified = await deployment.Command("verify", id);
+                Assert.True(verified.Code == 0, "UNICODE_SOAK_STAGES_RED full verification: " + verified.Output + verified.Error);
+                output.WriteLine(verified.Output);
+                using var receipt = JsonDocument.Parse(verified.Output);
+                var current = receipt.RootElement.GetProperty("revision").GetUInt64();
+                revision ??= current;
+                Assert.Equal(revision.Value, current);
+            }
+            Assert.True(revision!.Value > previousRevision);
+            previousRevision = revision.Value;
+        }
+    }
+
+    [Fact]
     public async Task OfficialExplicitCaseChangesAreAcquiredAcceptedAndCoexistWithExactAbstention()
     {
         var repository = LearningTestRepository.RequireBuilt(LearningCommandInstallation.NativeNames);
