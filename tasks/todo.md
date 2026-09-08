@@ -8,8 +8,10 @@ Evidence, scope and dependencies: [plan.md](plan.md).
 - [x] Remove 8 local and 14 remote merged refs with expected-tip guards
 - [x] Read owner-DM diagnostic and corroborate the actual 24-file capacity failure
 - [x] RED boundary/reload/publication/factory tests and bounded 256-entry repair
-- [ ] Regression, isolated deployment verification and documented rollback
-- [ ] Source/result publication and owner-visible handoff
+- [x] Regression, real-bank rehearsal, live deployment and documented rollback
+- [x] Source/result publication and owner-visible handoff
+
+Evidence and rollback: [brick repair result](../result/discord_brick_capacity_20260908.md).
 
 ## Current chronological allocator experiment
 

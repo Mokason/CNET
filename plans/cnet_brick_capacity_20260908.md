@@ -1,5 +1,8 @@
 # Legacy brick capacity repair
 
+Completed repair and live rollout evidence:
+[2026-09-08 result](../result/discord_brick_capacity_20260908.md).
+
 The owner requested publishing completed work, pruning obsolete branches, then
 repairing Discord failed-brick diagnostics. Published 24 commits through 890860e;
 eight local unchecked-out and fourteen remote ancestor refs were removed with
