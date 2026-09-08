@@ -60,3 +60,14 @@ skipped under the owner's Astra-only preference. Keep the existing failed
 allocator floors intact. Grouped frequency is not measured learning value;
 true acquisition-cost estimation, origin review, chronological eligible
 trajectories, composition reuse and AMD task-policy experiments remain separate.
+
+## Completed source handoff
+
+All three slices are implemented through `4705a65`. The final checks passed
+961 managed and 148 Python tests, including a real bounded private native
+owner/capsule rehearsal. Graft's source graph is fresh; no deep/model pass was
+used. [Measured results](../result/cnet_capture_task_inbox_20260909.md) distinguish
+line coverage, synthetic rehearsal and source checks from genuine usage and
+useful-gain gates. The [operator contract](../docs/CAPTURE_TASK_INBOX.md) documents
+opt-in modes, exact snapshot semantics, the rollback-format reader and recovery.
+No live rollout, real capture mutation, migration or push occurred.

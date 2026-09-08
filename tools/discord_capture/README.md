@@ -9,6 +9,12 @@ routes four approved finite Unicode query forms to a separate bounded learner;
 it does not enable the learned allocator or grant authority to other channels.
 The [decision and sequence](../../plans/cnet_discord_capture_20260907.md) govern it.
 
+Source now also supports a separately pinned bridge schema-2 task-only mode,
+stable capture/task IDs and a read-only linked inbox. It is not deployed to the
+existing live bridge. See [captured tasks](../../docs/CAPTURE_TASK_INBOX.md) for
+opt-in semantics, no-fallback/refusal behavior, commands and evidence limits.
+Capture SQL and existing exports/origin review remain unchanged.
+
 ## Configuration
 
 Use the existing bot token and websocket-client environment. Qualification used

@@ -4,7 +4,8 @@ This is the first task-core milestone: a bounded natural-language proposal,
 one durable native observation, independent evidence, explicit local-owner
 approval, and the existing certified capsule learner. It is implemented and
 tested in a separate worktree, not deployed to the existing Discord bridge or
-the frozen Unicode soak. See [measured results](../result/cnet_verified_task_core_20260908.md).
+the frozen Unicode soak. See [first-milestone results](../result/cnet_verified_task_core_20260908.md)
+and the [captured-task continuation](CAPTURE_TASK_INBOX.md).
 
 The initial task is Unicode 17 explicit simple case changes for Latin-1 input
 codepoints. A grammar proposes an operation and input; it never calculates the
@@ -132,7 +133,8 @@ new native attempt, including for pending and unknown records.
 `learning observe ROOT DATASET BYTE ORIGIN REQUEST_ID` provides the typed
 numeric equivalent of `task`. Both record observations without automatic
 demand. Legacy `ask`/`lookup` remain explicitly demand-producing operations;
-the current Discord adapter still uses those legacy commands.
+the deployed version-1 Discord adapter still uses those legacy commands. The
+new opt-in version-2 task route is documented in [captured tasks](CAPTURE_TASK_INBOX.md).
 
 `learning inbox ROOT AFTER_SEQUENCE PAGE_SIZE` reads chronological observations
 and approval state without changing the database or advancing its heartbeat.
@@ -140,7 +142,9 @@ Pages contain 1–100 records and provide `next_after`. Request start, finish an
 approval retain boot IDs and BOOTTIME timestamps; sequence is insertion order,
 not proof that concurrent operations finished in that order. Raw conversation
 text is not stored in this ledger. Current inbox output is a bounded CLI list,
-not a cost estimator, grouped-gap UI or a complete chronological task-event log.
+not a cost estimator or a complete chronological task-event log. Separate
+`gaps` and `trace` commands now provide grouped review and exact bounded linkage;
+see [their snapshot and evidence limits](CAPTURE_TASK_INBOX.md#read-only-commands).
 
 There are 4,096 retained identities per installation, with no eviction or
 automatic reset. Pending tombstones remain non-retryable at capacity. Admission
@@ -159,7 +163,7 @@ separate update/revalidation protocol exists.
 
 The concrete next slices and unchanged empirical gates are in
 [the plan](../plans/cnet_verified_task_core_20260908.md). Still required: reviewed
-real capture linkage and origin, useful reusable compositions in the existing
+live rollout and real origin review of captured tasks, useful reusable compositions in the existing
 capsule system, dependency-aware freshness, and independently evaluated AMD
 selection/clarification/composition/abstention candidates. No useful-gain floor
 was lowered, no synthetic request was called real usage, and no learned

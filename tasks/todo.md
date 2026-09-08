@@ -1,12 +1,13 @@
 # Current CNET checklist
 
-## Active: captured task inbox continuation
+## Completed source: captured task inbox continuation
 
-- [ ] Bounded read-only grouped gaps with separate origin populations
-- [ ] Opt-in captured task dispatch after durable capture/deduplication
-- [ ] Read-only linkage inspection without raw-text export or inferred eligibility
-- [ ] Actual native rehearsal, ECC RED/GREEN/coverage and full regression
-- [ ] Boundary review, Graft freshness and operator documentation
+- [x] Bounded read-only grouped gaps with separate origin populations
+- [x] Opt-in captured task dispatch after durable capture/deduplication
+- [x] Read-only linkage inspection without raw-text export or inferred eligibility
+- [x] Actual native rehearsal and ECC RED/GREEN checkpoints
+- [x] Final coverage/regression and Graft freshness handoff
+- [x] Boundary review and operator documentation
 
 ## Completed source milestone: verified task core
 
@@ -20,7 +21,7 @@
 
 ## Remaining: task-core roadmap
 
-- [ ] Reviewed real-capture linkage, grouped gaps/source proposals and measured costs
+- [ ] Genuine origin review, proposed-source UX and measured learning costs
 - [ ] Independently frozen paraphrase/OOD evaluation and broader semantic proposer
 - [ ] Useful reusable multi-step compositions using existing capsule contracts
 - [ ] Dependency-aware freshness/conflict arbitration and staged source replacement
@@ -29,7 +30,7 @@
 - [ ] Reviewed schema migration and owner-DM rollout; current services unchanged
 
 Dependencies and evidence: [plan.md](plan.md). Current source handoff:
-[verified task core](../result/cnet_verified_task_core_20260908.md). Previous live
+[captured task inbox](../result/cnet_capture_task_inbox_20260909.md). Previous live
 handoff: [verified learning ingress](../result/cnet_verified_learning_ingress_20260908.md).
 
 ## Completed: verified learning ingress
@@ -57,8 +58,9 @@ handoff: [verified learning ingress](../result/cnet_verified_learning_ingress_20
 - [ ] Useful allocator gate: >=.05 gain, positive paired 95% lower, nonnegative family means
 - [ ] Broader unattended product acceptance; finite Unicode soak alone is insufficient
 
-Current real export: nine requests, zero verified mappings, zero eligible
-episodes. Allocator remains disabled. Newly added Unicode verification is
+Last reported immutable real export (September 8): nine requests, zero verified
+mappings, zero eligible episodes; it was not refreshed during the task-inbox
+implementation. Allocator remains disabled. Deployed Unicode verification is
 operational, but no captured request in that export uses an eligible mapping.
 Origin review was requested; no owner attestation has been inferred.
 

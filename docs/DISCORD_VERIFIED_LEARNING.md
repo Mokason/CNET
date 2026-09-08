@@ -9,6 +9,8 @@ is a different installation and must never be used as the bridge's target.
 The newer [natural-language task/approval CLI](VERIFIED_TASK_CORE.md) is a
 separate source milestone. It has not replaced these deployed exact-command
 forms or migrated this installation's ledger.
+Its [schema-2 captured-task extension](CAPTURE_TASK_INBOX.md) is a separate,
+not-yet-deployed opt-in; this guide retains the deployed schema-1 semantics.
 
 ## Requests and answers
 

@@ -1,10 +1,11 @@
 # Current CNET work plan
 
-## Active: captured task linkage and recurring gaps
+## Source complete: captured task linkage and recurring gaps
 
 Follow [the September 9 continuation](../plans/cnet_capture_task_inbox_20260909.md):
-read-only grouped gaps, opt-in captured task dispatch, then bounded linked-history
-inspection. Test each slice before moving on. Existing live code, schemas,
+read-only grouped gaps, opt-in captured task dispatch and bounded linked-history
+inspection now have native regression coverage. See [the operator contract](../docs/CAPTURE_TASK_INBOX.md)
+and [measured handoff](../result/cnet_capture_task_inbox_20260909.md). Existing live code, schemas,
 frozen soak and all genuine-evidence/gain gates remain unchanged.
 
 ## Completed source milestone; next extension
@@ -17,9 +18,10 @@ See [measured results](../result/cnet_verified_task_core_20260908.md): 956 manag
 and 127 capture/bridge tests. Source lives on `feature/verified-task-core-20260908`;
 it is not a migration or deployment of the existing live installations.
 
-Next: reviewed real-capture linkage and grouped gaps/costs, independently frozen
+Next: independently frozen
 paraphrase evaluation, useful certified composition reuse, dependency-aware
-freshness, then measured AMD task-selection candidates. The concrete gate
+freshness, then measured AMD task-selection candidates. Measured learning costs,
+real origin review and a separate captured-task rollout remain open. The concrete gate
 sequence is in the task-core plan. ECC TDD/verification and Graft discovery were
 tested without replacing the existing agent configuration. Previous live and
 empirical gates below remain unchanged.
