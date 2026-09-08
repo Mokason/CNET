@@ -1,136 +1,86 @@
 # Current CNET work plan
 
-This file is the current task queue, not a replay of old implementation steps.
-Decision history remains in [plans/](../plans/). Current documentation starts at
-[docs/INDEX.md](../docs/INDEX.md).
+Current contract: [verified learning ingress](../plans/cnet_verified_learning_ingress_20260908.md).
+Latest implementation and deployment: [measured handoff](../result/cnet_verified_learning_ingress_20260908.md).
+Documentation starts at [docs/INDEX.md](../docs/INDEX.md). Dated plans/results
+preserve earlier decisions and failed experiments; their old checkboxes are not
+the current queue.
 
-## Active: verified learning ingress and measured remaining gates
+## Implemented and deployed in this continuation
 
-The owner requested all remaining tasks, with the 72-hour run in the background.
-The [current contract](../plans/cnet_verified_learning_ingress_20260908.md)
-orders independent Unicode query evidence, owner-only Discord routing, a separate
-bounded learning installation, native rehearsal/deployment, current capture
-qualification and checklist reconciliation. The already frozen 72-hour run is
-not a deployment target. Actual elapsed acceptance, reviewed genuine demand and
-useful allocator gain remain measured prerequisites, never source checkboxes.
+The owner-only Discord DM now routes four exact approved Unicode query forms to
+a separate private bounded learner. Capture and deduplication precede one ask;
+source/runtime/policy identity, original-budget admission, native certification
+and independent external-label agreement precede a verified reply. Misses
+abstain and record demand. Malformed/failed answers latch and attempt pause.
+There is no arbitrary command, source import or learned allocator activation.
 
-The sections below preserve earlier source/deployment context until the final
-reconciliation; their old "current request" wording does not supersede this one.
+The gateway, capture monitor and watchdog use frozen source `0cb6691`.
+The separate learning owner began September 8 at 21:37:00 EEST with an immutable
+seven-day budget. Main CNET/MCP services and the frozen soak were not restarted.
+The capture source/segment change is explicitly recorded; old history remains.
 
-## Current experiment: chronological allocator evidence
+Independent evidence now supports the four exact Unicode forms in addition to
+the existing two arithmetic rules. Old receipt semantics remain unchanged.
+Extended-catalog windows stay whole and unscored until an appropriate native
+trajectory protocol exists. Source labels alone do not prove served outcomes,
+representative demand, allocator headroom or fresh confirmation.
 
-Active September 8 continuation: [retrieval, alerts, safe MCP and verified
-learning rollout](../plans/cnet_live_completion_20260908.md). The owner approved
-this ordered implementation/deployment sequence. Work starts at pushed master
-`2bfa1d8`; preserve the dirty primary checkout and all live data. Earlier source
-implementation checklists below are historical, not evidence of elapsed product
-acceptance. Identity/presence repair is deployed and published. Recall, repeatable
-alerts and safe MCP reads are now deployed and verified through the actual peer
-and owner-only Discord diagnostic. The independent Unicode workloads and
-three-stage capsule refresh gate pass. The bounded monitor's actual SIGKILL
-rehearsal stops acquisition safely. A separately frozen long run started at
-19:53:03 EEST on September 8; its initial four-capsule full sweep passed. Real
-elapsed acceptance and useful learned allocator gains remain WITHHELD.
+## Background work: do not restart or modify
 
-Completed source task: [bounded MCP read brick](../plans/cnet_mcp_read_brick_20260908.md).
-Certified finite dispatch, opt-in MCP Wikipedia/web reads, strict evidence and
-end-to-end refusal tests are implemented. [Measured result](../result/cnet_mcp_read_brick_20260908.md):
-131 managed tests pass, native safety/regression gates pass, actual Wikipedia
-retrieval passes. Live rollout and recursive crawling are separate scope.
+The frozen Unicode soak started September 8 at 19:53:03 EEST; its first complete
+sweep was at 19:54:05. Its own observer controls the approved 24/48-hour source
+stages and terminal evidence. Expected terminal assessment is approximately
+September 11 at 20:04 EEST, conditional on actual elapsed time and every gate.
 
-Current owner request: publish completed commits, prune only proven-merged branch
-refs, then repair the Discord 24/24 legacy brick-bank failure. Ordered contract:
-[brick capacity repair](../plans/cnet_brick_capacity_20260908.md).
+Use [the frozen-soak runbook](../docs/UNICODE_LEARNING_SOAK.md). Do not inject
+demand, change policy/source/code, reset budgets, restart it or mistake capture
+uptime for learning acceptance. Even a passing finite Unicode soak leaves
+broader product acceptance and allocator gain WITHHELD.
 
-The owner approved the full [capture evidence/operations sequence](../plans/cnet_capture_evidence_20260908.md):
-versioned native mapping and independent labels, immutable episode exports,
-local health alerts/legacy privacy repair, then evidence-gated qualification.
-Real elapsed observation and independent demand cannot be simulated to finish it.
+## Remaining dependency-ordered work
 
-The pipeline is implemented and deployed as frozen capture release `345ac81`.
-Independent native mapping, immutable exports, rechecked development controls,
-private legacy permissions, heartbeat monitoring and desktop alerts are operational.
-The [measured handoff](../result/cnet_capture_evidence_20260908.md) records 66 tests,
-512 native fixture pairs and the real export: four requests, zero eligible windows.
-Real observation is running; useful gain, broader verified task coverage and
-72-hour unattended learning acceptance remain WITHHELD.
+1. Obtain genuinely reviewed, mapped, continuous whole demand windows.
+   The latest immutable export has nine requests, zero verified mappings and
+   zero eligible episodes. Owner origin review was requested but not supplied;
+   review alone cannot fix unmapped inputs or historical continuity gaps.
+2. Establish eligible native chronological development trajectories and
+   task-specific returns for all four allocator campaign families. Four Unicode
+   datasets are not those four campaign families. The direct arithmetic
+   prospective bound and new Unicode labels are not this native evidence.
+3. Demonstrate attainable >=.05 absolute useful headroom against the strongest
+   equally budgeted controls before fitting. Preserve all failed/exposed
+   experiments and exclusions.
+4. Only after those prerequisites, freeze selection and fresh confirmation,
+   run bounded AMD fitting and require >=.05 gain, positive paired 95% lower
+   bound and no negative family mean. Keep the allocator off until approval.
+5. Reassess broader unattended product acceptance using the real-duration
+   result plus adequate genuine demand and independently measured useful gain.
 
-The owner requested the new chronological experiment after dual-AMD worker
-qualification. Its [ordered contract](../plans/cnet_chronological_allocator_20260907.md)
-starts at `9e74a7e`. The bounded legacy audit and independent source review are
-complete; existing mixed/censored logs do not qualify. The owner approved the
-existing Discord bridge's owner-only private DM capture, then development
-headroom, bounded training and fresh confirmation. The scoped capture and
-bridge-only rollout contract is [here](../plans/cnet_discord_capture_20260907.md).
-Capture is now live; its [rollout evidence](../result/cnet_discord_capture_20260907.md)
-records an initially empty stream. Genuine requests and independent mappings/
-verification must precede development scoring; no automatic fitting is scheduled.
-See [measured readiness results](../result/cnet_chronological_allocator_20260907.md).
+These are unfinished empirical/product tasks, not completed by a source commit
+or synthetic test. No genuine episode, origin attestation or gain is invented
+to close the queue. The approved bridge is a usable finite-table path; arbitrary
+new domains, web-prose truth and unrestricted MCP-driven learning are not exposed.
 
-## Active: unattended learning and measured core improvement
+## Completed source and operational history
 
-The owner authorized all six proposed stages. The implementation contract is
-[policy-bounded unattended learning](../plans/cnet_autonomous_learning_20260906.md),
-starting at `f805be8` on `feature/autonomous-learning-20260906` in its own worktree.
-The 72-hour acceptance requires real elapsed observation after source freeze;
-starting it or simulating ticks does not complete it. All new behavior is opt-in
-and tested against private deployments, without replacing existing services.
+- Strict private owner policy; durable demand/budget/intents; confined local
+  table workers; independent evaluation; automatic canonical capsule activation;
+  probation/rollback/operator controls; CLI/runtime pins/original run heartbeat:
+  [learning evidence](../result/cnet_autonomous_learning_20260906.md).
+- AMD FP32 training, immutable checkpoints, direct capsule conversion, guarded
+  activation and isolated dual-device workers:
+  [GPU product sequence](../result/cnet_gpu_product_sequence_20260906.md).
+  Worker numerical success is not an allocator useful-gain pass.
+- SQLite/source/package/lifecycle/security repairs and bounded source gates:
+  [product closure](../result/cnet_product_closure_20260906.md).
+- Deployed Discord capacity, identity/presence, recall, repeated alerts and safe
+  MCP reads: [live completion](../result/cnet_live_completion_20260908.md).
+- Immutable capture/export, independent arithmetic labels, privacy and alerts:
+  [capture evidence](../result/cnet_capture_evidence_20260908.md).
+- Documentation rewrite and recoverable retirement:
+  [cleanup evidence](../result/documentation_cleanup_20260906.md).
 
-## Completed product source checkpoint
-
-The owner authorized all remaining product and documentation-exposed code work.
-The ordered acceptance/verification contract is
-[product closure](../plans/cnet_product_closure_20260906.md), starting from
-`7c24204` in the private `feature/product-closure-20260906` worktree.
-SQLite and native workflow repair are independent; lifecycle, daemon control,
-persistence, evidence assets and integrated proof are sequential. Live rollout
-still requires an explicit target/configuration approval.
-
-## Completed bounded source work
-
-The September 6 GPU product sequence implements resident AMD FP32 training,
-immutable snapshots, a bounded shared-cell selector, canonical core candidates,
-direct fitted-weight BTN/capsule conversion, guarded in-memory activation with
-request pinning/rollback, and isolated two-device workers. Fresh source and
-capability gates passed at the recorded checkpoint. This is not a live rollout.
-
-Evidence and limitations:
-[result report](../result/cnet_gpu_product_sequence_20260906.md),
-[execution ledger](../plans/cnet_gpu_product_execution_20260906.md).
-
-## Completed documentation maintenance
-
-Rewrote 96 existing guides and added four current references; retired 47
-superseded files into a verified archive while preserving 366 original
-Markdown/text inputs and records. Two links in one historical spec changed.
-Native regression and bounded managed/documentation checks passed.
-[Cleanup evidence](../result/documentation_cleanup_20260906.md).
-
-## Product closure status
-
-SQLite provider remediation, native harvest/package migration, anti-collapse
-distillation, resident host/control/store, bounded source assets, managed
-scriptlet isolation and server security/lifetime/UI repairs are implemented.
-Focused negative tests and independent reviews are recorded in their dated
-`result/*closure_20260906.md` reports. The explicit private deployment helper
-passes interrupted-publication and unsafe-archive tests. Final native regression
-passes all 28 required fresh-log suites, including the new lifecycle/recovery
-dependencies. Sequential frozen capability certification passed all six
-existing manifests at clean commit `6068a8c`, without source drift or altered
-floors. The completed implementation and evidence handoff are in the
-[integrated report](../result/cnet_product_closure_20260906.md).
-
-The source domain is five exact local literal facts, not arbitrary source
-understanding or unrestricted compiler/test execution. Approved arithmetic-tool
-acquisition remains independently labelled; publication needs explicit owner
-activation. A live rollout requires a selected target/configuration, separately
-authorized operations and fresh deployment-specific verification.
-
-The governing lifecycle requirements remain in
-[capsule hot-swap plan](../plans/cnet_capsule_hot_swap_20260906.md).
-The deterministic 4096-capsule capacity gate remains separate and passed again;
-the experimental neural adapter remains capped at 62 capsules.
-
-No old ownership assignment, PID, endpoint availability or handoff checkbox
-grants current authority. Do not restart services or overwrite live state based
-on a historical plan.
+The dirty primary checkout and its data were preserved. Work is committed in the
+separate implementation worktree; this request did not include another push.
+Do not infer new operational authority from old PIDs, ownership notes or plans.

@@ -104,7 +104,8 @@ Require settled quiescence before stopping a healthy daemon. Preserve terminal
 ledgers, failed attempts and recovery evidence; starting a new authorized
 installation is an explicit operator decision, not automatic budget renewal.
 The bridge refuses when the original owner budget completes. Roll back only the
-new gateway/monitor drop-ins, not all service configuration, and preserve capture.
+new gateway, capture-monitor and capture-watchdog drop-ins, not all service
+configuration, and preserve capture.
 
 ## Evidence and tests
 
@@ -112,6 +113,9 @@ Freeze gateway, journal, monitor, dataset, legacy evidence, learning bridge,
 Unicode query and Unicode evidence modules together. A changed closure or
 capture segment restarts capture continuity without erasing its old history;
 it does not restart or alter the separate frozen soak.
+Switch the gateway, capture-monitor **and capture-watchdog** service commands to
+that same frozen release: an old watchdog correctly refuses a new observer pin.
+Preserve the independent existing alert-helper override.
 
 Run `make -C experiments/offline_controller discord-capture-test` with
 `DISCORD_PYTHON` set to the existing websocket-client environment. Negative

@@ -1,143 +1,63 @@
 # Current CNET checklist
 
-Evidence, scope and dependencies: [plan.md](plan.md).
+Dependencies and evidence: [plan.md](plan.md). Current measured handoff:
+[verified learning ingress](../result/cnet_verified_learning_ingress_20260908.md).
 
-## Current: verified learning ingress
+## Completed: verified learning ingress
 
 - [x] RED and independently pinned four-dataset query/evidence tests
-- [x] Versioned evidence extension without reclassifying old receipts
-- [x] RED and owner-only, single-attempt, fail-closed Discord learning bridge
-- [ ] Separate bounded installation and actual native acquisition/answer rehearsal
-- [ ] Frozen live rollout, capture continuity declaration and operator controls
-- [ ] Requalify captured demand; do not fit without eligible native headroom
-- [ ] Final security/regression review, measured report and checklist reconciliation
-- [ ] Background frozen 72-hour result (actual elapsed time required)
+- [x] Opt-in evidence extension preserving legacy receipts and whole windows
+- [x] Owner-DM-only routing after durable capture/deduplication
+- [x] Independent answer checks, malformed-answer latch/pause and bounded children
+- [x] Private runtime/source pins and original-budget/heartbeat admission
+- [x] Actual native miss-to-four-capsule rehearsal, full verification and pause refusal
+- [x] Separate bounded live installation; no changes to frozen 72-hour workload
+- [x] Matching frozen gateway, capture monitor and watchdog; existing alerts preserved
+- [x] Requalify real capture without inventing origin, labels or native returns
+- [x] Fresh 805 managed and 127 capture/bridge tests; both AMD worker checks
+- [x] Scoped advisory checks, boundary reviews, latency measurement and runbooks
+- [x] Reconcile current queue against implementation/deployment evidence
 
-Contract: [verified learning ingress](../plans/cnet_verified_learning_ingress_20260908.md).
+## Remaining: measured prerequisites and conditional work
 
-## Active September 8 completion sequence
+- [ ] Frozen 72-hour Unicode soak terminal result after actual elapsed time
+- [ ] Genuine reviewed demand with verified mappings and continuous whole windows
+- [ ] Eligible native chronological trajectories for all four allocator families
+- [ ] Useful >=.05 headroom versus strongest equally budgeted controls
+- [ ] Conditional bounded AMD fitting and newly frozen independent confirmation
+- [ ] Useful allocator gate: >=.05 gain, positive paired 95% lower, nonnegative family means
+- [ ] Broader unattended product acceptance; finite Unicode soak alone is insufficient
 
-- [x] Synthetic RED and fix for irrelevant implicit legacy memory retrieval
-- [x] RED and repair for repeatable, throttled local alerts; deploy and test
-- [x] Private compatible runtime staging, inventory preservation and rollback
-- [x] Enable certified safe MCP read dispatch on the existing live service
-- [x] Verify real read/refusal through deployed peer and Discord renderer
-- [x] Broaden independently verified learning without treating web prose as truth
-- [x] Freeze a bounded unattended learning run and start real acceptance monitoring
-- [ ] Actual elapsed/outcome acceptance and genuine-demand headroom (WITHHELD until measured)
-- [x] Final regressions, vulnerability review and measured handoff
+Current real export: nine requests, zero verified mappings, zero eligible
+episodes. Allocator remains disabled. Newly added Unicode verification is
+operational, but no captured request in that export uses an eligible mapping.
+Origin review was requested; no owner attestation has been inferred.
 
-Contract: [live completion](../plans/cnet_live_completion_20260908.md).
+## Completed: unattended-learning implementation (formerly stale unchecked items)
 
-## MCP read brick
+- [x] Strict owner policy and private filesystem boundary
+- [x] Durable demand, budgets and mutation-intent reconciliation
+- [x] Versioned local-table acquisition and confined CPU workers
+- [x] Independent evaluation and automatic native capsule activation
+- [x] Probation, monitoring, automatic rollback and operator stop controls
+- [x] Distinct-objective AMD allocator implementation and immutable checkpoints
+- [x] Short integrated fault/resource campaigns and source regression
+- [x] Implementation evidence and operator handoff
 
-- [x] RED dispatch, protocol and network-policy tests
-- [x] Certified capsule and native fail-closed tool invocation
-- [x] Bounded read-only MCP backend and tool registration
-- [x] Isolated end-to-end proof, regression and adversarial review
-- [x] Public retrieval smoke test and measured operator documentation
+Useful allocator improvement and real-duration acceptance are deliberately in
+the remaining section, not hidden inside those implementation checkboxes.
 
-Completed source/evidence: [MCP read result](../result/cnet_mcp_read_brick_20260908.md).
-Live deployment and recursive/general crawling are not included.
+## Completed earlier product work
 
-## Discord brick-capacity repair
+- [x] Portable certified capsules, isolation, hot swap and bounded capacity gates
+- [x] Resident AMD training, conversion, request pinning/rollback and dual-device isolation
+- [x] SQLite, resident-host, durable store and lifecycle/product closure repairs
+- [x] Source manifest, anti-collapse, package/harvest migration and managed isolation repairs
+- [x] Discord legacy brick-capacity and identity/presence repairs
+- [x] Safe recall, repeatable throttled alerts and deployed read-only MCP dispatch
+- [x] Owner-only capture, immutable export and private legacy-data permissions
+- [x] Documentation rewrite, retirement inventory and evidence preservation
 
-- [x] Publish 24 completed commits to origin/master, preserving dirty local data
-- [x] Remove 8 local and 14 remote merged refs with expected-tip guards
-- [x] Read owner-DM diagnostic and corroborate the actual 24-file capacity failure
-- [x] RED boundary/reload/publication/factory tests and bounded 256-entry repair
-- [x] Regression, real-bank rehearsal, live deployment and documented rollback
-- [x] Source/result publication and owner-visible handoff
-
-Evidence and rollback: [brick repair result](../result/discord_brick_capacity_20260908.md).
-
-## Current chronological allocator experiment
-
-- [x] Bounded metadata audit and independent legacy-source eligibility review
-- [x] Parser/identity/privacy regression tests and existing allocator CPU tests
-- [x] Owner-designated ingress: existing Discord bridge, owner-only private DM
-- [x] Durable capture, failure/dedup tests, scoped bridge rollout and readiness
-- [x] Versioned two-rule typed mapping and independent native verifier receipts
-- [x] Immutable exports, whole-window splits and explicit origin-review mechanism
-- [x] Local monitor/watchdog/desktop alerts and exact legacy privacy repair
-- [x] Start frozen real observation and publish scoped readiness report
-- [x] Rechecked development qualification and equally budgeted control mechanism
-- [ ] Genuine reviewed demand and broader task-specific independent verifiers
-- [ ] Eligible native development trajectories with useful headroom
-- [ ] Actual 72-hour unattended product acceptance (not capture uptime alone)
-- [ ] Bounded AMD fitting and fresh independent confirmation under unchanged floors
-
-The [readiness report](../result/cnet_chronological_allocator_20260907.md) records
-the legacy evidence prerequisite. Capture work follows the
-[approved scoped plan](../plans/cnet_discord_capture_20260907.md); the learned
-allocator remains inactive. The [rollout report](../result/cnet_discord_capture_20260907.md)
-records the live collector and initially empty private stream.
-
-The [September 8 evidence rollout](../result/cnet_capture_evidence_20260908.md)
-supersedes that initial empty-stream status: four captured requests, no eligible
-scored windows. Implementation checks do not close the remaining measured gates.
-
-## Active unattended-learning sequence
-
-Contract: [unattended learning](../plans/cnet_autonomous_learning_20260906.md).
-
-- [ ] Strict owner policy and private filesystem boundary
-- [ ] Durable demand, budgets and mutation-intent reconciliation
-- [ ] Versioned local-table acquisition and confined CPU workers
-- [ ] Independent evaluation and automatic native capsule activation
-- [ ] Probation, monitoring, automatic rollback and operator stop controls
-- [ ] Distinct-objective AMD allocator training and immutable checkpoints
-- [ ] Useful core allocator improvement on independent confirmation episodes
-- [ ] Short integrated fault/resource campaign and source regression
-- [ ] Actual 72-hour unattended acceptance after frozen artifacts
-- [ ] Completed evidence and operator handoff
-
-Previous execution contract: [product closure](../plans/cnet_product_closure_20260906.md).
-All implementation items below are complete against their recorded bounded
-gates; live deployment remains a separate owner checkpoint.
-
-## Completed, bounded experiment
-
-- [x] Resident FP32 training, both AMD devices and unchanged numerical gates
-- [x] Immutable snapshots and independently labelled graph controls
-- [x] Canonical core checkpoints and direct GPU-fit BTN/capsule conversion
-- [x] Shadow/history-gated in-memory activation, request pinning and rollback
-- [x] Isolated workers with cancellation, failure, timeout and restart tests
-- [x] Fresh 28-suite source regression and six existing capability gates
-- [x] Benchmarks, sanitizer checks and scoped vulnerability review
-
-These checks do not declare the service deployed or the dependency audit clean.
-See [the dated evidence](../result/cnet_gpu_product_sequence_20260906.md).
-
-## Documentation cleanup
-
-- [x] Rewrite current guidance and remove superseded instructions recoverably
-- [x] Verify references, protected data and documentation contracts
-- [x] Record the exact retirement map and completed verification
-
-## Product closure
-
-- [x] SQLite native-provider remediation and repeat control-plane security audit
-- [x] Resident ordinary-daemon working sets and named operator control
-- [x] Same-PID daemon swap tests and failure-retention proof
-- [x] Durable activation/restart/rollback failure tests
-- [x] Manifest-bound local source evidence and candidate self-closure
-- [x] Integrated acquisition/swap regression proof
-- [x] Explicit private deployment/package handoff and interrupted-publication tests
-- [x] Final frozen capability certification and evidence handoff
-- [ ] Separately authorized, verified live deployment
-
-## Additional code limits exposed by documentation review
-
-- [x] Migrate the legacy coverage-harvest script off its removed Python seeder
-- [x] Repair minimal packaging/smoke's removed-Python evolution assumptions
-- [x] Require a verified anti-collapse check before using distillation proposals
-- [x] Add isolated execution before accepting hostile managed scriptlets
-- [x] Add authentication/resource controls before exposing the managed sample server
-- [x] Verify candidate model lifetime and offline supervised browser chat
-
-These source repairs follow the documentation cleanup; their actual negative
-tests, independent reviews and scoped results are collected in the
-[product closure report](../result/cnet_product_closure_20260906.md).
-
-Do not lower floors or reuse CNET Tier-A answers to close these boxes.
+See the dated reports linked from [plan.md](plan.md) for exact gates and limits.
+No source checklist grants unrestricted deployment, arbitrary learning authority,
+or permission to lower certification floors or train on CNET Tier-A answers.
