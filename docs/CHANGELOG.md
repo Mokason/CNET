@@ -3,6 +3,16 @@
 Entries describe bounded repository changes. They are not live-deployment
 attestations or a list of claims automatically revalidated at each release.
 
+## 2026-09-08 — Bounded MCP read brick
+
+Added a portable two-action dispatch capsule, strict native MCP evidence
+validation, opt-in public Wikipedia/page reads and terminal daemon routing.
+Network policy blocks private destinations, redirects and oversized responses;
+retrieved text never becomes a certified answer or automatic training label.
+131 managed tests, native safety gates and a real Wikipedia integration pass.
+[Operator guide](MCP_READ_BRICK.md), [measured scope](../result/cnet_mcp_read_brick_20260908.md).
+Live deployment, recursive crawling and arbitrary MCP tools are not included.
+
 ## 2026-09-06 — Bounded product closure
 
 The ordinary daemon now retains pinned capsule working sets with owner-only

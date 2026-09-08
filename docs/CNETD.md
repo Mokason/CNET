@@ -37,6 +37,12 @@ The read deadline uses one monotonic budget:
 Outbound shared-MCP exchanges use `CNET_MCP_TIMEOUT_MS`, default 2000,
 clamped to the same range, across connect/write/reply.
 
+The opt-in [MCP read brick](MCP_READ_BRICK.md) handles `wiki search ...` and
+`web read ...` before legacy actions. It requires a separately configured
+dispatch capsule and updated read-policy-enforcing MCP peer. Its answers and
+refusals are terminal `MCP_READ`, never certified; returned web text bypasses
+automatic learning hooks. The read guide documents configuration and limits.
+
 ## Capsules and residual behavior
 
 `CNET_CAPSULES_DIR` selects a startup-only resident inventory for compatibility.

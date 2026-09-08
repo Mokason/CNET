@@ -2,6 +2,17 @@
 
 Evidence, scope and dependencies: [plan.md](plan.md).
 
+## MCP read brick
+
+- [x] RED dispatch, protocol and network-policy tests
+- [x] Certified capsule and native fail-closed tool invocation
+- [x] Bounded read-only MCP backend and tool registration
+- [x] Isolated end-to-end proof, regression and adversarial review
+- [x] Public retrieval smoke test and measured operator documentation
+
+Completed source/evidence: [MCP read result](../result/cnet_mcp_read_brick_20260908.md).
+Live deployment and recursive/general crawling are not included.
+
 ## Discord brick-capacity repair
 
 - [x] Publish 24 completed commits to origin/master, preserving dirty local data

@@ -18,6 +18,7 @@ host. For measured claims, follow dated evidence and check its bound source.
 | Build and choose tests | [Build and verification](BUILD_AND_TEST.md) |
 | Teach, compose and inspect capsules | [Capsule core](CAPSULE_CORE.md) |
 | Acquire bounded source facts | [Source evidence](CNET_SOURCE_EVIDENCE.md) |
+| Retrieve untrusted public evidence through MCP | [MCP read brick](MCP_READ_BRICK.md) |
 | Operate private table learning | [Policy-bounded learning](AUTONOMOUS_LEARNING.md) |
 | Collect owner-only Discord demand | [Private capture](../tools/discord_capture/README.md), [rollout evidence](../result/cnet_discord_capture_20260907.md) |
 | Train on AMD GPUs or test activation | [GPU training](GPU_TRAINING.md) |

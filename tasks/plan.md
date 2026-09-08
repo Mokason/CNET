@@ -6,6 +6,12 @@ Decision history remains in [plans/](../plans/). Current documentation starts at
 
 ## Current experiment: chronological allocator evidence
 
+Completed source task: [bounded MCP read brick](../plans/cnet_mcp_read_brick_20260908.md).
+Certified finite dispatch, opt-in MCP Wikipedia/web reads, strict evidence and
+end-to-end refusal tests are implemented. [Measured result](../result/cnet_mcp_read_brick_20260908.md):
+131 managed tests pass, native safety/regression gates pass, actual Wikipedia
+retrieval passes. Live rollout and recursive crawling are separate scope.
+
 Current owner request: publish completed commits, prune only proven-merged branch
 refs, then repair the Discord 24/24 legacy brick-bank failure. Ordered contract:
 [brick capacity repair](../plans/cnet_brick_capacity_20260908.md).
