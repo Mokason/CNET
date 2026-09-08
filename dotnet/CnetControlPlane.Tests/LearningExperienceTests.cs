@@ -1,6 +1,7 @@
 using System.Runtime.Versioning;
 using System.Text;
 using CnetControlPlane.Learning;
+using Microsoft.Data.Sqlite;
 using Xunit;
 
 namespace CnetControlPlane.Tests;
@@ -202,5 +203,98 @@ public sealed class LearningExperienceTests : IDisposable
         Assert.Throws<InvalidOperationException>(() => ledger.BeginExperience(new string('b', 32), "calibration", 7, "synthetic"));
         Assert.True(ledger.IsPaused, "TASK_ADMISSION_DRIFT_RED source refusal lost its pause transaction");
         Assert.Single(ledger.Experiences(0, 100));
+    }
+
+    [Fact]
+    public void NumericObservationOfSymbolicDatasetRefusesWithoutPausing()
+    {
+        var symbolic = LearningPolicy.Parse(Encoding.UTF8.GetBytes(LearningPolicyTests.Valid.Replace(
+            "\"authority\":\"verified_tool\"", "\"authority\":\"verified_tool\",\"symbol_vocabulary_sha256\":\"" + new string('1', 64) + "\"")));
+        var otherRoot = Directory.CreateTempSubdirectory("cnet-symbol-observe-").FullName;
+        try
+        {
+            File.SetUnixFileMode(otherRoot, LearningCommandInstallation.Private);
+            using var other = LearningLedger.Create(otherRoot, symbolic, clock);
+            Assert.ThrowsAny<Exception>(() => other.BeginExperience(Id, "calibration", 7, "synthetic"));
+            Assert.False(other.IsPaused, "TASK_SYMBOL_INPUT_RED unsupported numeric input paused healthy learning");
+            Assert.Empty(other.Experiences(0, 10));
+        }
+        finally { Directory.Delete(otherRoot, true); }
+    }
+
+    [Theory]
+    [InlineData("expiry")]
+    [InlineData("heartbeat")]
+    [InlineData("stop")]
+    [InlineData("reboot")]
+    public void OriginalRunAdmissionCannotBeRenewedByObservationOrApproval(string condition)
+    {
+        var source = Source(); ledger.BeginExperience(Id, "calibration", 7, "synthetic");
+        ledger.FinishExperience(Id, Answer()); ledger.BeginOrResumeRun();
+        if (condition == "expiry") clock.Now = clock.Now with { Nanoseconds = clock.Now.Nanoseconds + policy.MaxRunSeconds * 1_000_000_000L };
+        if (condition == "heartbeat") clock.Now = clock.Now with { Nanoseconds = clock.Now.Nanoseconds + 121_000_000_000L };
+        if (condition == "stop") ledger.StopRun("operator_stop");
+        if (condition == "reboot") clock.Now = new("00000000-0000-0000-0000-000000000002", 1);
+        Assert.Throws<InvalidOperationException>(() => ledger.BeginExperience(new string('b', 32), "calibration", 7, "synthetic"));
+        Assert.Throws<InvalidOperationException>(() => ledger.ApproveExperience(Id, source.SourceSha256));
+        Assert.Equal((0L, 0L), ledger.Demand("calibration", 7)); Assert.Single(ledger.Experiences(0, 100));
+    }
+
+    [Fact]
+    public void CrossBootReplyIsUnknownDespiteMatchingExpectedValue()
+    {
+        Source(); ledger.BeginExperience(Id, "calibration", 7, "synthetic");
+        clock.Now = new("00000000-0000-0000-0000-000000000002", 1);
+        var experience = ledger.FinishExperience(Id, Answer(42));
+        Assert.Equal("unknown", experience.State); Assert.Null(experience.Value);
+        Assert.NotEqual(experience.Boot, experience.FinishedBoot);
+    }
+
+    [Fact]
+    public void ApprovalRequiresPresentCoveringEvidenceAndCanonicalIdentities()
+    {
+        Assert.Throws<ArgumentException>(() => ledger.BeginExperience(new string('A', 32), "calibration", 7, "synthetic"));
+        Assert.Throws<ArgumentException>(() => ledger.BeginExperience(Id, "calibration", 7, "human"));
+        Assert.Throws<ArgumentException>(() => ledger.FinishExperience("invalid", null));
+        Assert.Throws<ArgumentException>(() => ledger.ApproveExperience(Id, "invalid"));
+        Assert.Throws<InvalidOperationException>(() => ledger.ApproveExperience(Id, new string('1', 64)));
+        ledger.BeginExperience(Id, "calibration", 7, "synthetic"); ledger.FinishExperience(Id, Answer());
+        Assert.Throws<InvalidOperationException>(() => ledger.ApproveExperience(Id, new string('1', 64)));
+        var excluding = Source(key: 8);
+        Assert.Throws<InvalidOperationException>(() => ledger.ApproveExperience(Id, excluding.SourceSha256));
+        Assert.False(ledger.IsPaused); Assert.Equal((0L, 0L), ledger.Demand("calibration", 7));
+    }
+
+    [Fact]
+    public async Task ConcurrentDuplicateAdmissionCreatesOnlyOneNativeAttemptAuthorization()
+    {
+        var attempts = await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => Task.Run(() =>
+        {
+            using var other = LearningLedger.Open(root, policy, clock);
+            return other.BeginExperience(Id, "calibration", 7, "synthetic").Created;
+        })));
+        Assert.Equal(1, attempts.Count(created => created)); Assert.Single(ledger.Experiences(0, 100));
+    }
+
+    [Fact]
+    public void CapacityRefusesNewIdentityWithoutEvictingPendingTombstones()
+    {
+        // Bulk synthetic fixture setup, not a claim of 4096 native executions.
+        using var db = new SqliteConnection(new SqliteConnectionStringBuilder
+        { DataSource = Path.Combine(root, "ledger.sqlite"), Mode = SqliteOpenMode.ReadWrite, Pooling = false }.ToString());
+        db.Open(); using var insert = db.CreateCommand();
+        insert.CommandText = """
+            WITH RECURSIVE slots(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM slots WHERE i+1<$limit)
+            INSERT INTO experiences(request_id,dataset,key,origin,boot,started_ns,state)
+            SELECT printf('%032x',i),'calibration',7,'synthetic',$boot,$ns,'pending' FROM slots
+            """;
+        insert.Parameters.AddWithValue("$limit", LearningLedger.MaximumExperiences);
+        insert.Parameters.AddWithValue("$boot", clock.Now.Boot); insert.Parameters.AddWithValue("$ns", clock.Now.Nanoseconds);
+        Assert.Equal(LearningLedger.MaximumExperiences, insert.ExecuteNonQuery());
+        Assert.Equal("learning_task_capacity", Assert.Throws<InvalidOperationException>(() =>
+            ledger.BeginExperience(Id, "calibration", 7, "synthetic")).Message);
+        var duplicate = ledger.BeginExperience(new string('0', 32), "calibration", 7, "synthetic");
+        Assert.False(duplicate.Created); Assert.Equal("pending", duplicate.Experience.State);
+        Assert.Equal(100, ledger.Experiences(0, 100).Count); Assert.Empty(ledger.Experiences(4096, 1));
     }
 }

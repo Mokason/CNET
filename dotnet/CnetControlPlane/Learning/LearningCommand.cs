@@ -12,8 +12,8 @@ internal static class LearningCommand
         var correlation = Guid.NewGuid().ToString("N");
         try
         {
-            if (args.Length < 2 || args[0] is not ("inspect" or "initialize" or "status" or "pause" or "resume" or "ask" or "lookup" or "verify" or "import" or "tick" or "run" or "quiesce" or "observe" or "approve" or "inbox")
-                || args.Length != (args[0] switch { "ask" or "lookup" or "approve" or "inbox" => 4, "observe" => 6, "verify" => 3, "import" => 5, _ => 2 }))
+            if (args.Length < 2 || args[0] is not ("inspect" or "initialize" or "status" or "pause" or "resume" or "ask" or "lookup" or "verify" or "import" or "tick" or "run" or "quiesce" or "observe" or "approve" or "inbox" or "task")
+                || args.Length != (args[0] switch { "ask" or "lookup" or "approve" or "inbox" => 4, "observe" => 6, "verify" => 3, "import" or "task" => 5, _ => 2 }))
                 throw new ArgumentException("learning_command_usage");
             if (args[0] == "lookup" && (!LearningPolicy.IsId(args[2]) || !LocalSymbolReference.IsKey(args[3])))
                 throw new ArgumentException("learning_command_usage");
@@ -25,6 +25,8 @@ internal static class LearningCommand
             if (args[0] == "observe" && (args[4] is not ("synthetic" or "unreviewed") || !LearningLedger.IsRequestId(args[5])))
                 throw new ArgumentException("learning_command_usage");
             if (args[0] == "approve" && (!LearningLedger.IsRequestId(args[2]) || !LearningLedger.IsHash(args[3])))
+                throw new ArgumentException("learning_command_usage");
+            if (args[0] == "task" && (args[2] is not ("synthetic" or "unreviewed") || !LearningLedger.IsRequestId(args[3])))
                 throw new ArgumentException("learning_command_usage");
             long after = 0; int pageSize = 0;
             if (args[0] == "inbox" && (!long.TryParse(args[2], NumberStyles.None, CultureInfo.InvariantCulture, out after)
@@ -81,6 +83,8 @@ internal static class LearningCommand
             ledger.BindRuntime(native); ledger.BindManaged(running);
             switch (args[0])
             {
+                case "task":
+                    return LearningTaskCommand.Execute(ledger, native, policy, root.FullPath, args[2], args[3], args[4], correlation);
                 case "observe":
                     var observation = LearningObservationRunner.Observe(ledger, native, policy, root.FullPath, args[2], key, args[4], args[5]);
                     Emit(new { @event = "learning_experience", correlation_id = correlation,

@@ -160,3 +160,6 @@ build/cce/
 
 # graft's local graph cache — regenerable, not committed (run `graft build`).
 /graft/
+
+# Isolated task-milestone build/test output (root-discovery tests need a repo ancestor).
+/.artifacts/task-verified/

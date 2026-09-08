@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using CnetControlPlane.Learning;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace CnetControlPlane.Tests;
 
@@ -11,10 +12,13 @@ namespace CnetControlPlane.Tests;
 public sealed class LearningNaturalTaskCommandTests : IClassFixture<LearningCommandInstallation>
 {
     private readonly LearningCommandInstallation installation;
-    public LearningNaturalTaskCommandTests(LearningCommandInstallation installation) => this.installation = installation;
-    private static JsonDocument Receipt((int Code, string Output, string Error) result)
+    private readonly ITestOutputHelper output;
+    public LearningNaturalTaskCommandTests(LearningCommandInstallation installation, ITestOutputHelper output)
+    { this.installation = installation; this.output = output; }
+    private JsonDocument Receipt((int Code, string Output, string Error) result)
     {
         Assert.True(result.Code == 0, "NATURAL_TASK_RED supported bounded request: " + result.Error);
+        output.WriteLine(result.Output); // Explicit synthetic receipts retained by the test logger, never live demand.
         return JsonDocument.Parse(result.Output);
     }
     private static string Id(char value) => new(value, 32);
@@ -34,8 +38,12 @@ public sealed class LearningNaturalTaskCommandTests : IClassFixture<LearningComm
         deployment.Put("policy.json", Encoding.UTF8.GetBytes(policyText));
         using var initialized = Receipt(await deployment.Command("initialize"));
         // Clarification and OOD refusal do not require a native daemon or create observations.
-        using var clarification = Receipt(await deployment.Command("task", "synthetic", Id('a'), "uppercase 65"));
-        Assert.Equal("clarify", clarification.RootElement.GetProperty("proposal").GetProperty("Status").GetString());
+        foreach (var ambiguous in new[] { "uppercase 65", "uppercase '?", "uppercase \"?", "uppercase ..", "uppercase ??" })
+        {
+            using var clarification = Receipt(await deployment.Command("task", "synthetic", Id('a'), ambiguous));
+            Assert.Equal("clarify", clarification.RootElement.GetProperty("proposal").GetProperty("Status").GetString());
+            Assert.Equal(JsonValueKind.Null, clarification.RootElement.GetProperty("experience").ValueKind);
+        }
         using var unrelated = Receipt(await deployment.Command("task", "synthetic", Id('b'), "What is tomorrow's weather?"));
         Assert.Equal("abstain", unrelated.RootElement.GetProperty("proposal").GetProperty("Status").GetString());
         using var empty = Receipt(await deployment.Command("inbox", "0", "100"));

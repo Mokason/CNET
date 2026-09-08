@@ -16,14 +16,17 @@ internal sealed partial class LearningLedger
 
     internal LocalTableReference? TaskSource(string dataset)
     {
-        var authorized = policy.Datasets.SingleOrDefault(d => d.Id == dataset && d.SymbolVocabularySha256 is null)
-            ?? throw new ArgumentException("learning_task_dataset_refused");
+        var authorized = NumericTaskDataset(dataset);
         using var data = LearningFiles.Open(Path.Combine(files.FullPath, "data"));
         if (!data.ValidateFile(dataset + ".tsv", allowMissing: true).HasValue) return null;
         var reference = LocalTableReference.Parse(data.Read(dataset + ".tsv", 4096), authorized);
         data.AssertPathIdentity();
         return reference;
     }
+
+    private LearningDataset NumericTaskDataset(string dataset) => policy.Datasets
+        .SingleOrDefault(d => d.Id == dataset && d.SymbolVocabularySha256 is null)
+        ?? throw new ArgumentException("learning_task_dataset_refused");
 
     private static LearningExperience ReadExperience(SqliteDataReader row) => new(row.GetInt64(0), row.GetString(1),
         row.GetString(2), checked((byte)row.GetInt64(3)), row.GetString(4), row.GetString(5), row.GetInt64(6),
@@ -68,7 +71,7 @@ internal sealed partial class LearningLedger
     {
         if (!IsRequestId(id) || origin is not ("synthetic" or "unreviewed"))
             throw new ArgumentException("learning_task_identity_refused");
-        Dataset(dataset);
+        _ = NumericTaskDataset(dataset); // Unsupported input is not evidence corruption and must not pause learning.
         var result = Transaction<(LearningExperience? Experience, bool Created)>((now, tx) =>
         {
             var existing = Experience(id, tx);
