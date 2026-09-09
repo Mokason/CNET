@@ -7,7 +7,9 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 MODULE = Path(__file__).resolve().parents[1] / "tools/task_paraphrase_eval/evaluate.py"
 if not MODULE.exists():
@@ -186,6 +188,82 @@ class EvaluationCommand(unittest.TestCase):
             result = subprocess.run(args, capture_output=True, timeout=10)
             self.assertNotEqual(result.returncode, 0)
             self.assertEqual(output.read_bytes(), b"retained")
+
+
+class RunnerIntegrity(unittest.TestCase):
+    """Exercise wiring with developer-only bytes, not either frozen collection."""
+    def setUp(self):
+        self.corpus = json.dumps(fixture()).encode()
+        self.frozen = json.dumps({"qualification_sha256": evaluator.digest(self.corpus)}).encode()
+        self.response = {"schema": 1, "assembly_sha256": evaluator.digest(b"assembly"),
+                         "proposals": perfect(load(fixture()))}
+        self.args = SimpleNamespace(collection="qualification", assembly="/fixture/assembly.dll",
+                                    assembly_sha256=evaluator.digest(b"assembly"), parser_sha256=evaluator.digest(b"source"))
+
+    def read(self, path, limit=None):
+        return {"freeze.json": self.frozen, "LearningTaskProposal.cs": b"source", "assembly.dll": b"assembly",
+                "cnet-task-paraphrase-probe.dll": b"probe", "qualification.json": self.corpus}[Path(path).name]
+
+    def invoke(self, *, read=None, stdout=None, returncode=0, stderr=b"", dotnet="/fixture/dotnet"):
+        with patch.object(evaluator, "FREEZE_SHA256", evaluator.digest(self.frozen)), \
+             patch.object(evaluator, "read_bounded", side_effect=read or self.read), \
+             patch.object(evaluator.shutil, "which", return_value=dotnet), \
+             patch.object(evaluator.subprocess, "run", return_value=SimpleNamespace(
+                 returncode=returncode, stderr=stderr, stdout=stdout or json.dumps(self.response).encode())) as probe:
+            result = evaluator.run(self.args)
+            self.assertEqual(probe.call_args.kwargs["env"], {})
+            self.assertEqual(probe.call_args.kwargs["timeout"], 30)
+            self.assertEqual(len(json.loads(probe.call_args.kwargs["input"])), 128)
+            return result
+
+    def test_identity_bound_report_keeps_all_cases_and_synthetic_origin(self):
+        result = self.invoke()
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["origin"], "synthetic")
+        self.assertFalse(result["training_eligible"])
+        self.assertEqual(result["probe_sha256"], evaluator.digest(b"probe"))
+        self.assertEqual(len(result["cases"]), 128)
+
+    def test_changed_artifacts_cannot_issue_a_successful_score(self):
+        for name in ("freeze.json", "LearningTaskProposal.cs", "assembly.dll", "qualification.json"):
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                self.invoke(read=lambda path, limit=None: b"changed" if Path(path).name == name else self.read(path, limit))
+        seen = 0
+        def mutated_source(path, limit=None):
+            nonlocal seen
+            if Path(path).name == "LearningTaskProposal.cs":
+                seen += 1
+                if seen > 1: return b"changed after execution"
+            return self.read(path, limit)
+        with self.assertRaises(ValueError): self.invoke(read=mutated_source)
+
+    def test_missing_runtime_failed_probe_and_malformed_receipts_refuse(self):
+        for options in ({"dotnet": None}, {"returncode": 2}, {"stderr": b"failure"},
+                        {"stdout": b"[]"}, {"stdout": b"{}"}, {"stdout": b"invalid json"}):
+            with self.subTest(options=options), self.assertRaises(ValueError): self.invoke(**options)
+        self.response["assembly_sha256"] = "0" * 64
+        with self.assertRaises(ValueError): self.invoke()
+
+    def test_main_reports_quality_failure_and_reserves_output(self):
+        report = self.invoke()
+        report["passed"] = False
+        with tempfile.TemporaryDirectory(prefix="cnet-paraphrase-wiring-") as temporary:
+            output = Path(temporary) / "report.json"
+            args = ["qualification", "--assembly", self.args.assembly, "--assembly-sha256", self.args.assembly_sha256,
+                    "--parser-sha256", self.args.parser_sha256, "--output", str(output)]
+            with patch.object(evaluator, "run", return_value=report):
+                self.assertEqual(evaluator.main(args), 1)
+                self.assertEqual(json.loads(output.read_bytes())["total"], 128)
+                self.assertEqual(output.stat().st_mode & 0o777, 0o600)
+                self.assertEqual(evaluator.main(args), 2)
+                args[-1] = "relative.json"
+                self.assertEqual(evaluator.main(args), 2)
+
+    def test_bounded_read_and_strict_utf8(self):
+        with tempfile.TemporaryFile() as stream:
+            stream.write(b"12345"); stream.flush()
+            with self.assertRaises(ValueError): evaluator.read_bounded(f"/proc/self/fd/{stream.fileno()}", 4)
+        with self.assertRaises(ValueError): evaluator.decode(b"\xff")
 
 
 if __name__ == "__main__":
