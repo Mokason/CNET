@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "suite": "round6",
+  "source_commit": "70fc4550077bee98b94a148760ca4e19b16291fc",
+  "parser_source_sha256": "b91e88ad4b5eb2f8d7c5090971ae2344486f05b0ce5878c553232b368270cde1",
+  "runner_source_sha256": "d75f7839fc1f5366c14d0500479f635e5bf52d359f0174790df71bbb0d352eeb",
+  "probe_source_sha256": "2612534d59fee24d4455bc0bdd0761c3a25366f054b2584177e9d79c1ce43cdc",
+  "probe_project_sha256": "5129bfd10e1c88bbc786a509b9fac10f1cff54f71d3afc44e812f76f4ed83142",
+  "assembly_sha256": "392de06055bd2e1d00845b587cc0d5c34204da6a00bedb658e6d771ac65ea236",
+  "probe_sha256": "4848f505d6ed61fee2b139a2fc46e1fd9060ed87a57e026782a20ff90b026fcc",
+  "freeze_sha256": "7dd7a45af5d3c5b8b78c7c4bf6b8dd28f9d69994220c8962984a9e50024e8889",
+  "corpus_sha256": "2022d8c4a07c1799245d81396cf4979308c32c49d8abddf78a4314d17159378b",
+  "build": "dotnet build tools/task_paraphrase_eval/TaskParaphraseProbe.csproj --artifacts-path .artifacts/task-verified --nologo",
+  "sdk_version": "10.0.203",
+  "target_framework": "net8.0",
+  "confirmation_opened_by_implementer_at_freeze": false,
+  "confirmation_executed_before_freeze": false,
+  "boundary_review": "Separate same-Astra design review required explicit radix and quoted-data preservation. Both boundaries have executed RED tests. Bounded implementation review passed32independently invented probes for field consumption, duplicate roles, extra actions, radix, quotes, controls and ambiguity; no issues found. Reviewer had no holdout access.",
+  "regressions": {
+    "focused_parser": 411,
+    "full_managed_native": 1333,
+    "evaluator": 29,
+    "capture_bridge_earlier_this_turn": 148
+  },
+  "development_populations": "All six exposed collections scored128/128 on freshly built committed candidate; full prior attempts retained as development-only evidence.",
+  "authoring_limit": "Reused isolated author and custodian contexts; own prior authored sets known, no implementation/results access. Not fresh-context authorship or IID/external validation.",
+  "evaluation_origin": "synthetic",
+  "training_eligible": false,
+  "live_rollout_authorized": false
+}
