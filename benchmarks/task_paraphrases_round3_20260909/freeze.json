@@ -1,0 +1,102 @@
+{
+  "schema": 1,
+  "name": "confirmation",
+  "state": "corpus_frozen",
+  "frozen_at_utc": "2026-09-09T07:43:06Z",
+  "corpus": {
+    "path": "benchmarks/task_paraphrases_round3_20260909/confirmation.json",
+    "sha256": "4e0a31349ce0b2fc73a9d2727388a33ee6a08ba56f23cebf9bba818a361ebf46",
+    "utf8_bytes": 24102,
+    "maximum_utf8_bytes": 131072,
+    "case_count": 128,
+    "unique_id_count": 128,
+    "unique_text_count": 128,
+    "family_count": 27,
+    "maximum_text_utf16_units": 280,
+    "status_counts": {
+      "ready": 80,
+      "clarify": 24,
+      "abstain": 24
+    },
+    "ready_operation_counts": {
+      "upper": 40,
+      "lower": 40
+    }
+  },
+  "review": {
+    "author": "/root/acceptance_v3_author",
+    "custodian": "/root/acceptance_v3_custodian",
+    "model": "gpt-6-astra",
+    "full_label_review_rounds": 2,
+    "unique_cases_reviewed": 128,
+    "label_judgments_across_rounds": 256,
+    "independent_original_input_key_checks_per_round": 80,
+    "original_input_key_check_rounds": 2,
+    "schema_and_quota_check_rounds": 2,
+    "initial_wording_ambiguities": 2,
+    "resolved_wording_ambiguities": 2,
+    "initial_exact_text_overlap_cases": 3,
+    "resolved_exact_text_overlap_cases": 3,
+    "texts_revised_after_review": 5,
+    "labels_changed_after_review": 0,
+    "unresolved_disputes": 0,
+    "final_schema_errors": 0,
+    "final_label_errors": 0,
+    "label_basis": "Supplied task contract; ready keys are original input scalar bytes, independent of downstream coverage or certification. No answers are corpus labels."
+  },
+  "exact_text_overlap": {
+    "comparison": "Exact decoded JSON text equality, without case folding or Unicode normalization",
+    "check_rounds": 2,
+    "candidate_cases_checked_per_round": 128,
+    "prior_cases_checked_per_round": 384,
+    "final_overlapping_candidate_cases": 0,
+    "prior_corpora": [
+      {
+        "path": "benchmarks/task_paraphrases_20260909/qualification.json",
+        "sha256": "9f0ae2c6a2c57edc00d7f3759c1fefc5830ffc033ee3838a33015a5edf74cd05",
+        "case_count": 128,
+        "initial_overlap_count": 1,
+        "final_overlap_count": 0
+      },
+      {
+        "path": "benchmarks/task_paraphrases_20260909/confirmation.json",
+        "sha256": "1f37ea2cb4073cbdb1be4ded22ded6375076447d7b75356798c5d209f8e377cb",
+        "case_count": 128,
+        "initial_overlap_count": 1,
+        "final_overlap_count": 0
+      },
+      {
+        "path": "benchmarks/task_paraphrases_followup_20260909/confirmation.json",
+        "sha256": "612e4007398666202abd5f0a104c0ebadd6e75121ebf67471dcfb9e498f14cd3",
+        "case_count": 128,
+        "initial_overlap_count": 1,
+        "final_overlap_count": 0
+      }
+    ]
+  },
+  "procedural_independence": {
+    "author_context": "Supplied task contract and permitted repository instructions only",
+    "author_attested_no_implementation_tests_graph_results_or_prior_corpus_content_access": true,
+    "custodian_read_implementation_tests_graph_or_results": false,
+    "prior_corpora_access": "Custodian mechanically read text fields for exact overlap and file bytes for hashes/counts only; no prior labels or contents inspected for corpus design",
+    "author_or_custodian_ran_cnet": false,
+    "parser_behavior_used_for_design_labels_or_revisions": false,
+    "external_providers_used": false,
+    "nested_subagents_used": false,
+    "same_model_author_and_custodian": true,
+    "external_or_iid_independence_claimed": false,
+    "case_text_and_family_names_disclosed_to_root_before_freeze": false,
+    "root_attested_corpus_unopened_at_freeze": true,
+    "root_attested_no_round3_parser_or_evaluator_execution_before_freeze": true,
+    "root_disclosure_before_freeze": "Hashes, counts, status, and review metadata only"
+  },
+  "usage": {
+    "synthetic": true,
+    "training_eligible": false,
+    "training_ineligible": true,
+    "purpose": "Frozen confirmation evidence for the supplied task contract",
+    "limitation": "Independent author and custodian contexts using the same Astra model; not externally authored, IID, or representative deployment traffic",
+    "performance_measured_at_freeze": false,
+    "candidate_must_be_frozen_before_evaluation": true
+  }
+}

@@ -15,6 +15,7 @@ STATUSES = {"ready", "clarify", "abstain"}
 ATOM = re.compile(r"[a-zA-Z0-9_-]{1,48}\Z")
 FREEZE_SHA256 = "1bf769fa77a416237a8a1e2534fbe949346a8e22fba630f1c0a4551e0c7be0fe"
 FOLLOWUP_FREEZE_SHA256 = "69ab525fef0e91a6d64398a0d5829f3b314b04cd7ced2a7ea4e3c6a605f31a49"
+ROUND3_FREEZE_SHA256 = "e78224298ce97e8fc8cd69088c64a54463934b2d2731030de8146d1c9b65e6b9"
 
 
 def _object(pairs):
@@ -139,6 +140,8 @@ def suite_identity(suite, collection):
         return "task_paraphrases_20260909", FREEZE_SHA256
     if suite == "followup" and collection == "confirmation":
         return "task_paraphrases_followup_20260909", FOLLOWUP_FREEZE_SHA256
+    if suite == "round3" and collection == "confirmation" and ROUND3_FREEZE_SHA256 is not None:
+        return "task_paraphrases_round3_20260909", ROUND3_FREEZE_SHA256
     raise ValueError("suite_collection")
 
 
@@ -185,8 +188,8 @@ def run(args):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("collection", choices=("qualification", "confirmation"))
-    parser.add_argument("--suite", choices=("original", "followup"), default="original",
-                        help="explicit frozen population; followup has confirmation only")
+    parser.add_argument("--suite", choices=("original", "followup", "round3"), default="original",
+                        help="explicit frozen population; followup and round3 have confirmation only")
     parser.add_argument("--assembly", required=True)
     parser.add_argument("--assembly-sha256", required=True)
     parser.add_argument("--parser-sha256", required=True)
