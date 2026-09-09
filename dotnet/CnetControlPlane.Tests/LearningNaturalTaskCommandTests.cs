@@ -46,6 +46,13 @@ public sealed class LearningNaturalTaskCommandTests : IClassFixture<LearningComm
         }
         using var unrelated = Receipt(await deployment.Command("task", "synthetic", Id('b'), "What is tomorrow's weather?"));
         Assert.Equal("abstain", unrelated.RootElement.GetProperty("proposal").GetProperty("Status").GetString());
+        foreach (var refused in new[] { "Uppercase U+0000.", "Lowercase codepoint 10.", "Make U+0085 uppercase.",
+            "Lowercase A, then explain the alphabet.", "Could you not capitalize a?" })
+        {
+            using var denied = Receipt(await deployment.Command("task", "synthetic", Id('2'), refused));
+            Assert.Equal("abstain", denied.RootElement.GetProperty("proposal").GetProperty("Status").GetString());
+            Assert.Equal(JsonValueKind.Null, denied.RootElement.GetProperty("experience").ValueKind);
+        }
         using var empty = Receipt(await deployment.Command("inbox", "0", "100"));
         Assert.Equal(0, empty.RootElement.GetProperty("experiences").GetArrayLength());
         await deployment.StartDaemon(); // Teacher and self-answer disabled by the private fixture.
@@ -84,6 +91,19 @@ public sealed class LearningNaturalTaskCommandTests : IClassFixture<LearningComm
         Assert.Equal(924, result.GetProperty("Expected").GetInt32());
         using var preserved = Receipt(await deployment.Command("task", "synthetic", Id('f'), "What is the lowercase of A?"));
         Assert.Equal(97, preserved.RootElement.GetProperty("experience").GetProperty("Value").GetInt32());
+        foreach (var (request, text, expected) in new[] {
+            (Id('3'), "Could you give me the capital form of 'µ', please?", 924),
+            (Id('4'), "For the character A, give its lowercase form.", 97),
+            (Id('5'), "Turn U+00B5 into its capital equivalent.", 924),
+            (Id('6'), "I need decimal codepoint 65 in lower case.", 97) })
+        {
+            using var expanded = Receipt(await deployment.Command("task", "synthetic", request, text));
+            Assert.Equal("ready", expanded.RootElement.GetProperty("proposal").GetProperty("Status").GetString());
+            var experience = expanded.RootElement.GetProperty("experience");
+            Assert.Equal("verified", experience.GetProperty("State").GetString());
+            Assert.Equal(expected, experience.GetProperty("Value").GetInt32());
+            Assert.Equal(expected, experience.GetProperty("Expected").GetInt32());
+        }
         using var uncovered = Receipt(await deployment.Command("task", "synthetic", Id('1'), "uppercase ß"));
         Assert.Equal("abstain", uncovered.RootElement.GetProperty("experience").GetProperty("State").GetString());
         foreach (var dataset in new[] { "unicode17_upper_latin1", "unicode17_lower_latin1" })
