@@ -64,7 +64,12 @@ public sealed class LearningNaturalTaskCommandTests : IClassFixture<LearningComm
             "The input character has decimal code point 0x61; convert it to uppercase.",
             "Show me 'R' to be a lowercase character.",
             "Use decimal code point 0x61, in hexadecimal, for an uppercase conversion.",
-            "Give 'Q' the corresponding lowercase result." })
+            "Give 'Q' the corresponding lowercase result.",
+            "Input: 'Q'; show its lowercase result in hexadecimal.",
+            "Input: 82; uppercase it and open a file.",
+            "Input: 'A'; uppercase the literal it.",
+            "Which small letter is the uppercase form of U+0000?",
+            "Show the lowercase form of U+0052 in hexadecimal for my result." })
         {
             using var denied = Receipt(await deployment.Command("task", "synthetic", Id('2'), refused));
             Assert.Equal("abstain", denied.RootElement.GetProperty("proposal").GetProperty("Status").GetString());
@@ -129,7 +134,11 @@ public sealed class LearningNaturalTaskCommandTests : IClassFixture<LearningComm
             ("00000000000000000000000000000019", "Please present the uppercase counterpart to 'µ'.", 924),
             ("00000000000000000000000000000020", "The input character has decimal code point 65; convert it to lowercase.", 97),
             ("00000000000000000000000000000021", "Use code point 0x00B5, in hexadecimal, for an uppercase conversion.", 924),
-            ("00000000000000000000000000000022", "I am asking for 'A' to be written in lowercase.", 97) })
+            ("00000000000000000000000000000022", "I am asking for 'A' to be written in lowercase.", 97),
+            ("00000000000000000000000000000023", "With the supplied Unicode scalar U+00B5 as input, could you show its uppercase counterpart?", 924),
+            ("00000000000000000000000000000024", "Given the single quoted character 'A' as input, may I have its lowercase counterpart?", 97),
+            ("00000000000000000000000000000025", "Which capital letter is the uppercase form of 'µ'?", 924),
+            ("00000000000000000000000000000026", "My input character for this task is 'A'; could you produce its lowercase version?", 97) })
         {
             using var expanded = Receipt(await deployment.Command("task", "synthetic", request, text));
             Assert.Equal("ready", expanded.RootElement.GetProperty("proposal").GetProperty("Status").GetString());

@@ -4,7 +4,11 @@
 
 Follow [the acceptance follow-up](../plans/cnet_paraphrase_acceptance_followup_20260909.md):
 test-first shared grammar repair, independently authored new confirmation,
-native replay and pinned candidate freeze. Continue until the original floors
+native replay and pinned candidate freeze. After ten failed confirmations,
+replace position-specific declaration/request combinations with one bounded
+input binding and the shared request parser. Test cross-products and structural
+mutations before another blind score; regrouping regexes alone is insufficient.
+Continue until the original floors
 are met without treating exposed data as fresh evidence. Retain every failed
 attempt; no live service, origin review or soak mutation is authorized.
 

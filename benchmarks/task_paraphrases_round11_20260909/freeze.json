@@ -1,0 +1,187 @@
+{
+  "schema": 1,
+  "name": "confirmation",
+  "round": 11,
+  "confirmation_file": "benchmarks/task_paraphrases_round11_20260909/confirmation.json",
+  "confirmation_sha256": "2f3d137b379e41160871ac817d87c579ea4d421b6406edc73cc6c1a73906a946",
+  "frozen_at_utc": "2026-09-09 10:06:58 UTC",
+  "file_bytes": 26764,
+  "counts": {
+    "total": 128,
+    "ready": 80,
+    "upper": 40,
+    "lower": 40,
+    "clarify": 24,
+    "abstain": 24,
+    "unique_ids": 128,
+    "unique_texts": 128,
+    "family_count": 36
+  },
+  "bounds": {
+    "max_text_unicode_characters": 290,
+    "max_text_utf16_units": 290,
+    "max_ready_utf16_units": 73,
+    "file_byte_limit": 131072,
+    "text_unicode_character_limit": 2048,
+    "ready_utf16_unit_limit": 256
+  },
+  "acceptance_floors": {
+    "wrong_ready_max": 0,
+    "ready_exact_min": 72,
+    "ready_total": 80,
+    "upper_exact_min": 34,
+    "upper_total": 40,
+    "lower_exact_min": 34,
+    "lower_total": 40,
+    "clarify_exact_min": 22,
+    "clarify_total": 24,
+    "abstain_exact_min": 23,
+    "abstain_total": 24
+  },
+  "acceptance_floors_unchanged": true,
+  "evaluation_executed": false,
+  "reviews": {
+    "status": "passed",
+    "author_agent": "/root/acceptance_v3_author",
+    "custodian_agent": "/root/acceptance_v4_author",
+    "author_status_labels_reviewed": 128,
+    "custodian_status_labels_reviewed": 128,
+    "author_ready_original_byte_keys_verified": 80,
+    "custodian_ready_original_byte_keys_independently_rederived": 80,
+    "custodian_ready_operations_independently_rederived": 80,
+    "nonready_operation_and_key_null_verified": 48,
+    "schema_and_bounds_verified": true,
+    "review_basis": "The original supplied behavior contract and permitted project instructions; no implementation, tests, graphs, CNET outputs, scores, results, or performance.",
+    "private_revision_count": 0,
+    "certification_floor_or_contract_relaxed": false,
+    "difficulty_adjusted": false,
+    "implementation_or_score_informed_adjustments": false,
+    "downstream_coverage_or_mapping_availability_used_for_labels": false
+  },
+  "overlap_check": {
+    "method": "Exact text equality only. During round-11 custody, prior texts were processed mechanically and not displayed for design or review.",
+    "prior_case_count": 1408,
+    "prior_unique_text_count": 1408,
+    "overlap_count": 0,
+    "prior_corpora_unchanged": true,
+    "passed": true,
+    "prior_corpora": [
+      {
+        "file": "benchmarks/task_paraphrases_20260909/qualification.json",
+        "sha256": "9f0ae2c6a2c57edc00d7f3759c1fefc5830ffc033ee3838a33015a5edf74cd05",
+        "case_count": 128
+      },
+      {
+        "file": "benchmarks/task_paraphrases_20260909/confirmation.json",
+        "sha256": "1f37ea2cb4073cbdb1be4ded22ded6375076447d7b75356798c5d209f8e377cb",
+        "case_count": 128
+      },
+      {
+        "file": "benchmarks/task_paraphrases_followup_20260909/confirmation.json",
+        "sha256": "612e4007398666202abd5f0a104c0ebadd6e75121ebf67471dcfb9e498f14cd3",
+        "case_count": 128
+      },
+      {
+        "file": "benchmarks/task_paraphrases_round3_20260909/confirmation.json",
+        "sha256": "4e0a31349ce0b2fc73a9d2727388a33ee6a08ba56f23cebf9bba818a361ebf46",
+        "case_count": 128
+      },
+      {
+        "file": "benchmarks/task_paraphrases_round4_20260909/confirmation.json",
+        "sha256": "c17d36329aca0b880b4fe470df4becb36110f11b2b1a4a5c6ca17aba3af26130",
+        "case_count": 128
+      },
+      {
+        "file": "benchmarks/task_paraphrases_round5_20260909/confirmation.json",
+        "sha256": "233e52c0d1fc5966cbe877e2d08769e1501fc1a29819534f05e3192fe37772e5",
+        "case_count": 128
+      },
+      {
+        "file": "benchmarks/task_paraphrases_round6_20260909/confirmation.json",
+        "sha256": "2022d8c4a07c1799245d81396cf4979308c32c49d8abddf78a4314d17159378b",
+        "case_count": 128
+      },
+      {
+        "file": "benchmarks/task_paraphrases_round7_20260909/confirmation.json",
+        "sha256": "e67f6646e839c0d8cd2629efd70ba3fe8822c226521bda755c08b103f439295b",
+        "case_count": 128
+      },
+      {
+        "file": "benchmarks/task_paraphrases_round8_20260909/confirmation.json",
+        "sha256": "fdb71d2095de99f4397440611b9a2733294cf9bbefdd9b9d63e4c6869977035c",
+        "case_count": 128
+      },
+      {
+        "file": "benchmarks/task_paraphrases_round9_20260909/confirmation.json",
+        "sha256": "d6632a6224495725ae528033da4226b14b47be950d7f36f4fc54d6de99b92a8d",
+        "case_count": 128
+      },
+      {
+        "file": "benchmarks/task_paraphrases_round10_20260909/confirmation.json",
+        "sha256": "ba3347376a322c3084c2d25996f9a084cce759e5508e792e5b40fb5395d679cb",
+        "case_count": 128
+      }
+    ]
+  },
+  "unopened_root_attestation": {
+    "agent": "/root",
+    "received_at_utc": "2026-09-09 10:00:12 UTC",
+    "text": "Root remains blind to the round-11 corpus and requests only metadata, hashes, and attestations, with no corpus contents."
+  },
+  "author_attestation": {
+    "agent": "/root/acceptance_v3_author",
+    "received_at_utc": "2026-09-09 10:05:44 UTC",
+    "text": "Synthetic and training-ineligible; reused context includes rounds 3/5/7/9 authorship and rounds 6/8/10 custody/semantic review, not fresh-context, IID, or external validation. Original contract, quotas, and floors unchanged. No implementation/tests/Graft/other graphs/results/outputs/scores/performance access or CNET execution; no failure details or implementation feedback requested or seen. No prior corpus files opened during round-11 authorship; prior content knowledge limited to acknowledged contexts. No subagents/providers/network used. Root received counts/hashes/metadata only, no new text, family names, or individual case details. No constraints, labels, quotas, floors, or difficulty adjusted from prior attempts or unknown results."
+  },
+  "custodian_attestation": {
+    "agent": "/root/acceptance_v4_author",
+    "recorded_at_utc": "2026-09-09 10:06:58 UTC",
+    "text": "I reviewed all 128 final corpus statuses against the original contract and independently rederived all 80 ready operation and original-byte labels without executing CNET. I accessed no CNET implementation, tests, Graft or other code graphs, outputs, scores, results, or performance, and requested or saw no failure details or implementation feedback. During round-11 custody, prior corpora were read programmatically only for exact text equality and metadata; prior content was not displayed for design. Acknowledged prior-authorship and custody knowledge remains in this reused context. I used no subagents, providers, or network. Root received only metadata, with no new case text, family names, or individual case details before freeze. No original constraints, quotas, numerical floors, labels, or difficulty were adjusted based on prior attempts or unknown results.",
+    "context_reused": true,
+    "prior_authored_corpora": [
+      "benchmarks/task_paraphrases_round4_20260909/confirmation.json",
+      "benchmarks/task_paraphrases_round6_20260909/confirmation.json",
+      "benchmarks/task_paraphrases_round8_20260909/confirmation.json",
+      "benchmarks/task_paraphrases_round10_20260909/confirmation.json"
+    ],
+    "prior_custody_and_semantic_review_corpora": [
+      "benchmarks/task_paraphrases_round5_20260909/confirmation.json",
+      "benchmarks/task_paraphrases_round7_20260909/confirmation.json",
+      "benchmarks/task_paraphrases_round9_20260909/confirmation.json"
+    ]
+  },
+  "provenance": {
+    "synthetic": true,
+    "training_eligible": false,
+    "training_use_prohibited": true,
+    "context_reuse_acknowledged": true,
+    "author_prior_authored_corpora": [
+      "benchmarks/task_paraphrases_round3_20260909/confirmation.json",
+      "benchmarks/task_paraphrases_round5_20260909/confirmation.json",
+      "benchmarks/task_paraphrases_round7_20260909/confirmation.json",
+      "benchmarks/task_paraphrases_round9_20260909/confirmation.json"
+    ],
+    "author_prior_custody_and_semantic_review_corpora": [
+      "benchmarks/task_paraphrases_round6_20260909/confirmation.json",
+      "benchmarks/task_paraphrases_round8_20260909/confirmation.json",
+      "benchmarks/task_paraphrases_round10_20260909/confirmation.json"
+    ],
+    "custodian_prior_authored_corpora": [
+      "benchmarks/task_paraphrases_round4_20260909/confirmation.json",
+      "benchmarks/task_paraphrases_round6_20260909/confirmation.json",
+      "benchmarks/task_paraphrases_round8_20260909/confirmation.json",
+      "benchmarks/task_paraphrases_round10_20260909/confirmation.json"
+    ],
+    "custodian_prior_custody_and_semantic_review_corpora": [
+      "benchmarks/task_paraphrases_round5_20260909/confirmation.json",
+      "benchmarks/task_paraphrases_round7_20260909/confirmation.json",
+      "benchmarks/task_paraphrases_round9_20260909/confirmation.json"
+    ],
+    "fresh_contexts": false,
+    "external_validation": false,
+    "iid_claim": false,
+    "no_cnet_execution": true,
+    "no_implementation_or_results_access": true,
+    "no_new_corpus_content_disclosed_to_root_before_freeze": true
+  }
+}

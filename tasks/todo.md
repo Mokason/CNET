@@ -2,6 +2,7 @@
 
 ## Active: fresh language acceptance follow-up
 
+- [ ] Shared two-clause input binding and request parsing, with cross-product/mutation tests
 - [ ] Reproduce and repair exposed shared grammar/clarification/compound gaps
 - [ ] Independently author, review and freeze a new blind confirmation set
 - [ ] Extend pinned evaluation selection without changing original floors

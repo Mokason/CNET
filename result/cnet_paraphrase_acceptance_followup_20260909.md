@@ -23,6 +23,7 @@ proposals may not contain a dataset/key. No floor, label or denominator changed.
 | [Round 7](task_paraphrases_round7_20260909/confirmation-1.json) | 32/80 | 14/40, 18/40 | 15/24 | 21/24 | 0 | FAIL |
 | [Round 8](task_paraphrases_round8_20260909/confirmation-1.json) | 50/80 | 23/40, 27/40 | 14/24 | 24/24 | 0 | FAIL |
 | [Round 9](task_paraphrases_round9_20260909/confirmation-1.json) | 39/80 | 20/40, 19/40 | 16/24 | 24/24 | 0 | FAIL |
+| [Round 10](task_paraphrases_round10_20260909/confirmation-1.json) | 48/80 | 24/40, 24/40 | 16/24 | 24/24 | 0 | FAIL |
 
 All rows and failed gates remain in the linked reports. Round3 also has a
 separate [infrastructure record](task_paraphrases_round3_20260909/infrastructure-attempt-1.json):
@@ -118,7 +119,34 @@ first blind score; all nine exposed populations scored 128/128. Fresh round9
 nevertheless failed ready and clarification floors. Round10 remains separately
 authored and blind against 1,280 exposed texts under the same original floors.
 
-The evaluator's 32 integrity tests pass; tracing covers 97% of 207 executable
+Round10 passed 1,595 managed/native tests, zero failures/skips, 99.77% parser
+line and 93.71% branch coverage. Source `d343de3` was freshly built and pinned
+in `6bbacaa` before its first blind score. The recipient correction passed 12
+independent probes. Its perfect exposed scores again failed to predict fresh
+acceptance; ready and clarification floors failed. The next structural slice
+shares input bindings and request parsing across two-clause compositions.
+No reliable time-to-acceptance follows from the ten failed confirmations.
+
+The contextual structural slice passes 118 independently composed tests (96
+component combinations and 22 boundary mutations); 93 initially failed. Its
+compatibility run passed 793 task-filter tests, excluding the explicitly
+unfinished next-repair test class. It preserves all ten earlier development
+populations at 128/128 but moves exposed round10 only to 90/128. This is
+component-composition evidence, not fresh acceptance. The next confirmation
+remains blind pending completed repair, review and candidate freeze.
+
+After boundary corrections and shared component vocabulary, all 941 task-filter
+tests pass (939 parser cases plus two existing task tests). The component
+matrix contains 180 independent combinations and 31 boundary cases; another
+55 cases cover exposed request-role misses and adversarial boundaries. All
+11 exposed populations now score 128/128, totaling 1,408 unique development
+texts. Full structural and subsequent development reports are retained under
+`task_paraphrases_round11_20260909/`; neither is fresh acceptance. The structural
+correction review passed 24 probes; the separate component-inventory review
+passed 34 probes with no further issue. Full committed-candidate regression and
+the untouched round11 confirmation remain pending.
+
+The evaluator's 34 integrity tests pass; tracing covers 97% of 213 executable
 lines. The unchanged capture/bridge surface passed 148 tests earlier this turn.
 Existing test-project CA1416 platform warnings remain; none were suppressed.
 Native tests use private installations and pinned external Unicode tables, not

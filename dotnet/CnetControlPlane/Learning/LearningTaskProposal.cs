@@ -16,9 +16,9 @@ internal static class LearningTaskParser
     // multiplying their automata by the operation vocabulary at every site.
     private const string Case = @"\x1F";
     private static readonly Regex OperationLexeme = new(@"\b(?<op>upper(?:[ -]?cas(?:e|ing|ed))?|lower(?:[ -]?cas(?:e|ing|ed))?|capital(?:[ -]letter)?s?|capitali[sz](?:e(?:d)?|ation)|small[ -]letters?|all caps)\b(?<noun>[ -](?:form|version|equivalent|lettering|letter|character|case conversion|conversion|casing|rendition|result|operation|transformation|counterpart))?", Options);
-    private const string OutputVerb = @"(?:make|put|write|render|return|show(?: me)?|display|supply|provide|present|express|give(?: me)?)";
+    private const string OutputVerb = @"(?:make|put|write|render|return|show(?: me)?|display|supply|provide|produce|present|express|give(?: me)?)";
     private const string Desire = @"(?:i (?:need|want|require|request|am requesting|am asking for|would like|would prefer)|i['’]d (?:like|prefer)|i['’]m (?:asking for|requesting))";
-    private const string Manner = @"(?<passive>to be )?(?:(?<transform>converted|changed|put|written|rendered|made) )?(?:(?:in|as|into|using|with|to) )?(?:an? |its )?";
+    private const string Manner = @"(?<passive>to be )?(?:(?<transform>converted|changed|put|written|rendered|made|shown|expressed) )?(?:(?:in|as|into|using|with|to) )?(?:an? |its )?";
     private const string Relation = @"(?:of|for|from|(?<counterpartTo>to)|applied to|corresponding to|associated with|produced from|obtained from)";
     private const string Input = @"(?<input>.+?)";
     private const string InputLabel = @"(?:(?:here is )?(?:the |my )?input(?: scalar| character)?|(?:the )?(?:chosen |selected |supplied )?character(?: supplied)?)";
@@ -34,9 +34,10 @@ internal static class LearningTaskParser
     ];
     private static readonly Regex SeePrefix = new(@"\Alet me see ", Options);
     private static readonly Regex PoliteSuffix = new(@"(?: for me(?:,? please)?|,? please)\z", Options);
+    private static readonly Regex ResultSuffix = new(@" for my result\z", Options);
     private static readonly Regex PreferenceSuffix = new(@" is (?:requested|what i (?:need|want)|the one i want|what i'm after|what i’m after)\z", Options);
     private static readonly Regex AmbiguitySuffix = new(@"(?:, whichever(?: i meant)?|; i haven['’]t chosen which input yet|; either is a possible input)\z", Options);
-    private static readonly Regex InputDescription = new(@"\A(?:only )?(?:the |an? |this |that )?(?:single |single-character |one-character |supplied |provided |chosen |selected |quoted |literal )?(?:(?:unicode|latin1|currency) )?(?:character|letter|scalar|digit|symbol|input(?: scalar| character| letter)?)(?:: ?| )", Options);
+    private static readonly Regex InputDescription = new(@"\A(?:only )?(?:the |my |an? |this |that )?(?:single |single-character |one-character |supplied |provided |chosen |selected |quoted |literal )?(?:(?:unicode|latin1|currency) )?(?:character|letter|scalar|digit|symbol|input(?: scalar| character| letter)?)(?:: ?| )", Options);
     private static readonly Regex LeadingModifier = new(@"\A(?:only )?(?:the |an? |this |that )?(?:single|single-character|one-character|supplied|provided|chosen|selected|quoted|literal) ", Options);
     private static readonly Regex QuotedDescription = new(@"\A(?:the )?quoted literal (?<input>.+)\z", Options);
     private static readonly Regex ShortDescription = new(@"\A(?:the )?(?:literal|supplied|provided) (?<input>.+)\z", Options);
@@ -67,29 +68,44 @@ internal static class LearningTaskParser
     private static readonly Regex QuotedString = new(@"\A(?:'[^']*'|""[^""]*"")\z", Options);
     private static readonly Regex UnsupportedOperand = new(@"(?:\b(?:using|locale|rules|string|word|sentence|paragraph|text|phrase|sequence|pair|control)\b|\bboth letters\b|\baccording to\b|\bspecific\b|;)", Options);
     private static readonly Regex FieldSeparator = new(@"[;.,] (?:and |with )?| and ", Options);
+    private const string Reference = @"(?:it|this(?: one)? character|that(?: character)?)";
+    private static readonly Regex ReferenceUse = new(@"\b(?:" + Reference + @"|its)\b", Options);
+    private static readonly Regex ReferenceOperand = new(@"\A" + Reference + @"\z", Options);
+    // Carries only validated input/status evidence, never a selected operation
+    // or dataset from the shared operand-validation call. Source text retains
+    // the declaration and its explicit representation qualifiers.
+    private sealed record InputBinding(byte? OriginalByte, string Status, string Code, string SourceText);
     private static readonly Regex[] OperationFields = [
+        new(@"\Athe transformation i am requesting is " + Case + @"\z", Options),
         new(@"\A(?:the )?conversion i want is " + Case + @"\z", Options),
         new(@"\Aoperation requested: " + Case + @"\z", Options),
         new(@"\A(?:the |my |its )?(?:desired |requested |target |chosen |preferred )?(?:output )?(?:case(?: choice| conversion| operation| i need)?|operation|transformation)(?: is(?: to be)? |: ?| selected: ?| should be )" + Case + @"\z", Options),
         new(@"\A" + Case + @" (?:is (?:the )?(?:requested |chosen )?(?:case|operation)|as the (?:chosen )?(?:case|operation)|for the case)\z", Options),
         new(@"\A(?:i (?:request|want|need) (?:it |its |an? |the )?|(?:please )?(?:use|apply|request|select|perform|do) (?:an? )?|needs )" + Case + @"\z", Options),
-        new(@"\Athe case " + Case + @"\z", Options),
-        new(@"\A(?:its |for (?:an? )?)?" + Case + @"\z", Options),
+        new(@"\Athe (?:case|operation) " + Case + @"\z", Options),
+        new(@"\A(?:its |an? |for (?:an? )?)?" + Case + @"\z", Options),
         new(@"\Amy preferred operation is to make an? " + Case + @"\z", Options)
     ];
     private static readonly Regex[] ActionFields = [
         new(@"\A" + Desire + @" (?:an? )?" + Case + @" applied to it\z", Options),
         new(@"\A(?:please )?(?:(?:put|write|render|make) it (?:(?:in|as|into) )?" + Case + @"|" + Case + @" (?:it|its character))\z", Options),
-        new(@"\A(?:please )?(?:give|provide|return|what is) its " + Case + @"\z", Options),
+        new(@"\A(?:please )?(?:" + OutputVerb + @"|what is) its " + Case + @"\z", Options),
+        new(@"\A(?:may|can|could) i (?:have|get|see) its " + Case + @"\z", Options),
         new(@"\A(?:please )?(?:convert|change|turn) it (?:to|into) " + Case + @"\z", Options),
         new(@"\A(?:i would|i['’]d) like its character " + Case + @"\z", Options)
     ];
     private static readonly Regex[] InputFields = [
+        new(@"\A(?:the |my )?input(?: character| scalar)? for this task(?: is |: ?)" + Input + @"\z", Options),
+        new(@"\A(?:the )?(?:literal )?character i['’]m giving you is " + Input + @"\z", Options),
+        new(@"\A(?:the )?selected input has (?<numeric>decimal code[ -]?point) " + Input + @"\z", Options),
+        new(@"\Ai have supplied " + Input + @"\z", Options),
+        new(@"\Athis request has (?:the )?input " + Input + @"\z", Options),
+        new(@"\Athe (?<numeric>decimal code[ -]?point) of my input is " + Input + @"\z", Options),
         new(@"\Athis task has the input character " + Input + @"\z", Options),
         new(@"\Ai['’]m specifying the input " + Input + @"\z", Options),
         new(@"\Ai have a quoted input character: " + Input + @"\z", Options),
         new(@"\A(?:the |my )?input (?:for my request|for this conversion|i want to use) is " + Input + @"\z", Options),
-        new(@"\Ai have chosen " + Input + @" as the input\z", Options),
+        new(@"\Ai(?: have|['’]ve) chosen " + Input + @" as the input\z", Options),
         new(@"\Amy one-character input is " + Input + @"\z", Options),
         new(@"\A(?:the )?(?<numeric>code[ -]?point) i am giving you is " + Input + @"\z", Options),
         new(@"\A(?:the )?input character has (?<numeric>decimal code[ -]?point) " + Input + @"\z", Options),
@@ -103,7 +119,7 @@ internal static class LearningTaskParser
         new(@"\Amy selected scalar has (?<numeric>decimal code[ -]?point) " + Input + @"\z", Options),
         new(@"\Ai have " + Input + @" as my input\z", Options),
         new(@"\A" + Input + @" as the supplied character\z", Options),
-        new(@"\A(?:please )?(?:use|take) " + Input + @" (?:for|as) the (?:input(?: character)?|character)\z", Options),
+        new(@"\A(?:please )?(?:use|take) " + Input + @" (?:for|as) the (?:input(?: character| scalar)?|character)\z", Options),
         new(@"\A(?<inputUse>use) " + Input + @"\z", Options),
         new(@"\Ahere is the input " + Input + @"\z", Options),
         new(@"\Afor the input, i have " + Input + @"\z", Options),
@@ -116,6 +132,9 @@ internal static class LearningTaskParser
         new(@"\Ai am supplying " + Input + @" as the character\z", Options)
     ];
     private static readonly Regex[] Forms = [
+        new(@"\Awhich (?<alias>capital letter|small letter) is the " + Case + @" of " + Input + @"\z", Options),
+        new(@"\A(?:the |my )?(?:case transformation|requested operation) for " + Input + @" (?:should be|is) " + Case + @"\z", Options),
+        new(@"\Athe " + Case + @" i am requesting uses " + Input + @"\z", Options),
         new(@"\A" + Desire + @" (?:the |an? )?" + Case + @" that (?:goes with|corresponds to) " + Input + @"\z", Options),
         new(@"\A" + OutputVerb + @" (?:the |an? )?" + Case + @" that (?:goes with|corresponds to) " + Input + @"\z", Options),
         // Only causative make binds the first object as the conversion input.
@@ -172,11 +191,11 @@ internal static class LearningTaskParser
         new(@"\A(?:the )?" + Case + @" should take " + Input + @" as (?:its|the) input\z", Options),
         new(@"\A(?:the )?case is to be " + Case + @" for " + Input + @"\z", Options),
         new(@"\A" + Input + @" (?:needs|is to be) " + Case + @"\z", Options),
-        new(@"\A(?<inputUse>use|take) " + Input + @" for (?:an? |my |the )?" + Case + @"\z", Options),
+        new(@"\A(?<inputUse>use|take) " + Input + @" for (?:an? |my |the |this )?" + Case + @"\z", Options),
         new(@"\Ahow (?:does|would) " + Input + @" look after " + Case + @"\z", Options),
         // Predicate and output relationships are explicit. Numeric descriptions
         // are consumed only inside operands, never silently as output modifiers.
-        new(@"\A" + Case + @" is (?:requested|desired) for " + Input + @"\z", Options),
+        new(@"\A" + Case + @" is (?:requested|desired|my request) for " + Input + @"\z", Options),
         new(@"\A(?:change|set) (?:the )?case of " + Input + @" to " + Case + @"\z", Options),
         new(@"\A(?:give(?: me)?|show|return|provide|supply) (?:this|the supplied) character (?:in|as) " + Case + @": " + Input + @"\z", Options),
         new(@"\Amake the supplied character " + Case + @": " + Input + @"\z", Options),
@@ -213,7 +232,9 @@ internal static class LearningTaskParser
         new(@"\A" + Declaration + @"[;.:] (?:please )?(?:apply|perform|use) " + Case + @"(?: to it)?\z", Options),
         new(@"\A" + Declaration + @"[;.:] (?:please )?" + Case + @" it\z", Options),
         new(@"\A" + Declaration + @"[;.:] i (?:need|want) it " + Manner + Case + @"\z", Options),
-        new(@"\A" + Declaration + @"[;.:] i(?: would|['’]d) (?:like|prefer) it " + Manner + Case + @"\z", Options),
+        new(@"\A" + Declaration + @"[;.:] i would like it " + Manner + Case + @"\z", Options),
+        new(@"\A" + Declaration + @"[;.:] i would prefer it " + Manner + Case + @"\z", Options),
+        new(@"\A" + Declaration + @"[;.:] i['’]d (?:like|prefer) it " + Manner + Case + @"\z", Options),
         new(@"\A" + Declaration + @"[;.:] (?:(?:the )?(?:requested )?(?:case )?operation(?: is |: ?)|desired case: ?)" + Case + @"\z", Options),
         new(@"\A" + NumericDeclaration + @"[;.:] (?:please )?(?:convert|change|turn) it (?:to|into) " + Case + @"\z", Options),
         new(@"\A" + NumericDeclaration + @"[;.:] (?:please )?(?:apply|perform|use) " + Case + @"\z", Options)
@@ -232,10 +253,11 @@ internal static class LearningTaskParser
         new(@"\Athe (?:uppercase|lowercase) input (?:could be|is) " + Input + @"\z", Options)
     ];
     private static readonly Regex[] AmbiguousDirectionForms = [
+        new(@"\A" + Desire + @" " + Input + @" in (?:uppercase or in lowercase|lowercase or in uppercase)\z", Options),
         new(@"\Ai want " + Input + @" changed to either (?:uppercase or lowercase|lowercase or uppercase)\z", Options),
         new(@"\Athe case i need for " + Input + @" is (?:upper or lower|lower or upper)\z", Options),
         new(@"\Amy requested form for " + Input + @" is (?:uppercase or lowercase|lowercase or uppercase)\z", Options),
-        new(@"\Aconvert " + Input + @" to (?:upper or lower|lower or upper) case\z", Options),
+        new(@"\Aconvert " + Input + @" to (?:either )?(?:upper or lower|lower or upper) case\z", Options),
         new(@"\A(?:should " + Input + @" be made|set " + Input + @" to) (?:upper(?:[ -]?case)?|lower(?:[ -]?case)?) or (?:upper(?:[ -]?case)?|lower(?:[ -]?case)?)\z", Options),
         new(@"\A(?:use|apply|perform) (?:upper(?:[ -]?case)?|lower(?:[ -]?case)?) or (?:upper(?:[ -]?case)?|lower(?:[ -]?case)?) (?:on|to|for) " + Input + @"\z", Options),
         new(@"\A" + OutputVerb + @" " + Input + @" (?:in|as) (?:upper(?:[ -]?case)?|lower(?:[ -]?case)?) or (?:upper(?:[ -]?case)?|lower(?:[ -]?case)?)\z", Options),
@@ -271,11 +293,14 @@ internal static class LearningTaskParser
     private static LearningTaskProposal Clarify() => new("clarify", "specify_case_input", Prompt:
         "Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5).");
     private static LearningTaskProposal Abstain(string code) => new("abstain", code);
+    private static bool IsLowerOperation(string operation) => operation.StartsWith("lower", StringComparison.OrdinalIgnoreCase)
+        || operation.StartsWith("small", StringComparison.OrdinalIgnoreCase);
     private static LearningTaskProposal Ready(string operation, byte key) => char.IsControl((char)key) ? Abstain("input_domain") : new("ready", "typed_case_change",
-        operation.StartsWith("lower", StringComparison.OrdinalIgnoreCase) || operation.StartsWith("small", StringComparison.OrdinalIgnoreCase)
-            ? "unicode17_lower_latin1" : "unicode17_upper_latin1", key);
+        IsLowerOperation(operation) ? "unicode17_lower_latin1" : "unicode17_upper_latin1", key);
 
-    internal static LearningTaskProposal Propose(string text)
+    internal static LearningTaskProposal Propose(string text) => ProposeRequest(text, null);
+
+    private static LearningTaskProposal ProposeRequest(string text, InputBinding? binding)
     {
         if (text.Length is < 1 or > 256 || text.Any(char.IsControl) || text.Any(char.IsSurrogate)) return Abstain("input_bounds");
         if (QuotedDomainRefusal(text) is { } quotedRefusal) return quotedRefusal;
@@ -285,6 +310,7 @@ internal static class LearningTaskParser
         var exact = Canonical.Match(text);
         if (exact.Success)
         {
+            if (binding is not null) return Abstain("unsupported_intent");
             var value = exact.Groups["input"].Value;
             return byte.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var key)
                 && key.ToString(CultureInfo.InvariantCulture) == value ? Ready(exact.Groups["op"].Value, key) : Abstain("input_domain");
@@ -300,23 +326,29 @@ internal static class LearningTaskParser
         }
         text = SeePrefix.Replace(text, "show ", 1);
         text = PoliteSuffix.Replace(text, "", 1);
+        text = ResultSuffix.Replace(text, "", 1);
         text = PreferenceSuffix.Replace(text, "", 1);
         var ambiguity = AmbiguitySuffix.Match(text);
         if (ambiguity.Success) text = text[..ambiguity.Index];
         if (CompoundOrNegated.IsMatch(text)) return Abstain("unsupported_intent");
+        if (binding is not null && FieldSeparator.IsMatch(text)) return Abstain("unsupported_intent");
+        if (binding is null && ProposeBoundRequest(text) is { } contextual)
+            return ambiguity.Success && contextual.Status == "ready" ? Clarify() : contextual;
         foreach (var form in AmbiguousDirectionForms)
         {
             var match = form.Match(text);
             if (!match.Success) continue;
-            var operand = ProposeOperand("upper", OperandText(match));
+            var operand = ProposeRequestOperand("upper", OperandText(match), binding);
             return operand.Status == "abstain" ? operand : Clarify();
         }
         foreach (Match operation in OperationLexeme.Matches(text))
         {
             var operationName = operation.Groups["op"].Value;
             var framed = text[..operation.Index] + '\u001f' + text[(operation.Index + operation.Length)..];
-            if (ProposeFields(operationName, framed) is { } fields)
+            if (binding is null && ProposeFields(operationName, framed) is { } fields)
                 return ambiguity.Success && fields.Status == "ready" ? Clarify() : fields;
+            if (binding is not null && IsOperationField(framed))
+                return ambiguity.Success ? Clarify() : BoundOperation(operationName, binding);
             // An indefinite article is not an input. Quoted 'a' and explicit
             // "a as ..." remain operands; preserve the lexeme's noun evidence.
             if (MissingOperand.IsMatch(framed) && (operation.Groups["noun"].Success
@@ -330,15 +362,22 @@ internal static class LearningTaskParser
                 // Other case words remain uninterpreted operand text: a frame
                 // cannot turn a description, whole string or extra action into
                 // one scalar merely because it contains an operation word.
-                var proposal = ProposeOperand(operationName, OperandText(match));
+                var operandText = OperandText(match);
+                var proposal = ProposeRequestOperand(operationName, operandText, binding);
+                // Even an ambiguous binding must not hide a malformed request.
+                var typedOperand = proposal.Status == "ready" || binding is not null && ReferenceOperand.IsMatch(operandText);
+                // Two names in an equivalence question must denote the SAME
+                // operation. Conflicting aliases cannot choose a direction.
+                if (typedOperand && match.Groups["alias"].Success
+                    && IsLowerOperation(match.Groups["alias"].Value) != IsLowerOperation(operationName)) return Clarify();
                 // A result sent "to" someone does not identify an operand.
                 // Only the explicit counterpart relation has that meaning here.
-                if (proposal.Status == "ready" && match.Groups["counterpartTo"].Success
+                if (typedOperand && match.Groups["counterpartTo"].Success
                     && !operation.Groups["noun"].Value.TrimStart(' ', '-').Equals("counterpart", StringComparison.OrdinalIgnoreCase))
                     return Abstain("unsupported_intent");
                 // An input's case describes its current state, not a requested
                 // conversion. This frame needs an explicit operation noun.
-                if (proposal.Status == "ready" && match.Groups["inputCase"].Success)
+                if (typedOperand && match.Groups["inputCase"].Success)
                 {
                     var noun = operation.Groups["noun"].Value.TrimStart(' ', '-');
                     if (!new[] { "conversion", "operation", "transformation", "case conversion" }
@@ -347,7 +386,7 @@ internal static class LearningTaskParser
                 // Preserve verb/adjective evidence lost by the direction marker.
                 // Showing a property is not applying a conversion; a modal
                 // adjective question permits both readings and must clarify.
-                if (proposal.Status == "ready" && !operationName.EndsWith("ed", StringComparison.OrdinalIgnoreCase)
+                if (typedOperand && !operationName.EndsWith("ed", StringComparison.OrdinalIgnoreCase)
                     && !match.Groups["transform"].Success)
                 {
                     if (match.Groups["passive"].Success && match.Groups["output"].Value.StartsWith("show", StringComparison.OrdinalIgnoreCase))
@@ -363,15 +402,52 @@ internal static class LearningTaskParser
         {
             var missing = form.Match(text);
             if (!missing.Success) continue;
-            var operand = ProposeOperand("upper", OperandText(missing));
+            var operand = ProposeRequestOperand("upper", OperandText(missing), binding);
             return operand.Status == "abstain" ? operand : Clarify();
         }
-        if (MatchInputField(text) is { } declared)
+        if (binding is null && MatchInputField(text) is { } declared)
         {
             var operand = ProposeOperand("upper", declared);
             return operand.Status == "abstain" ? operand : Clarify();
         }
         return Abstain("unsupported_intent");
+    }
+
+    private static LearningTaskProposal BoundOperation(string operation, InputBinding binding) =>
+        binding.OriginalByte is { } key ? Ready(operation, key)
+            : binding.Status == "abstain" ? Abstain(binding.Code) : Clarify();
+
+    private static LearningTaskProposal ProposeRequestOperand(string operation, string operand, InputBinding? binding)
+    {
+        if (binding is null) return ProposeOperand(operation, operand);
+        // Resolve raw reference syntax BEFORE any description stripping. A
+        // literal named "it" and a second explicit input cannot become a ref.
+        return ReferenceOperand.IsMatch(operand) ? BoundOperation(operation, binding) : Abstain("unsupported_intent");
+    }
+
+    private static LearningTaskProposal? ProposeBoundRequest(string text)
+    {
+        foreach (Match separator in FieldSeparator.Matches(text))
+        {
+            var left = text[..separator.Index];
+            var right = text[(separator.Index + separator.Length)..];
+            // A comma in a supported explicit input representation belongs to
+            // that input phrase, not to the following request. Ask the same
+            // field parser to validate the extended phrase before deferring.
+            if (separator.Value.StartsWith(',') && right.StartsWith("in hexadecimal, ", StringComparison.OrdinalIgnoreCase)
+                && MatchInputField(left + ", in hexadecimal") is { } extended && HexInput.IsMatch(extended)) continue;
+            if (!ReferenceUse.IsMatch(right) || MatchInputField(left) is not { } operand) continue;
+            // A generic "For uppercase conversion" phrase is not an input
+            // declaration. It must not bind a missing scalar to another action.
+            if (OperationLexeme.IsMatch(operand)) return Abstain("unsupported_intent");
+            var checkedInput = ProposeOperand("upper", operand);
+            if (checkedInput.Status == "abstain") return checkedInput;
+            var binding = new InputBinding(checkedInput.Key, checkedInput.Status, checkedInput.Code, left);
+            // Bound mode cannot re-enter declaration/field composition. Once
+            // claimed, refusal is final: legacy frames cannot reinterpret it.
+            return ProposeRequest(right, binding);
+        }
+        return null;
     }
 
     private static string? MatchInputField(string text)

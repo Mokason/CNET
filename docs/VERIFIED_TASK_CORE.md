@@ -151,6 +151,25 @@ retain the hexadecimal type; decimal conflicts and result-format requests
 remain unsupported. Additional descriptor matching is bounded and requires a
 complete noun description, not deletion of arbitrary words.
 
+Two-clause requests can bind one explicit input declaration to a following
+`it`/`its` request. The second clause uses the same wrapper and request parser
+as standalone requests, for example `With the supplied Unicode scalar U+00B5
+as input, could you show its uppercase counterpart?`. Bindings retain only
+the original input/status evidence, never an operation or dataset from input
+validation. References are resolved before description stripping; a literal
+`it` is not a pronoun. A second input/declaration, extra action, recipient or
+result format cannot be ignored. Contextual refusal is final, without falling
+through to legacy interpretation. This extends combinations of supported
+components, not arbitrary English vocabulary.
+
+Input declaration labels and request verbs are shared across these components:
+`My input character for this task is 'A'; could you produce its lowercase
+version?` is one supported combination. Equivalence questions such as `Which
+capital letter is the uppercase form of 'µ'?` require both operation aliases
+to agree; disagreement clarifies only after input/domain validation. A trailing
+`for my result` is a request wrapper, not permission to discard hexadecimal,
+locale or other result-format modifiers. Duplicate actions still refuse.
+
 Requests are at most 256 UTF-16 code units; control characters and surrogates
 refuse, including decoded control values in canonical, hexadecimal and decimal
 operands. Bare numeric strings such as `uppercase 65`, multiple candidates,

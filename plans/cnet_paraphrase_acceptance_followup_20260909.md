@@ -245,3 +245,64 @@ not supply the character to convert. Five further tests ran RED (three failed).
 Restrict this frame to causative `make`; explicit change-into frames remain
 unchanged. Extend the private native refusal fixture and review only this
 correction before freezing. No blind corpus or acceptance floor changes.
+
+Round10's first blind result failed: 48/80 ready (24 per operation), 16/24
+clarify, 24/24 abstain, zero wrong ready. Frozen source passed 1,595 tests,
+99.77% parser line and 93.71% branch coverage, and 12 correction probes.
+All results remain. Round11 has 52 exposed-miss/boundary regressions that ran
+RED (45 failed), but continuing sentence-template repair has no reliable
+completion bound. The user requested an ETA; report this lack of convergence
+instead of estimating completion from passing development checks.
+
+Structural next slice: one explicit input declaration plus one pronominal
+request, parsed using the same wrapper/expression parser as standalone requests.
+Keep a typed original-input binding; only `it`/`its` references may use it.
+At most two clauses, no nested declaration, no second input, no dropped words,
+no fallback after the context parser claims a request. Preserve native/source
+authority, radix evidence, domain refusal and all original floors. Independent
+review recommends this slice rather than cosmetic regrouping of regexes.
+
+Acceptance for the structural slice: cross-product tests of independently
+supported input declarations, wrappers and operation expressions; negative
+mutations for recipients, moved result formats, extra actions/inputs and absent
+bindings; then all existing regressions and native replay. The separately
+authored round11 stays blind until the completed candidate is frozen. No new
+model, source, GPU fitting, live service change or weakened gate is authorized.
+
+The first contextual slice's 118 independently composed tests ran RED (93
+failed), then passed: 96 declaration/request/operation combinations and 22
+boundary mutations. Existing task compatibility passed 793 tests, excluding
+the explicitly unfinished 52-case next-repair test class (43 still fail).
+All ten earlier exposed populations remain 128/128; the most recent exposed
+round10 improves only from 88/128 to 90/128. Thus the structural slice proves
+component recombination, not acceptance or broad semantic coverage. Its
+implementation review is pending; round11 remains unopened and unexecuted.
+
+The structural implementation review found no wrong-ready in 40 probes, but
+identified input-aside boundary and reference/verb-sharing composition defects.
+Four new cases ran RED; unify reference recognition, use shared output verbs
+for possessive requests, and defer a comma only when the same input-field parser
+validates the extended hexadecimal input phrase. All 802 compatibility/component
+tests pass (127 new component cases plus 675 existing task cases), and the
+bounded correction review passes all 24 independent probes. The remaining
+component vocabulary/label work is still RED; do not freeze or claim acceptance.
+
+Expand the independently combined matrix to ten input declarations and nine
+request wrappers in both directions (180 combinations). Together with existing
+component boundaries this gives 211 cases; all 84 newly added combinations ran
+RED before extending shared input labels and vocabulary. The exposed next-repair
+class also now passes. Equivalent operation names agree only in a complete
+equivalence question; disagreements clarify after input/domain validation.
+Keep invalid domains, duplicate actions and retained result formats abstaining.
+One remaining oversized legacy preference pattern was split without raising
+the runtime guard. Component-inventory implementation review and full native
+regressions remain before the blind round11 score.
+
+All 941 task-filter tests now pass (939 parser cases and two existing task
+tests), including 211 component cases and 55 exposed request-role/boundary
+cases. Every exposed collection scores 128/128, across 1,408 unique texts; these
+are development evidence only. Separate component-inventory implementation
+review passed all 34 probes on DLL `7d20016b8afcfe7688abe281145b989c66b5b95ac670b839aca8847093f1f03c`,
+with no additional finding or restricted-data access. Extend private native
+replays for shared input/produce labels and alias questions, then commit source,
+build fresh, run full regressions and pin before the untouched confirmation.
