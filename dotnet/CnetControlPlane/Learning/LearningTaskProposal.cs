@@ -11,34 +11,43 @@ internal sealed record LearningTaskProposal(string Status, string Code, string? 
 internal static class LearningTaskParser
 {
     private const RegexOptions Options = RegexOptions.CultureInvariant | RegexOptions.IgnoreCase | RegexOptions.NonBacktracking;
-    private const string Case = @"(?<op>upper[ -]?case|lower[ -]?case|capital(?:[ -]letter)?s?|capitali[sz]ed|small[ -]letter)(?<noun> form| version| equivalent| letter)?";
+    private const string Case = @"(?<op>upper[ -]?case|lower[ -]?case|capital(?:[ -]letter)?s?|capitali[sz]ed|small[ -]letter)(?<noun> form| version| equivalent| letter| character)?";
     private const string OutputVerb = @"(?:make|put|write|render|return)";
     private const string Input = @"(?<input>.+?)";
-    private const string Alternative = @"(?:(?:the )?(?:single )?(?:character|letter) )?(?:'.'|"".""|U\+[0-9a-f]{1,6}|(?:decimal )?codepoint [0-9]{1,6}|[0-9]+|[^\s])";
+    private const string Alternative = @"(?:(?:the )?(?:single )?(?:character|letter) )?(?:'.'|"".""|U\+[0-9a-f]{1,6}|(?:decimal )?code[ -]?point [0-9]{1,6}|[0-9]+|[^\s])";
     private static readonly Regex Canonical = new(@"\Aunicode (?<op>upper|lower) (?<input>[0-9]{1,3})\z", Options);
-    private static readonly Regex PolitePrefix = new(@"\A(?:(?:can|could|would|will) you (?:please )?|please )", Options);
+    private static readonly Regex PolitePrefix = new(@"\A(?:(?:can|could|would|will) you (?:please )?|(?:i would|i'd|i’d) like you to |please |kindly )", Options);
     private static readonly Regex PoliteSuffix = new(@"(?: for me(?:,? please)?|,? please)\z", Options);
     private static readonly Regex InputDescription = new(@"\A(?:the |an? )?(?:single )?(?:character|letter) ", Options);
+    private static readonly Regex CodepointRelation = new(@"\A(?:with|at|represented by) (?<input>(?:decimal )?code[ -]?point .+|U\+.+)\z", Options);
+    private static readonly Regex DecimalInput = new(@"\A(?:decimal )?code[ -]?point (?<number>[0-9]+)\z", Options);
+    private static readonly Regex DecimalPrefix = new(@"\A(?:decimal )?code[ -]?point\b", Options);
     private static readonly Regex MissingScalar = new(@"\A(?:the |an? |one )?(?:single )?(?:character|letter|codepoint)\z", Options);
     private static readonly Regex MissingDirection = new(@"\A(?:(?:change|adjust|set) (?:the )?(?:letter )?case(?: of " + Input + @")?|case-convert " + Input
-        + @"|(?:convert|change) " + Input + @" to (?:the )?(?:requested )?case|apply (?:a )?case (?:conversion|operation)(?: to " + Input + @")?)\z", Options);
+        + @"|(?:convert|change) " + Input + @"(?: to (?:the )?(?:requested )?case)?|apply (?:a )?case (?:conversion|operation)(?: to " + Input + @")?)\z", Options);
     private static readonly Regex MissingOperand = new(@"\A(?:" + OutputVerb + @"|give(?: me)?|show(?: me)?|display) an? " + Case + @"\z", Options);
     private static readonly Regex CompoundOrNegated = new(@"\b(?:not|then|also)\b", Options);
     private static readonly Regex AlternativeToken = new(Alternative, Options);
     private static readonly Regex AlternativeSeparator = new(@" *, *(?:(?:and|or) +)?| +(?:(?:and|or) +)?", Options);
     private static readonly Regex HasConjunction = new(@"\b(?:and|or)\b", Options);
     private static readonly Regex QuotedString = new(@"\A(?:'[^']*'|""[^""]*"")\z", Options);
-    private static readonly Regex UnsupportedOperand = new(@"(?:\b(?:using|locale|rules)\b|\baccording to\b|;|\A(?:the )?(?:(?:whole|entire) )?(?:string|word)\b)", Options);
+    private static readonly Regex UnsupportedOperand = new(@"(?:\b(?:using|locale|rules)\b|\baccording to\b|;|\A(?:the )?(?:(?:whole|entire) )?(?:string|word|sentence|paragraph|text)\b)", Options);
     private static readonly Regex[] Forms = [
         new(@"\A" + Case + @"(?: " + Input + @")?\z", Options),
         new(@"\A(?<op>capitali[sz]e)(?: " + Input + @")?\z", Options),
         new(@"\A(?:convert|change|turn) (?:" + Input + @" )?(?:to|into) (?:an? |its )?" + Case + @"\z", Options),
         new(@"\Aset (?:the )?case of " + Input + @" to " + Case + @"\z", Options),
         new(@"\A" + OutputVerb + @" (?:" + Input + @" (?:(?:in|as|into|using) )?(?:an? |its )?)?" + Case + @"\z", Options),
-        new(@"\A(?:give(?: me)?|show(?: me)?|return|display|what is|what's|what’s|i would like|i want|(?:may|can|could) i (?:have|get)) (?:the )?" + Case + @"(?: of " + Input + @")?\z", Options),
+        new(@"\A(?:give(?: me)?|show(?: me)?|return|display|what is|what's|what’s|i would like|i want|(?:may|can|could) i (?:have|get)) (?:the )?" + Case + @"(?: (?:of|corresponding to) " + Input + @")?\z", Options),
         new(@"\A(?:i need|i want|i would like) " + Input + @" (?:in|as) (?:an? )?" + Case + @"\z", Options),
         new(@"\Athe " + Case + @" of " + Input + @"\z", Options),
-        new(@"\Afor " + Input + @", (?:give|show)(?: me)? (?:its |the )?" + Case + @"\z", Options)
+        new(@"\Afor " + Input + @", (?:give|show|return|use)(?: me)? (?:its |the )?" + Case + @"\z", Options),
+        new(@"\Ahow does " + Input + @" look in " + Case + @"\z", Options),
+        new(@"\Awith " + Input + @" as (?:the |my )?input, (?:return|give|show)(?: me)? (?:its |the )?" + Case + @"\z", Options),
+        // A bounded declaration supplies one operand to one operation, not a
+        // substring extracted from arbitrary prose or a second executable step.
+        new(@"\Athe (?:character|letter|input) is " + Input + @"[;. ]+ (?:please )?(?:" + Case + @"|(?<op>capitali[sz]e)) it\z", Options),
+        new(@"\A" + Input + @" is (?:my|the) input[;. ]+ (?:please )?(?:convert|change|turn) it (?:to|into) " + Case + @"\z", Options)
     ];
     private static LearningTaskProposal Clarify() => new("clarify", "specify_case_input", Prompt:
         "Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5).");
@@ -75,34 +84,40 @@ internal static class LearningTaskParser
         }
         var missing = MissingDirection.Match(text);
         if (!missing.Success) return Abstain("unsupported_intent");
-        var operand = missing.Groups["input"].Value;
-        return HasConjunction.IsMatch(operand) && !IsAlternativeList(operand)
-            ? Abstain("unsupported_intent") : Clarify();
+        // Reuse operand refusal even when direction is absent. A hypothetical
+        // ready scalar is discarded: missing direction can never authorize it.
+        var operand = ProposeOperand("upper", missing.Groups["input"].Value.Trim());
+        return operand.Status == "abstain" ? operand : Clarify();
     }
 
-    private static LearningTaskProposal ProposeOperand(string operation, string token)
+    private static LearningTaskProposal ProposeOperand(string operation, string token, bool allowAlternatives = true)
     {
         // Strip only the bounded operand description, never normalize the scalar.
         token = InputDescription.Replace(token, "", 1);
+        // Relational descriptions require an explicit codepoint, never a guessed
+        // byte from a location or an incomplete article such as "letter with a".
+        var relation = CodepointRelation.Match(token);
+        if (relation.Success) token = relation.Groups["input"].Value;
         if (token.Length == 0 || MissingScalar.IsMatch(token)) return Clarify();
         if (token.Length == 3 && (token[0] == '\'' && token[2] == '\'' || token[0] == '"' && token[2] == '"'))
             return token[1] <= 255 ? Ready(operation, (byte)token[1]) : Abstain("input_domain");
         if (QuotedString.IsMatch(token)) return token.Length == 2 ? Clarify() : Abstain("unsupported_intent");
         // Only lists of candidate operands are ambiguity. An arbitrary second
         // clause is unsupported regardless of its verb; no action lexicon needed.
-        if (IsAlternativeList(token)) return Clarify();
+        if (allowAlternatives && ProposeAlternatives(token) is { } alternatives) return alternatives;
         if (HasConjunction.IsMatch(token) || UnsupportedOperand.IsMatch(token)) return Abstain("unsupported_intent");
         if (token.StartsWith("U+", StringComparison.OrdinalIgnoreCase))
             return token.Length is >= 3 and <= 6 && byte.TryParse(token[2..], NumberStyles.AllowHexSpecifier,
                 CultureInfo.InvariantCulture, out var hex) ? Ready(operation, hex) : Abstain("input_domain");
-        if (token.StartsWith("decimal codepoint ", StringComparison.OrdinalIgnoreCase)) token = token[8..];
-        if (token.StartsWith("codepoint ", StringComparison.OrdinalIgnoreCase))
-            return byte.TryParse(token[10..], NumberStyles.None, CultureInfo.InvariantCulture, out var number)
+        var numeric = DecimalInput.Match(token);
+        if (numeric.Success)
+            return byte.TryParse(numeric.Groups["number"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var number)
                 ? Ready(operation, number) : Abstain("input_domain");
+        if (DecimalPrefix.IsMatch(token)) return Abstain("input_domain");
         if (token.All(char.IsAsciiDigit)) return Clarify(); // A numeric string is not implicitly a codepoint.
         var first = AlternativeToken.Match(token);
         if (first.Success && first.Index == 0 && first.Length < token.Length
-            && (char.IsWhiteSpace(token[first.Length]) || token[first.Length] is ',' or ';'))
+            && (char.IsWhiteSpace(token[first.Length]) || token[first.Length] is ',' or ';' or '.' or '!' or '?'))
             return Abstain("unsupported_intent"); // Identified operand followed by a non-alternative clause.
         if (token.Length != 1) return Clarify();
         if (token[0] > 255) return Abstain("input_domain");
@@ -110,25 +125,32 @@ internal static class LearningTaskParser
         return char.IsLetter(token[0]) ? Ready(operation, (byte)token[0]) : Clarify();
     }
 
-    private static bool IsAlternativeList(string token)
+    private static LearningTaskProposal? ProposeAlternatives(string token)
     {
         if (token.StartsWith("either ", StringComparison.OrdinalIgnoreCase)) token = token[7..];
         else if (token.StartsWith("one of ", StringComparison.OrdinalIgnoreCase)) token = token[7..];
         var position = 0;
-        var count = 0;
+        var candidates = new List<string>();
         // Every token/separator consumes input, and every match must start at the
         // exact cursor. Split bounded patterns avoid a large combined automaton.
         while (position < token.Length)
         {
             var candidate = AlternativeToken.Match(token, position);
-            if (!candidate.Success || candidate.Index != position) return false;
+            if (!candidate.Success || candidate.Index != position) return null;
             position += candidate.Length;
-            count++;
-            if (position == token.Length) return count >= 2;
+            candidates.Add(candidate.Value);
+            if (position == token.Length)
+            {
+                if (candidates.Count < 2) return null;
+                // Use the same scalar/domain checks, with list parsing disabled
+                // to bound recursion. No candidate's executable proposal escapes.
+                return candidates.Any(value => ProposeOperand("upper", value, false).Code == "input_domain")
+                    ? Abstain("input_domain") : Clarify();
+            }
             var separator = AlternativeSeparator.Match(token, position);
-            if (!separator.Success || separator.Index != position) return false;
+            if (!separator.Success || separator.Index != position) return null;
             position += separator.Length;
         }
-        return false;
+        return null;
     }
 }

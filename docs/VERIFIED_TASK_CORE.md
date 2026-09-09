@@ -95,6 +95,11 @@ grammar also recognizes `capital form`, `small-letter form`, `upper case`,
 For example: `Could you give me the capital form of 'µ', please?` and
 `For the character A, give its lowercase form.` See the separate
 [frozen proposal evaluation](TASK_PARAPHRASE_EVALUATION.md) for measured limits.
+Bounded input-first declarations such as `The character is 'µ'; please
+capitalize it.` also select one operation. Explicit numeric descriptions accept
+`codepoint`, `code point`, or `code-point`; relational words such as `at` and
+`represented by` require an explicit codepoint representation. They cannot
+select a byte from a location or an incomplete article.
 
 Requests are at most 256 UTF-16 code units; control characters and surrogates
 refuse, including decoded control values in canonical, hexadecimal and decimal
@@ -109,10 +114,12 @@ whole-string and locale-specific requests abstain. Candidate lists such as
 `uppercase µ and run a shell`, abstain. Missing-input article forms
 such as `Return a capitalized form` clarify rather than guessing the letter
 `a`. Quoted `'a'` and explicit `Write a as a capital letter` remain operands.
-This is a bounded grammar, not a universal compound-intent classifier: some
-second-sentence or missing-direction requests still clarify instead of
-abstaining. Both clarification and abstention remain non-executable, and such
-classification misses count against the frozen evaluation's abstention floor.
+Sentence punctuation after a specified input and missing-direction operands
+use the same refusal checks. Alternative lists share the decoded-domain check;
+a forbidden control/out-of-domain value cannot become an executable alternative.
+This is a bounded grammar, not a universal compound-intent classifier. Some
+malformed alternatives can abstain instead of clarify. Both statuses remain
+non-executable, and every classification miss counts against the frozen floors.
 
 The JSON envelope is `learning_task` with `proposal`, `replayed`, and
 `experience`. `proposal.Status` is `ready`, `clarify`, or `abstain`.

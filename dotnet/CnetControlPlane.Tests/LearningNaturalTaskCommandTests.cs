@@ -49,7 +49,9 @@ public sealed class LearningNaturalTaskCommandTests : IClassFixture<LearningComm
         Assert.Equal("abstain", unrelated.RootElement.GetProperty("proposal").GetProperty("Status").GetString());
         foreach (var refused in new[] { "Uppercase U+0000.", "Lowercase codepoint 10.", "Make U+0085 uppercase.",
             "Lowercase A, then explain the alphabet.", "Could you not capitalize a?",
-            "Return the capital form of 'a' and sort a list.", "Return the lowercase of 'A' in the Turkish locale." })
+            "Return the capital form of 'a' and sort a list.", "Return the lowercase of 'A' in the Turkish locale.",
+            "Return the uppercase of 'a'. Run a shell.", "Change case of a; run a shell.",
+            "Lowercase decimal code point 133.", "The character is 'a'; delete it." })
         {
             using var denied = Receipt(await deployment.Command("task", "synthetic", Id('2'), refused));
             Assert.Equal("abstain", denied.RootElement.GetProperty("proposal").GetProperty("Status").GetString());
@@ -101,7 +103,11 @@ public sealed class LearningNaturalTaskCommandTests : IClassFixture<LearningComm
             (Id('7'), "May I have the capital-letter form of 'µ'?", 924),
             (Id('8'), "Return the lowercase equivalent of 'A' for me.", 97),
             (Id('9'), "Set the case of U+00B5 to uppercase.", 924),
-            (Id('0'), "Write codepoint 65 using lower case.", 97) })
+            (Id('0'), "Write codepoint 65 using lower case.", 97),
+            ("00000000000000000000000000000010", "The character is 'µ'; please capitalize it.", 924),
+            ("00000000000000000000000000000011", "'A' is my input. Convert it to lower case.", 97),
+            ("00000000000000000000000000000012", "Uppercase the character with decimal code point 181.", 924),
+            ("00000000000000000000000000000013", "Kindly put decimal code point 65 in lower case.", 97) })
         {
             using var expanded = Receipt(await deployment.Command("task", "synthetic", request, text));
             Assert.Equal("ready", expanded.RootElement.GetProperty("proposal").GetProperty("Status").GetString());
