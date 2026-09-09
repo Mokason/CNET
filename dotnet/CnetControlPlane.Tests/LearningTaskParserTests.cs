@@ -70,4 +70,16 @@ public sealed class LearningTaskParserTests
 
     [Fact]
     public void RequestLengthIsBounded() => Assert.Equal("abstain", LearningTaskParser.Propose(new string('a', 257)).Status);
+
+    [Fact]
+    public void EncodedControlCharactersNeverBecomeTypedProposals()
+    {
+        foreach (var key in Enumerable.Range(0, 256).Where(i => char.IsControl((char)i)))
+        foreach (var text in new[] { $"unicode upper {key}", $"uppercase U+{key:X4}", $"lowercase codepoint {key}" })
+        {
+            var proposal = LearningTaskParser.Propose(text);
+            Assert.True(proposal.Status == "abstain", $"TASK_DECODED_CONTROL_RED {text}");
+            Assert.Null(proposal.Dataset); Assert.Null(proposal.Key);
+        }
+    }
 }
