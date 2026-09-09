@@ -131,6 +131,12 @@ hexadecimal; apply uppercase.` is an input representation, but `Return the
 uppercase form of U+00B5 in hexadecimal.` asks for an unsupported result format
 and abstains. A declared decimal codepoint cannot accept a conflicting `0x`/`U+`
 value. Shared request prefixes do not remove unknown commands or modifiers.
+Relationship phrases share the same operand checks, including nested literal
+descriptions and explicit Unicode codepoints. A quoted multi-character literal
+refuses independently of whether its surrounding request frame is supported;
+contractions and quoted quote characters are not mistaken for full strings.
+`My uppercase input is 'P'.` only describes an input and clarifies; `My uppercase
+operation input is 'µ'.` explicitly names a conversion and can propose it.
 
 Requests are at most 256 UTF-16 code units; control characters and surrogates
 refuse, including decoded control values in canonical, hexadecimal and decimal

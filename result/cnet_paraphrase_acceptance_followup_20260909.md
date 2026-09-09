@@ -81,7 +81,7 @@ The committed round6 candidate passed 1,333 managed/native tests with 99.63%
 parser line and 93.36% branch coverage. Source `70fc455` was freshly built and
 its identities committed in `d34e7f7` before the first blind score. That score
 failed; all 128 rows remain. Round6 is now exposed development evidence, and
-round7 remains blind with zero-overlap checks against 896 prior texts.
+round7 was then frozen with zero-overlap checks against 896 prior texts.
 
 Round7 adds request vocabulary, relative input/operation declarations and explicit
 numeric descriptions. Its 63 initial tests ran RED (57 failed); separate review
@@ -96,7 +96,15 @@ passed, zero failures/skips, 99.69% parser line and 94.26% branch coverage. Sour
 That confirmation failed; retain all rows. Round8 is separately authored and
 blind, with zero-overlap checks against 1,024 exposed texts and the same floors.
 
-The evaluator's 30 integrity tests pass; tracing covers 97% of 201 executable
+Round8 shares relationship phrases, literal descriptions and declaration labels.
+Its quote-domain check rejects explicit multi-character literals without
+depending on the surrounding frame. The first review caught source-case
+descriptions being interpreted as operations; five new tests ran RED (three
+failed). An explicit operation/conversion noun is now required in that frame.
+All 551 focused tests pass, with native refusal/positive replay added. Final
+candidate regression and blind confirmation are pending.
+
+The evaluator's 31 integrity tests pass; tracing covers 97% of 204 executable
 lines. The unchanged capture/bridge surface passed 148 tests earlier this turn.
 Existing test-project CA1416 platform warnings remain; none were suppressed.
 Native tests use private installations and pinned external Unicode tables, not
@@ -122,8 +130,9 @@ but no CNET code, tests, graph, results or execution access. They independently
 checked all 128 statuses and 80 original-byte operation labels, with zero exact
 overlaps against 640 prior texts. This limitation is recorded in the immutable
 manifest. Root remained blind until candidate source/binary freeze. Round5 is
-now exposed development data too. Round6 remains separately authored and blind;
-its custodian checks zero exact overlaps against all 768 exposed texts.
+now exposed development data too. Rounds6 and7 used the same separation and
+failed their first blind runs. Round8 retains this authorship limitation; its
+custodian checked zero exact overlaps against all 1,024 exposed texts.
 
 No claim of learned semantics, broader real-user coverage, allocator gain or
 AMD task-selection improvement follows from these grammar tests. Genuine origin

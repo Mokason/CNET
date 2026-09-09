@@ -201,3 +201,12 @@ triple-double-quote test initially had a mistaken abstain label: three matching
 quotes represent the quoted quote scalar under the existing contract. Correct
 that development test to ready/lower/34 before implementation and retain both
 RED logs. No frozen corpus label or acceptance floor is changed.
+
+Round8's initial 66 tests passed after splitting an oversized input-field regex
+without changing the 1000-node bound. Boundary review found that `My uppercase
+input is 'P'.` describes source case rather than requesting a conversion. Five
+additional tests ran RED (three failed); the frame now requires an explicit
+operation/conversion noun before proposing a ready request. All 551 focused
+tests pass. Native replay adds both ambiguity refusals and explicit-operation
+positives. The round8 corpus remains unopened pending bounded correction review,
+fresh committed build, regressions and source/binary pin freeze.

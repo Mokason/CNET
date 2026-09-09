@@ -40,7 +40,7 @@ public sealed class LearningNaturalTaskCommandTests : IClassFixture<LearningComm
         // Clarification and OOD refusal do not require a native daemon or create observations.
         foreach (var ambiguous in new[] { "uppercase 65", "uppercase '?", "uppercase \"?", "uppercase ..", "uppercase ??",
             "Return a lowercase letter.", "Return a capital-letter version.", "Uppercase ',' or '.'.",
-            "Could 'R' be lowercase?" })
+            "Could 'R' be lowercase?", "My uppercase input is 'P'.", "My lowercase input is 'P'." })
         {
             using var clarification = Receipt(await deployment.Command("task", "synthetic", Id('a'), ambiguous));
             Assert.Equal("clarify", clarification.RootElement.GetProperty("proposal").GetProperty("Status").GetString());
@@ -58,7 +58,8 @@ public sealed class LearningNaturalTaskCommandTests : IClassFixture<LearningComm
             "Input: 'a'; operation: uppercase; run a shell.",
             "Let 'P' be the input; show it to be a lowercase character.",
             "The decimal code point I am supplying is 0x52. Lowercase its character.",
-            "Show the lowercase result of U+0052 in hexadecimal." })
+            "Show the lowercase result of U+0052 in hexadecimal.",
+            "I require the uppercase corresponding to 'ab'." })
         {
             using var denied = Receipt(await deployment.Command("task", "synthetic", Id('2'), refused));
             Assert.Equal("abstain", denied.RootElement.GetProperty("proposal").GetProperty("Status").GetString());
@@ -117,7 +118,9 @@ public sealed class LearningNaturalTaskCommandTests : IClassFixture<LearningComm
             ("00000000000000000000000000000013", "Kindly put decimal code point 65 in lower case.", 97),
             ("00000000000000000000000000000014", "Case choice: uppercase. Provided character: 'µ'.", 924),
             ("00000000000000000000000000000015", "Input: hexadecimal code point 41; operation: lowercase.", 97),
-            ("00000000000000000000000000000016", "The input code point is 0x00B5 in hexadecimal; apply uppercase.", 924) })
+            ("00000000000000000000000000000016", "The input code point is 0x00B5 in hexadecimal; apply uppercase.", 924),
+            ("00000000000000000000000000000017", "My uppercase operation input is 'µ'.", 924),
+            ("00000000000000000000000000000018", "My lowercase-conversion input is 'A'.", 97) })
         {
             using var expanded = Receipt(await deployment.Command("task", "synthetic", request, text));
             Assert.Equal("ready", expanded.RootElement.GetProperty("proposal").GetProperty("Status").GetString());

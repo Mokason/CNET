@@ -7,6 +7,11 @@ namespace CnetControlPlane.Tests;
 public sealed class LearningTaskRelationshipTests
 {
     [Theory]
+    [InlineData("My uppercase input is 'P'.", "clarify", null, null)]
+    [InlineData("My lowercase input is 'P'.", "clarify", null, null)]
+    [InlineData("My capital-letter input is 'P'.", "clarify", null, null)]
+    [InlineData("My lowercase-conversion input is 'P'.", "ready", "lower", 80)]
+    [InlineData("My uppercase operation input is 'p'.", "ready", "upper", 112)]
     [InlineData("I'd like 'a' converted to uppercase.", "ready", "upper", 97)]
     [InlineData("Please uppercase '''.", "ready", "upper", 39)]
     [InlineData("Please lowercase \"\"\" .", "ready", "lower", 34)]
