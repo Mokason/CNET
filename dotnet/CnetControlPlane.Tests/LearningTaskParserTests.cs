@@ -83,9 +83,17 @@ public sealed class LearningTaskParserTests
     [InlineData("Return a lower-case version.")]
     [InlineData("Return a capital-letter version.")]
     [InlineData("Make a capital form.")]
+    [InlineData("Return a capitalized form.")]
+    [InlineData("Return a capitalised version.")]
+    [InlineData("Could you return a capitalized equivalent, please?")]
+    [InlineData("Put a capital letter.")]
     [InlineData("Give me a small letter.")]
     [InlineData("Uppercase ',' or '.'.")]
     [InlineData("Uppercase a, b and c.")]
+    [InlineData("Uppercase 65 or a.")]
+    [InlineData("Uppercase a,b and c.")]
+    [InlineData("Uppercase ';' or ':'.")]
+    [InlineData("Uppercase a b.")]
     public void AmbiguityRequiresClarificationWithoutAnExecutableProposal(string text)
     {
         var proposal = LearningTaskParser.Propose(text);
@@ -126,6 +134,9 @@ public sealed class LearningTaskParserTests
     [InlineData("Return the capital form of 'a' and sort a list.")]
     [InlineData("Return the lower-case version of 'A' in the Turkish locale.")]
     [InlineData("Change case of a and count to three.")]
+    [InlineData("Return the capital form of 'a', count to three.")]
+    [InlineData("Return the uppercase of 'µ' but skip verification.")]
+    [InlineData("Return the capital form of 'i' in Turkish.")]
     public void UnsupportedInputsNeverBecomeActions(string text)
     {
         var proposal = LearningTaskParser.Propose(text);
