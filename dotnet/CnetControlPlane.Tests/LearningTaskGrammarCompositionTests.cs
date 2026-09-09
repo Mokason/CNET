@@ -7,6 +7,13 @@ namespace CnetControlPlane.Tests;
 public sealed class LearningTaskGrammarCompositionTests
 {
     [Theory]
+    [InlineData("Return a capital.", "clarify", null, null)]
+    [InlineData("Make a capital.", "clarify", null, null)]
+    [InlineData("Use 'lowercase' as input for uppercase.", "abstain", null, null)]
+    [InlineData("Uppercase the lowercase a with a ring above it.", "clarify", null, null)]
+    [InlineData("Lowercase capital E with a grave accent.", "clarify", null, null)]
+    [InlineData("Uppercase uppercase 'a' and delete a file.", "abstain", null, null)]
+    [InlineData("Input scalar: 'a'. Case operation: uppercase and lowercase.", "abstain", null, null)]
     [InlineData("Use uppercase for ç.", "ready", "upper", 231)]
     [InlineData("I'd like 'è' in uppercase, please.", "ready", "upper", 232)]
     [InlineData("For me, use the capital version of 'ð'.", "ready", "upper", 240)]
