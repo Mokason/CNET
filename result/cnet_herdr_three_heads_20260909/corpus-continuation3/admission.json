@@ -1,0 +1,142 @@
+{
+  "schema": 1,
+  "experiment": "cnet_herdr_three_heads_20260909",
+  "continuation": 3,
+  "admitted_as_confirmation": true,
+  "admitted_at_utc": "2026-09-09 13:42:59 UTC",
+  "corpus_frozen_at_utc": "2026-09-09 13:40:12 UTC",
+  "corpus_path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/confirmation-frozen.json",
+  "corpus_sha256": "7b71796aa4d40e61439668af3ad5a100c0aa2cdb2667e5d3cc239810cb063e0c",
+  "corpus_bytes": 23950,
+  "corpus_file_mode": "0444",
+  "cases": 128,
+  "status_counts": {
+    "ready": 80,
+    "clarify": 24,
+    "abstain": 24
+  },
+  "operation_counts": {
+    "upper": 40,
+    "lower": 40
+  },
+  "raw_family_count": 38,
+  "normalized_family_count": 22,
+  "distinct_ready_operation_input_pairs": 58,
+  "structural_checks_passed": true,
+  "original_existing_validator_passed": true,
+  "extended_previous_overlap_validator_passed": true,
+  "prior_collections": 14,
+  "prior_unique_texts": 1792,
+  "exact_previous_overlap_count": 0,
+  "internal_duplicate_count": 0,
+  "punctuation_only_duplicate_count": 0,
+  "bounds_failure_count": 0,
+  "independent_label_review_complete": true,
+  "final_blind_review_label_coverage": 128,
+  "final_label_disagreement_count": 0,
+  "review_cycles": 2,
+  "maximum_review_cycles": 3,
+  "reviewed_rows_by_cycle": [
+    128,
+    8
+  ],
+  "complete_unchanged_rows_proven": 120,
+  "all_review_inputs_family_and_expected_fields_withheld": true,
+  "review_findings_counts": [
+    6,
+    2
+  ],
+  "review_limitation_counts": [
+    6,
+    4
+  ],
+  "all_findings_and_limitations_reconciled": true,
+  "unresolved_findings": 0,
+  "author": {
+    "model": "grok-4.6",
+    "provider": "xai-oauth",
+    "successful_initial_batches": 4,
+    "successful_repair_invocations": 2,
+    "failed_invocations": 0,
+    "maximum_repair_invocations_per_issue": 2
+  },
+  "reviewer": {
+    "requested_model": "opus",
+    "resolved_main_model": "claude-opus-5",
+    "cli_auxiliary_model": "claude-haiku-4-5-20251001",
+    "successful_invocations": 2,
+    "failed_invocations": 0,
+    "per_invocation_max_budget_usd": 3,
+    "per_invocation_timeout_seconds": 600,
+    "reported_total_list_price_usd": 1.0528889999999997,
+    "cost_is_not_verified_actual_bill": true
+  },
+  "floors": {
+    "maximum_wrong_ready": 0,
+    "minimum_exact_ready": 72,
+    "ready_denominator": 80,
+    "minimum_exact_upper": 34,
+    "upper_denominator": 40,
+    "minimum_exact_lower": 34,
+    "lower_denominator": 40,
+    "minimum_exact_clarify": 22,
+    "clarify_denominator": 24,
+    "minimum_exact_abstain": 23,
+    "abstain_denominator": 24,
+    "minimum_named_families": 8,
+    "nonready_executable_fields_allowed": false
+  },
+  "all_rows_retained_for_later_score": true,
+  "coverage_can_remove_rows": false,
+  "ready_key_is_original_input_only": true,
+  "candidate_inspected": false,
+  "candidate_outputs_inspected": false,
+  "cnet_score_runs_by_custodian": 0,
+  "native_executions_by_custodian": 0,
+  "no_prior_failure_texts_supplied_to_author_or_reviewer": true,
+  "no_old_corpus_reused_for_authoring": true,
+  "previous_scored_populations_untouched": true,
+  "training_eligible": false,
+  "evidence": [
+    {
+      "sha256": "37d2f02af4fbdd59d0f174a49ff68b7d1b78b2714c78bbf66a68c799cd9d8bfe",
+      "path": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/result/cnet_herdr_three_heads_20260909/corpus-continuation3/protocol.md"
+    },
+    {
+      "sha256": "1bad3d5ad9a18277a3d0ea3ce241bf101eb4d909f7b5d7db70761c82a5cdf00e",
+      "path": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/result/cnet_herdr_three_heads_20260909/corpus-continuation3/review-cycle-1-dispositions.json"
+    },
+    {
+      "sha256": "236be7a4a88fd125c6d2e3f58c7cf269ffda8e37ceb42e2fae8284a4061cc0ca",
+      "path": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/result/cnet_herdr_three_heads_20260909/corpus-continuation3/review-cycle-2-dispositions.json"
+    },
+    {
+      "sha256": "b8e9262bde97327edf7071e1d4eee6f1788ba4b45d1e8a6709f5851b7b90790b",
+      "path": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/result/cnet_herdr_three_heads_20260909/corpus-continuation3/structural-checks.json"
+    },
+    {
+      "sha256": "40ae468cae6bf0037f1a1a74e7a58d65f5afdaee7ca0adf8d9b4bdc39e212cb2",
+      "path": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/result/cnet_herdr_three_heads_20260909/corpus-continuation3/label-checks.json"
+    },
+    {
+      "sha256": "17d08e19dd4642e824f74d52518f5fae639330868da312b7e088420c8b1c24a6",
+      "path": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/result/cnet_herdr_three_heads_20260909/corpus-continuation3/family-counts.json"
+    },
+    {
+      "sha256": "f2f34670f79b26e3faaa2a49ad54c0350e291b3a1cf49055e44808d14f0092c8",
+      "path": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/result/cnet_herdr_three_heads_20260909/corpus-continuation3/origin.json"
+    },
+    {
+      "sha256": "7b1adeb3c30b48c70c467a2a3d0a1cc0fe589091f895f47be26cc5ab17e7355c",
+      "path": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/result/cnet_herdr_three_heads_20260909/corpus-continuation3/review-reconciliation.md"
+    }
+  ],
+  "release_condition": "Coordinator must bind this receipt and corpus hash to its independently qualified frozen candidate, then perform exactly one complete 128-row score. This admission is not a candidate score or certification pass.",
+  "integrity_note": "Corpus and receipt are SHA-256 bound and set read-only. This is tamper evidence, not an immutable-filesystem claim.",
+  "limitations": [
+    "Synthetic contract-authored confirmation only, not third-party human or real-user population.",
+    "No IID, independent-template, exhaustive coverage or unbiased sequential-stopping claim.",
+    "Every earlier scored confirmation remains intact, separately exposed development evidence; no pooled score or rescore.",
+    "The initial structural rejection, all drafts, raw model responses, critiques, dispositions, failures and bound/identity evidence are retained."
+  ]
+}

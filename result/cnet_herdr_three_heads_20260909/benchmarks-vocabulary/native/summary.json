@@ -1,0 +1,159 @@
+{
+  "schema_version": 1,
+  "kind": "native_fixture_gates",
+  "execution": {
+    "sequence": [
+      "knowledge_accumulation_bench",
+      "knowledge_composition_bench",
+      "knowledge_capsule",
+      "coverage_abstain"
+    ],
+    "reused_binaries": true,
+    "rebuilds_performed": 0,
+    "timeout_seconds_per_gate": 1200,
+    "working_directory": "fresh isolated temporary directory",
+    "gpu_execution": false,
+    "provider_calls": 0
+  },
+  "gates": [
+    {
+      "target": "knowledge_accumulation_bench",
+      "checks": 12,
+      "failures": 0,
+      "exit_status": 0,
+      "user_seconds": 0.92,
+      "system_seconds": 0,
+      "max_rss_kib": 9284,
+      "binary_sha256": "1bc705cdf6887133d1c92fd10a3e09783bb48c8f0b021dcaa0a35849bf0a46d5",
+      "pass_marker": "KNOWLEDGE_ACCUMULATION_BENCH_PASS units=32 distinct=1 isolation=32/32 replay=8/8 cov_exact=8 pre_unservable=8/8 ood_refused=96 json=logs/knowledge_accumulation_bench.json",
+      "metrics": {
+        "isolated_units_correct": 32,
+        "isolated_units_total": 32,
+        "interference_probes": 8,
+        "interference_answer_drift": 0,
+        "contract_replay_match": 8,
+        "contract_replay_units": 8,
+        "ood_refused": 96,
+        "covered_admitted": 160,
+        "pre_import_unservable": 8,
+        "pre_import_total": 8,
+        "post_import_served": 8,
+        "coverage_roundtrip_bit_identical": 8,
+        "capsule_payload_bytes": 2583,
+        "scales": [
+          {
+            "units": 1,
+            "build_ms": 22.91,
+            "lookup_ms_per_unit": 0.0063,
+            "forward_ms_per_query": 0.00014
+          },
+          {
+            "units": 8,
+            "build_ms": 185.83,
+            "lookup_ms_per_unit": 0.0063,
+            "forward_ms_per_query": 0.00016
+          },
+          {
+            "units": 32,
+            "build_ms": 712.49,
+            "lookup_ms_per_unit": 0.0063,
+            "forward_ms_per_query": 0.00013
+          }
+        ]
+      },
+      "executable_elapsed_seconds": 0.94,
+      "binary_reused_without_rebuild": true,
+      "runtime_log": "knowledge_accumulation_bench.log",
+      "timing_log": "time-knowledge_accumulation_bench.log"
+    },
+    {
+      "target": "knowledge_composition_bench",
+      "checks": 74,
+      "failures": 0,
+      "exit_status": 0,
+      "user_seconds": 0.97,
+      "system_seconds": 0,
+      "max_rss_kib": 8460,
+      "binary_sha256": "edc9ee30d8774eb5f743b76e051b7694b15f93adc1fd92a72ce57e300e03f1d3",
+      "pass_marker": "KNOWLEDGE_COMPOSITION_BENCH_PASS members=3 hops_guarded=every refusals=root+intermediate",
+      "metrics": {
+        "certified_members": 3,
+        "covered_compositions_correct": 14,
+        "covered_compositions_total": 14,
+        "guarded_hops": "every",
+        "refusals": [
+          "root",
+          "intermediate"
+        ]
+      },
+      "executable_elapsed_seconds": 0.97,
+      "binary_reused_without_rebuild": true,
+      "runtime_log": "knowledge_composition_bench.log",
+      "timing_log": "time-knowledge_composition_bench.log"
+    },
+    {
+      "target": "knowledge_capsule",
+      "checks": 94,
+      "failures": 0,
+      "exit_status": 0,
+      "user_seconds": 0.14,
+      "system_seconds": 0,
+      "max_rss_kib": 8704,
+      "binary_sha256": "245c5925387ead805ea221c4d52d5e66fa807cc987a9e7f69f627653db2201ee",
+      "pass_marker": "KNOWLEDGE_CAPSULE_PASS checks=94 coverage_rows=5",
+      "metrics": {
+        "coverage_rows": 5,
+        "contract_exemplars_replayed": 8,
+        "foreign_version_refused": true
+      },
+      "executable_elapsed_seconds": 0.15,
+      "binary_reused_without_rebuild": true,
+      "runtime_log": "knowledge_capsule.log",
+      "timing_log": "time-knowledge_capsule.log"
+    },
+    {
+      "target": "coverage_abstain",
+      "checks": 55,
+      "failures": 0,
+      "exit_status": 0,
+      "user_seconds": 0.07,
+      "system_seconds": 0,
+      "max_rss_kib": 8952,
+      "binary_sha256": "b16a57280fdf8d95c0305f9c0f02e90296442377ad1b6736dd52782eee701e7c",
+      "pass_marker": "COVERAGE_ABSTAIN_PASS checks=55 heldout_correct=4/4 was=0/4",
+      "metrics": {
+        "fixture_domain_rows": 16,
+        "certified_rows": 12,
+        "heldout_rows": 4,
+        "heldout_correct_with_gate": 4,
+        "heldout_correct_gate_disabled": 0,
+        "external_teacher_calls": 0
+      },
+      "executable_elapsed_seconds": 0.08,
+      "binary_reused_without_rebuild": true,
+      "runtime_log": "coverage_abstain.log",
+      "timing_log": "time-coverage_abstain.log"
+    }
+  ],
+  "expected_runtime_diagnostics": "Coverage negative controls deliberately disable the guard, remove coverage, attempt unsupported RAW mining, and saturate coverage storage.",
+  "caveats": [
+    "Same executable bytes as first candidate; native source unchanged from 29a4091 to 61d92cf. No native rebuild occurred.",
+    "Elapsed seconds time the existing executables only and cannot be compared with the first bundle's build-plus-gate elapsed seconds.",
+    "Native fixture success does not establish language acceptance.",
+    "Accumulation lookup includes materialization and CNU1 verification; forward timing covers btn_forward only, averaged over 200 repetitions in one run without variance estimates.",
+    "Forward timings use the more precise human log; the original JSON rounds to four decimal places in milliseconds.",
+    "Portable replay measures serialization fidelity on certified exemplars.",
+    "Accumulation's incompatible_rejected field describes truncated-payload integrity refusal; the capsule gate separately verifies an incompatible version.",
+    "Coverage holdouts are four public synthetic native fixture rows using a local addmod callback, separate from the language confirmation corpus."
+  ],
+  "worktree_source_commit": "61d92cf078ff89443883d39fa13eb6427c51fd87",
+  "binary_build_source_commit": "29a4091b9a2d52bd06f109f7a588adf11a470a2c",
+  "binary_hashes_match_first_candidate": true,
+  "native_source_diff_empty": true,
+  "native_source_diff_paths": [
+    "src",
+    "include",
+    "tests",
+    "Makefile"
+  ]
+}

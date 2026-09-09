@@ -1,0 +1,73 @@
+{
+  "schema": 1,
+  "cycle": 2,
+  "reviewed_rows": 128,
+  "author_fields_withheld": [
+    "family",
+    "status",
+    "operation",
+    "key"
+  ],
+  "findings": [
+    {
+      "finding": 1,
+      "ids": [
+        "n3_20"
+      ],
+      "classification": "repeated_contract_misread",
+      "resolved": true,
+      "disposition": "The shared contract explicitly interprets decimal digits after an explicit codepoint declaration as decimal. Requiring an additional radix word or silently inferring hexadecimal contradicts that rule. This was already reconciled in cycle 1; no label changed."
+    },
+    {
+      "finding": 2,
+      "ids": [
+        "n2_17",
+        "n3_22"
+      ],
+      "classification": "contract_misread",
+      "resolved": true,
+      "disposition": "Bare numeric operands explicitly require clarification. They are not declared or quoted full-string operands, and interpreting their digits as separate literal characters would invent an operand representation not supplied by the request. No label changed."
+    },
+    {
+      "finding": 3,
+      "ids": [
+        "n1_07",
+        "n3_02",
+        "n4_04",
+        "n4_27"
+      ],
+      "classification": "contract_misread",
+      "resolved": true,
+      "disposition": "The contract requires an explicit upper/lower direction and explicitly sends missing direction to clarification. Inferring a toggle from the input's present case violates that requirement. The speculative alternative is outside the contract; no label changed."
+    }
+  ],
+  "limitations": [
+    {
+      "observation": 1,
+      "classification": "resolved_encoding_check",
+      "disposition": "The three non-ASCII literal ready rows were checked directly and each contains one precomposed Latin-1 scalar. Their text bytes did not change during the later repairs; no normalization was applied."
+    },
+    {
+      "observation": 2,
+      "classification": "retained_coverage_limitation",
+      "disposition": "Final raw and normalized family counts are checked separately. Several declared guard categories are not directly represented; no score from this population establishes those absent boundaries."
+    },
+    {
+      "observation": 3,
+      "classification": "retained_sampling_limitation",
+      "disposition": "The four batches share quotas, author model and structural habits. No IID, independent-template or unbiased sequential-stopping claim is made. Acceptance floors apply to the unchanged full-population denominators, not to independent per-block trials."
+    },
+    {
+      "observation": 4,
+      "classification": "retained_operand_redundancy",
+      "disposition": "The 80 ready rows cover 58 distinct operation/input pairs. Repeated paraphrases remain in the declared denominators but do not establish 80 independent demonstrations."
+    },
+    {
+      "observation": 5,
+      "classification": "proposal_vs_execution_scope",
+      "disposition": "Proposal readiness is not native action success. Every row remains in this proposal score. The reviewer's claims about which operands can never execute are not established by the supplied materials, so no particular native exclusion is asserted here."
+    }
+  ],
+  "unresolved_substantive_count": 0,
+  "stop_condition": "Second review returns only explicit contract misreads, one already reconciled, and documented nonblocking limitations. All 128 independently derived final labels match."
+}

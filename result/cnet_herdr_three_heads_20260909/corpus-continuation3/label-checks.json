@@ -1,0 +1,63 @@
+{
+  "schema": 1,
+  "initial_review_rows": 128,
+  "initial_review_unique_ids": 128,
+  "initial_review_ids_match_draft": true,
+  "initial_label_mismatch_ids": [],
+  "final_changed_review_rows": 8,
+  "final_changed_review_unique_ids": 8,
+  "expected_replacement_ids": [
+    "t1_16",
+    "t1_19",
+    "t1_27",
+    "t2_23",
+    "t2_26",
+    "t3_21",
+    "t4_21",
+    "t4_23"
+  ],
+  "final_changed_review_ids": [
+    "t1_16",
+    "t1_19",
+    "t1_27",
+    "t2_23",
+    "t2_26",
+    "t3_21",
+    "t4_21",
+    "t4_23"
+  ],
+  "initial_prompt_projection_exact": true,
+  "final_prompt_projection_exact": true,
+  "prompt_non_text_metadata_ids": [],
+  "unchanged_rows_verified": 120,
+  "unchanged_row_failure_ids": [],
+  "final_independently_reviewed_count": 128,
+  "final_label_mismatch_ids": [],
+  "total_review_cycles": 2,
+  "maximum_review_cycles": 3,
+  "custodian_direct_original_key_review_count": 80,
+  "custodian_nonready_review_count": 48,
+  "candidate_inspected": false,
+  "cnet_executed": false,
+  "training_eligible": false,
+  "review_findings_counts": [
+    6,
+    2
+  ],
+  "review_limitation_counts": [
+    6,
+    4
+  ],
+  "custodian_additional_repaired_ids": [
+    "t1_16",
+    "t1_27"
+  ],
+  "all_findings_reconciled": true,
+  "unresolved_findings": 0,
+  "review_disposition_files": [
+    "review-cycle-1-dispositions.json",
+    "review-cycle-2-dispositions.json"
+  ],
+  "independent_label_review_complete": true,
+  "label_review_is_not_candidate_score": true
+}

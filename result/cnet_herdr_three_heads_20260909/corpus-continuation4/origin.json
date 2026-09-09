@@ -1,0 +1,387 @@
+{
+  "schema": 1,
+  "experiment": "cnet_herdr_three_heads_20260909",
+  "continuation": 4,
+  "private_root": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation4/private",
+  "herdr": {
+    "session": "cnet-three-heads-20260909",
+    "author_pane": "w3:p1",
+    "review_pane": "w2:p1"
+  },
+  "author": {
+    "requested_model": "grok-4.6",
+    "requested_provider": "xai-oauth",
+    "installed_cli": "Hermes Agent v0.21.1 (2026.9.7), upstream b2aa855b",
+    "fresh_one_shot_contexts": true,
+    "initial_prompts_prepared_before_any_response": true,
+    "old_texts_examples_labels_scores_or_implementation_supplied": false,
+    "safe_mode": true,
+    "toolsets": [
+      "clarify"
+    ],
+    "max_turns": 1,
+    "run_budget_seconds": 150,
+    "outer_timeout_seconds": 180,
+    "kill_grace_seconds": 10,
+    "stream_guard_seconds": 120,
+    "api_guard_seconds": 150,
+    "maximum_same_prompt_transport_retries_per_batch": 1,
+    "maximum_repair_invocations_per_structural_issue": 2,
+    "initial_invocations": 4,
+    "transport_retry_invocations": 3,
+    "structural_or_label_repair_invocations": 0,
+    "successful_invocations": 3,
+    "timed_out_invocations": 4,
+    "session_metadata_source": "Read-only selected fields from /home/marble/.hermes/state.db; no credential or configuration values read.",
+    "sessions": [
+      {
+        "id": "20260909_164829_43a8ed",
+        "model": "grok-4.6",
+        "started_at_utc": "2026-09-09 13:48:30",
+        "ended_at_utc": "2026-09-09 13:51:31",
+        "end_reason": "cli_close",
+        "message_count": 1,
+        "tool_call_count": 0,
+        "billing_provider": null,
+        "cost_status": null,
+        "api_call_count": 0
+      },
+      {
+        "id": "20260909_165131_cddfab",
+        "model": "grok-4.6",
+        "started_at_utc": "2026-09-09 13:51:32",
+        "ended_at_utc": "2026-09-09 13:53:53",
+        "end_reason": "cli_close",
+        "message_count": 2,
+        "tool_call_count": 0,
+        "billing_provider": "xai-oauth",
+        "cost_status": "unknown",
+        "api_call_count": 1
+      },
+      {
+        "id": "20260909_165354_acb481",
+        "model": "grok-4.6",
+        "started_at_utc": "2026-09-09 13:53:55",
+        "ended_at_utc": "2026-09-09 13:56:55",
+        "end_reason": "cli_close",
+        "message_count": 1,
+        "tool_call_count": 0,
+        "billing_provider": null,
+        "cost_status": null,
+        "api_call_count": 0
+      },
+      {
+        "id": "20260909_165656_fc7db4",
+        "model": "grok-4.6",
+        "started_at_utc": "2026-09-09 13:56:57",
+        "ended_at_utc": "2026-09-09 13:59:57",
+        "end_reason": "cli_close",
+        "message_count": 1,
+        "tool_call_count": 0,
+        "billing_provider": null,
+        "cost_status": null,
+        "api_call_count": 0
+      },
+      {
+        "id": "20260909_170041_2cc2fd",
+        "model": "grok-4.6",
+        "started_at_utc": "2026-09-09 14:00:42",
+        "ended_at_utc": "2026-09-09 14:02:46",
+        "end_reason": "cli_close",
+        "message_count": 2,
+        "tool_call_count": 0,
+        "billing_provider": "xai-oauth",
+        "cost_status": "unknown",
+        "api_call_count": 1
+      },
+      {
+        "id": "20260909_170247_be4b93",
+        "model": "grok-4.6",
+        "started_at_utc": "2026-09-09 14:02:48",
+        "ended_at_utc": "2026-09-09 14:04:51",
+        "end_reason": "cli_close",
+        "message_count": 2,
+        "tool_call_count": 0,
+        "billing_provider": "xai-oauth",
+        "cost_status": "unknown",
+        "api_call_count": 1
+      },
+      {
+        "id": "20260909_170452_23e8f7",
+        "model": "grok-4.6",
+        "started_at_utc": "2026-09-09 14:04:52",
+        "ended_at_utc": "2026-09-09 14:07:53",
+        "end_reason": "cli_close",
+        "message_count": 1,
+        "tool_call_count": 0,
+        "billing_provider": null,
+        "cost_status": null,
+        "api_call_count": 0
+      }
+    ],
+    "cost_disclaimer": "Successful sessions report cost_status unknown. Failed sessions have no billing/cost metadata and zero recorded API completions; this does not prove no provider request was attempted, nor prove zero spend. No actual-dollar-spend claim."
+  },
+  "process_exits": {
+    "initial_batch_exits": [
+      124,
+      0,
+      124,
+      124
+    ],
+    "retry_exits": {
+      "batch1": 0,
+      "batch3": 0,
+      "batch4": 124
+    }
+  },
+  "attempts": [
+    {
+      "batch": 1,
+      "attempt": "initial",
+      "exit": 124,
+      "session_id": "20260909_164829_43a8ed",
+      "response_empty": true
+    },
+    {
+      "batch": 2,
+      "attempt": "initial",
+      "exit": 0,
+      "session_id": "20260909_165131_cddfab",
+      "response_rows": 32
+    },
+    {
+      "batch": 3,
+      "attempt": "initial",
+      "exit": 124,
+      "session_id": "20260909_165354_acb481",
+      "response_empty": true
+    },
+    {
+      "batch": 4,
+      "attempt": "initial",
+      "exit": 124,
+      "session_id": "20260909_165656_fc7db4",
+      "response_empty": true
+    },
+    {
+      "batch": 1,
+      "attempt": "same_prompt_retry_1",
+      "exit": 0,
+      "session_id": "20260909_170041_2cc2fd",
+      "response_rows": 32
+    },
+    {
+      "batch": 3,
+      "attempt": "same_prompt_retry_1",
+      "exit": 0,
+      "session_id": "20260909_170247_be4b93",
+      "response_rows": 32
+    },
+    {
+      "batch": 4,
+      "attempt": "same_prompt_retry_1",
+      "exit": 124,
+      "session_id": "20260909_170452_23e8f7",
+      "response_empty": true
+    }
+  ],
+  "available_unadmitted_batch_counts": {
+    "successful_batches": 3,
+    "available_rows": 96,
+    "status_counts": [
+      {
+        "status": "abstain",
+        "count": 18
+      },
+      {
+        "status": "clarify",
+        "count": 18
+      },
+      {
+        "status": "ready",
+        "count": 60
+      }
+    ],
+    "operation_counts": [
+      {
+        "operation": null,
+        "count": 36
+      },
+      {
+        "operation": "lower",
+        "count": 30
+      },
+      {
+        "operation": "upper",
+        "count": 30
+      }
+    ]
+  },
+  "available_counts_are_not_a_population_or_score": true,
+  "successful_batches": [
+    1,
+    2,
+    3
+  ],
+  "missing_batches": [
+    4
+  ],
+  "review": {
+    "invocations": 0,
+    "completed_cycles": 0,
+    "maximum_cycles": 3,
+    "maximum_budget_usd_per_invocation": 3,
+    "outer_timeout_seconds": 600,
+    "permission_mode": "plan",
+    "restricted": true,
+    "safe_mode": true,
+    "strict_mcp_config": true,
+    "tools": [],
+    "input_masking_if_authoring_had_completed": "Contract plus opaque IDs and original texts only; families and expected fields withheld.",
+    "reason_not_invoked": "Required complete 128-row population unavailable after author batch retry bound exhausted."
+  },
+  "full_population_assembled": false,
+  "full_schema_or_overlap_validation_completed": false,
+  "expected_prior_overlap_collections": 15,
+  "expected_prior_unique_texts": 1920,
+  "corpus_frozen": false,
+  "admitted_as_confirmation": false,
+  "all_raw_attempts_and_failures_retained": true,
+  "private_artifacts": [
+    {
+      "sha256": "ea3e2737d08b0b5a87fa83c6d9afaa5812ac9bffa3b2c7e90d11ae2fe5559d81",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation4/private/part-1.prompt.md"
+    },
+    {
+      "sha256": "013343797eb023efc834563efe140933e581f17f945634387023a8211ee3431a",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation4/private/part-2.prompt.md"
+    },
+    {
+      "sha256": "4ace739f2df02b214a650eef393c3896df27e67012723d05141d721f170391d6",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation4/private/part-3.prompt.md"
+    },
+    {
+      "sha256": "435d83ef848617a91d89c457986815f5d9f520bddf19146446d7264bed9a37ca",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation4/private/part-4.prompt.md"
+    },
+    {
+      "sha256": "f66371cdd5980ccac0d73dc85b0b2b1881fa0a2692f5772074b6ab452fc9dc1a",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation4/private/review-base.prompt.md"
+    },
+    {
+      "sha256": "a77d382c1ecadfa13cf230c5c44399400df5030ccce26fda3409b45cb97e48bb",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation4/private/run-hermes-batch-1-retry-1.sh"
+    },
+    {
+      "sha256": "291ab357667f4ce2e451120bd4d61e0a62e5f6dd9f0df028887e81707a20da2b",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation4/private/run-hermes-batch-3-retry-1.sh"
+    },
+    {
+      "sha256": "c7111c433dd077783a63cb896e5c23427c0e4642c177fac5e410a4d7aa69cfbb",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation4/private/run-hermes-batch-4-retry-1.sh"
+    },
+    {
+      "sha256": "91663cf0bfd00807fd60922cfe8b9dafd143feb860aa8e8221cee50a1e8ffccd",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation4/private/run-hermes-batches.sh"
+    },
+    {
+      "sha256": "f5b8d212bd3f2c038acf3d30fc776af200fe2663d2a4a3643cfe2a5b1ae7eec4",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation4/private/run-hermes-retries.sh"
+    },
+    {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation4/private/part-1.response.txt"
+    },
+    {
+      "sha256": "2a0a6d56aa331b5bb0247b4fb02eda3b9ac2861c35ef0f9266f7223f367e8682",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation4/private/part-1.retry-1.response.txt"
+    },
+    {
+      "sha256": "3217e9d00390200b7a60f8e8baf5b7fd8f9e1d16d64db6550de4b2c32d7471be",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation4/private/part-2.response.txt"
+    },
+    {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation4/private/part-3.response.txt"
+    },
+    {
+      "sha256": "de7c4287ddcdac93172a79a66599a7ee7324935c1a54914db1c060d9a266a7a0",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation4/private/part-3.retry-1.response.txt"
+    },
+    {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation4/private/part-4.response.txt"
+    },
+    {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation4/private/part-4.retry-1.response.txt"
+    },
+    {
+      "sha256": "c6301755d941c78491e44f92a2dbb01129346d0922b5d0294108bd903456b884",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation4/private/part-1.retry-1.stderr.log"
+    },
+    {
+      "sha256": "7dcc0d4f0c73ec4d0fd88e722e24b8b3f4675426f157a7d54982b13c76258090",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation4/private/part-1.stderr.log"
+    },
+    {
+      "sha256": "8dd818212b0d809339f7f69550b7bd5156cde50ec48c3c047602714c2c288621",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation4/private/part-2.stderr.log"
+    },
+    {
+      "sha256": "cfce01845bb9f0f91e2e5d62af0f1cd3e1763945865f49f7f42910481fc31086",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation4/private/part-3.retry-1.stderr.log"
+    },
+    {
+      "sha256": "f22a21273a5741850f0f8aef667feb58301f9a35b3728d2b991a18595a7dd3f3",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation4/private/part-3.stderr.log"
+    },
+    {
+      "sha256": "a222673dc3dd8d1e6f14c81e857d855beab8dd4dc2d9aefc4bbcfc6262e9b46b",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation4/private/part-4.retry-1.stderr.log"
+    },
+    {
+      "sha256": "1523cc50a35773e850fe68c45f778c918530d6bc7ceef8c0c6fe7ee5d0af9f5d",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation4/private/part-4.stderr.log"
+    },
+    {
+      "sha256": "ca2ebdf97d7469496b1f4b78958f9dc8447efdcb623953fee7b6996b762f6fff",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation4/private/part-1.exit"
+    },
+    {
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation4/private/part-1.retry-1.exit"
+    },
+    {
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation4/private/part-2.exit"
+    },
+    {
+      "sha256": "ca2ebdf97d7469496b1f4b78958f9dc8447efdcb623953fee7b6996b762f6fff",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation4/private/part-3.exit"
+    },
+    {
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation4/private/part-3.retry-1.exit"
+    },
+    {
+      "sha256": "ca2ebdf97d7469496b1f4b78958f9dc8447efdcb623953fee7b6996b762f6fff",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation4/private/part-4.exit"
+    },
+    {
+      "sha256": "ca2ebdf97d7469496b1f4b78958f9dc8447efdcb623953fee7b6996b762f6fff",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation4/private/part-4.retry-1.exit"
+    },
+    {
+      "sha256": "0e9bd50ff319939cae7cb7c8151ad4653241080c1408fd1ef7c57dce6f5e2766",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation4/private/validate_draft.py"
+    }
+  ],
+  "candidate_source_or_outputs_inspected": false,
+  "cnet_score_runs_by_custodian": 0,
+  "native_executions_by_custodian": 0,
+  "production_changes_commits_pushes_deployments": false,
+  "credential_configuration_or_provider_changes": false,
+  "prior_evidence_unchanged": true,
+  "training_eligible": false
+}

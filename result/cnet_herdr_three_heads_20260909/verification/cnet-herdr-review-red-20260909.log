@@ -1,0 +1,432 @@
+  CnetControlPlane -> /home/marble/AI/CNET-worktrees/herdr-language-20260909/.artifacts/herdr-task/bin/CnetControlPlane/debug/cnet-control.dll
+/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningRuntimeLedgerTests.cs(21,9): warning CA1416: This call site is reachable on all platforms. 'File.SetUnixFileMode(string, UnixFileMode)' is unsupported on: 'windows'. (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1416) [/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/CnetControlPlane.Tests.csproj]
+/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningRuntimeLedgerTests.cs(23,9): warning CA1416: This call site is reachable on all platforms. 'Directory.CreateDirectory(string, UnixFileMode)' is unsupported on: 'windows'. (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1416) [/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/CnetControlPlane.Tests.csproj]
+/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningRuntimeLedgerTests.cs(22,9): warning CA1416: This call site is reachable on all platforms. 'Directory.CreateDirectory(string, UnixFileMode)' is unsupported on: 'windows'. (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1416) [/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/CnetControlPlane.Tests.csproj]
+/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningNativeLedgerTests.cs(38,43): warning CA1416: This call site is reachable on all platforms. 'File.SetUnixFileMode(string, UnixFileMode)' is unsupported on: 'windows'. (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1416) [/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/CnetControlPlane.Tests.csproj]
+/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningRuntimeLedgerTests.cs(35,13): warning CA1416: This call site is reachable on all platforms. 'File.SetUnixFileMode(string, UnixFileMode)' is unsupported on: 'windows'. (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1416) [/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/CnetControlPlane.Tests.csproj]
+/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningRuntimeLedgerTests.cs(32,36): warning CA1416: This call site is reachable on all platforms. 'File.SetUnixFileMode(string, UnixFileMode)' is unsupported on: 'windows'. (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1416) [/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/CnetControlPlane.Tests.csproj]
+  CnetControlPlane.Tests -> /home/marble/AI/CNET-worktrees/herdr-language-20260909/.artifacts/herdr-task/bin/CnetControlPlane.Tests/debug/CnetControlPlane.Tests.dll
+Test run for /home/marble/AI/CNET-worktrees/herdr-language-20260909/.artifacts/herdr-task/bin/CnetControlPlane.Tests/debug/CnetControlPlane.Tests.dll (.NETCoreApp,Version=v8.0)
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.8.2+699d445a1a (64-bit .NET 8.0.30)
+[xUnit.net 00:00:00.03]   Discovering: CnetControlPlane.Tests
+[xUnit.net 00:00:00.33]   Discovered:  CnetControlPlane.Tests
+[xUnit.net 00:00:00.33]   Starting:    CnetControlPlane.Tests
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly write 'ñ' in caps?", operation: "upper", key: 241) [558 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please write the single quoted character"···, operation: "upper", key: 241) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "render the character 'À' in lowercase!", operation: "lower", key: 192) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, lowercase the character  'É'!", operation: "lower", key: 201) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, uppercase the single quoted character  'µ'"···, operation: "upper", key: 181) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, render the character 'À' in lowercase!", operation: "lower", key: 192) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly render 'À' in lowercase?", operation: "lower", key: 192) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please convert the single quoted charact"···, operation: "upper", key: 246) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "uppercase  'µ'?", operation: "upper", key: 181) [51 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly uppercase the single quoted chara"···, operation: "upper", key: 181) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly render 'À' in lowercase!", operation: "lower", key: 192) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "lowercase the single quoted character  'É'?", operation: "lower", key: 201) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please convert the character 'ö' to uppe"···, operation: "upper", key: 246) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "render 'À' in lowercase?", operation: "lower", key: 192) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "render the character 'À' in lowercase?", operation: "lower", key: 192) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, render the single quoted character 'À' in "···, operation: "lower", key: 192) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, convert 'ö' to uppercase?", operation: "upper", key: 246) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "write 'ñ' in caps!", operation: "upper", key: 241) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, uppercase the character  'µ'!", operation: "upper", key: 181) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please write 'ñ' in caps.", operation: "upper", key: 241) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, write 'ñ' in caps.", operation: "upper", key: 241) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, lowercase  'É'?", operation: "lower", key: 201) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly write the character 'ñ' in caps?", operation: "upper", key: 241) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, lowercase the single quoted character  'É'"···, operation: "lower", key: 201) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly convert 'ö' to uppercase!", operation: "upper", key: 246) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please lowercase the single quoted chara"···, operation: "lower", key: 201) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "uppercase the character  'µ'!", operation: "upper", key: 181) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please render the character 'À' in lower"···, operation: "lower", key: 192) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "uppercase  'µ'!", operation: "upper", key: 181) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "write the single quoted character 'ñ' in caps.", operation: "upper", key: 241) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, render the single quoted character 'À' in "···, operation: "lower", key: 192) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly lowercase  'É'?", operation: "lower", key: 201) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please write the single quoted character"···, operation: "upper", key: 241) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, write the single quoted character 'ñ' in c"···, operation: "upper", key: 241) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly convert the character 'ö' to uppe"···, operation: "upper", key: 246) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, write the character 'ñ' in caps!", operation: "upper", key: 241) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please convert 'ö' to uppercase?", operation: "upper", key: 246) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly write 'ñ' in caps.", operation: "upper", key: 241) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please write 'ñ' in caps!", operation: "upper", key: 241) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, write the single quoted character 'ñ' in c"···, operation: "upper", key: 241) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "render 'À' in lowercase!", operation: "lower", key: 192) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly render the character 'À' in lower"···, operation: "lower", key: 192) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly uppercase the character  'µ'?", operation: "upper", key: 181) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly render the single quoted characte"···, operation: "lower", key: 192) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, render the single quoted character 'À' in "···, operation: "lower", key: 192) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "convert the character 'ö' to uppercase.", operation: "upper", key: 246) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly lowercase the character  'É'?", operation: "lower", key: 201) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, uppercase the character  'µ'.", operation: "upper", key: 181) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, render the character 'À' in lowercase.", operation: "lower", key: 192) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please lowercase the character  'É'.", operation: "lower", key: 201) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly convert the single quoted charact"···, operation: "upper", key: 246) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, convert the character 'ö' to uppercase.", operation: "upper", key: 246) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, lowercase  'É'.", operation: "lower", key: 201) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly render the character 'À' in lower"···, operation: "lower", key: 192) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly lowercase  'É'.", operation: "lower", key: 201) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please write the character 'ñ' in caps.", operation: "upper", key: 241) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please convert 'ö' to uppercase!", operation: "upper", key: 246) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, convert the single quoted character 'ö' to"···, operation: "upper", key: 246) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please lowercase  'É'!", operation: "lower", key: 201) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, convert the character 'ö' to uppercase!", operation: "upper", key: 246) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please uppercase  'µ'!", operation: "upper", key: 181) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "render the single quoted character 'À' in lowercas"···, operation: "lower", key: 192) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please uppercase the character  'µ'!", operation: "upper", key: 181) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please lowercase the single quoted chara"···, operation: "lower", key: 201) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly lowercase the character  'É'!", operation: "lower", key: 201) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please uppercase  'µ'?", operation: "upper", key: 181) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly uppercase  'µ'.", operation: "upper", key: 181) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, lowercase the single quoted character  'É'"···, operation: "lower", key: 201) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly uppercase the character  'µ'!", operation: "upper", key: 181) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly write the single quoted character"···, operation: "upper", key: 241) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly convert the character 'ö' to uppe"···, operation: "upper", key: 246) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please uppercase the single quoted chara"···, operation: "upper", key: 181) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly uppercase the character  'µ'.", operation: "upper", key: 181) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, lowercase the character  'É'?", operation: "lower", key: 201) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "write 'ñ' in caps.", operation: "upper", key: 241) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly render the single quoted characte"···, operation: "lower", key: 192) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "convert the single quoted character 'ö' to upperca"···, operation: "upper", key: 246) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly lowercase the character  'É'.", operation: "lower", key: 201) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please uppercase the character  'µ'.", operation: "upper", key: 181) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, uppercase  'µ'.", operation: "upper", key: 181) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, write 'ñ' in caps!", operation: "upper", key: 241) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "write the character 'ñ' in caps.", operation: "upper", key: 241) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly convert the character 'ö' to uppe"···, operation: "upper", key: 246) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please convert the single quoted charact"···, operation: "upper", key: 246) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, convert the single quoted character 'ö' to"···, operation: "upper", key: 246) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please convert the character 'ö' to uppe"···, operation: "upper", key: 246) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "convert the single quoted character 'ö' to upperca"···, operation: "upper", key: 246) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "lowercase the single quoted character  'É'!", operation: "lower", key: 201) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly lowercase the single quoted chara"···, operation: "lower", key: 201) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please render the single quoted characte"···, operation: "lower", key: 192) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, render 'À' in lowercase?", operation: "lower", key: 192) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please write the character 'ñ' in caps!", operation: "upper", key: 241) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "lowercase  'É'!", operation: "lower", key: 201) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "write the single quoted character 'ñ' in caps?", operation: "upper", key: 241) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "convert 'ö' to uppercase.", operation: "upper", key: 246) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "lowercase the character  'É'!", operation: "lower", key: 201) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "convert 'ö' to uppercase?", operation: "upper", key: 246) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "lowercase the character  'É'.", operation: "lower", key: 201) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please render the single quoted characte"···, operation: "lower", key: 192) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please write the character 'ñ' in caps?", operation: "upper", key: 241) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please render 'À' in lowercase!", operation: "lower", key: 192) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "write 'ñ' in caps?", operation: "upper", key: 241) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, write the single quoted character 'ñ' in c"···, operation: "upper", key: 241) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please uppercase the single quoted chara"···, operation: "upper", key: 181) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please write the single quoted character"···, operation: "upper", key: 241) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, write 'ñ' in caps?", operation: "upper", key: 241) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly convert the single quoted charact"···, operation: "upper", key: 246) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please render 'À' in lowercase?", operation: "lower", key: 192) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please uppercase  'µ'.", operation: "upper", key: 181) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please uppercase the character  'µ'?", operation: "upper", key: 181) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "lowercase the character  'É'?", operation: "lower", key: 201) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly write the character 'ñ' in caps.", operation: "upper", key: 241) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly uppercase the single quoted chara"···, operation: "upper", key: 181) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly write the character 'ñ' in caps!", operation: "upper", key: 241) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly render the character 'À' in lower"···, operation: "lower", key: 192) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, convert 'ö' to uppercase!", operation: "upper", key: 246) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, render 'À' in lowercase.", operation: "lower", key: 192) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "write the character 'ñ' in caps?", operation: "upper", key: 241) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, uppercase the single quoted character  'µ'"···, operation: "upper", key: 181) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "uppercase the single quoted character  'µ'!", operation: "upper", key: 181) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, lowercase  'É'!", operation: "lower", key: 201) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "render the single quoted character 'À' in lowercas"···, operation: "lower", key: 192) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "lowercase  'É'.", operation: "lower", key: 201) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "convert the single quoted character 'ö' to upperca"···, operation: "upper", key: 246) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, lowercase the character  'É'.", operation: "lower", key: 201) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "lowercase the single quoted character  'É'.", operation: "lower", key: 201) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly render the single quoted characte"···, operation: "lower", key: 192) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly convert the single quoted charact"···, operation: "upper", key: 246) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, convert 'ö' to uppercase.", operation: "upper", key: 246) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "convert the character 'ö' to uppercase!", operation: "upper", key: 246) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly lowercase the single quoted chara"···, operation: "lower", key: 201) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please render the single quoted characte"···, operation: "lower", key: 192) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please lowercase  'É'?", operation: "lower", key: 201) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please lowercase  'É'.", operation: "lower", key: 201) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "uppercase the single quoted character  'µ'.", operation: "upper", key: 181) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, render 'À' in lowercase!", operation: "lower", key: 192) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, lowercase the single quoted character  'É'"···, operation: "lower", key: 201) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "convert 'ö' to uppercase!", operation: "upper", key: 246) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, convert the single quoted character 'ö' to"···, operation: "upper", key: 246) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please render 'À' in lowercase.", operation: "lower", key: 192) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please convert 'ö' to uppercase.", operation: "upper", key: 246) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, uppercase  'µ'?", operation: "upper", key: 181) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly uppercase  'µ'?", operation: "upper", key: 181) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please lowercase the character  'É'?", operation: "lower", key: 201) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, render the character 'À' in lowercase?", operation: "lower", key: 192) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please lowercase the single quoted chara"···, operation: "lower", key: 201) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, uppercase the single quoted character  'µ'"···, operation: "upper", key: 181) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "write the single quoted character 'ñ' in caps!", operation: "upper", key: 241) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly uppercase the single quoted chara"···, operation: "upper", key: 181) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "render the character 'À' in lowercase.", operation: "lower", key: 192) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, convert the character 'ö' to uppercase?", operation: "upper", key: 246) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "uppercase  'µ'.", operation: "upper", key: 181) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "uppercase the character  'µ'?", operation: "upper", key: 181) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly lowercase  'É'!", operation: "lower", key: 201) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "render 'À' in lowercase.", operation: "lower", key: 192) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly lowercase the single quoted chara"···, operation: "lower", key: 201) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, write the character 'ñ' in caps?", operation: "upper", key: 241) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly write the single quoted character"···, operation: "upper", key: 241) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, write the character 'ñ' in caps.", operation: "upper", key: 241) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "uppercase the character  'µ'.", operation: "upper", key: 181) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "convert the character 'ö' to uppercase?", operation: "upper", key: 246) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly convert 'ö' to uppercase.", operation: "upper", key: 246) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, uppercase  'µ'!", operation: "upper", key: 181) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly write 'ñ' in caps!", operation: "upper", key: 241) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please lowercase the character  'É'!", operation: "lower", key: 201) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please render the character 'À' in lower"···, operation: "lower", key: 192) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "uppercase the single quoted character  'µ'?", operation: "upper", key: 181) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Please, uppercase the character  'µ'?", operation: "upper", key: 181) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly render 'À' in lowercase.", operation: "lower", key: 192) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "render the single quoted character 'À' in lowercas"···, operation: "lower", key: 192) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please write 'ñ' in caps?", operation: "upper", key: 241) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly convert 'ö' to uppercase?", operation: "upper", key: 246) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "write the character 'ñ' in caps!", operation: "upper", key: 241) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please uppercase the single quoted chara"···, operation: "upper", key: 181) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly uppercase  'µ'!", operation: "upper", key: 181) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please convert the single quoted charact"···, operation: "upper", key: 246) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Could you kindly write the single quoted character"···, operation: "upper", key: 241) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please convert the character 'ö' to uppe"···, operation: "upper", key: 246) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "lowercase  'É'?", operation: "lower", key: 201) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.RequestConstituentsComposeWithoutChangingOriginalInput(text: "Would you please render the character 'À' in lower"···, operation: "lower", key: 192) [< 1 ms]
+[xUnit.net 00:00:00.99]     CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(noun: "character") [FAIL]
+[xUnit.net 00:00:00.99]       TASK_CONSTITUENT_REVIEW_RED character: clarify
+[xUnit.net 00:00:00.99]       Stack Trace:
+[xUnit.net 00:00:00.99]         /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs(108,0): at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(String noun)
+[xUnit.net 00:00:00.99]            at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+[xUnit.net 00:00:00.99]            at System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(Object obj, Span`1 copyOfArgs, BindingFlags invokeAttr)
+[xUnit.net 00:00:00.99]     CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(noun: "case conversion") [FAIL]
+[xUnit.net 00:00:00.99]       TASK_CONSTITUENT_REVIEW_RED case conversion: clarify
+[xUnit.net 00:00:00.99]       Stack Trace:
+[xUnit.net 00:00:00.99]         /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs(108,0): at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(String noun)
+[xUnit.net 00:00:00.99]            at InvokeStub_LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(Object, Span`1)
+[xUnit.net 00:00:00.99]            at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+[xUnit.net 00:00:00.99]     CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(noun: "equivalent") [FAIL]
+[xUnit.net 00:00:00.99]       TASK_CONSTITUENT_REVIEW_RED equivalent: clarify
+[xUnit.net 00:00:00.99]       Stack Trace:
+[xUnit.net 00:00:00.99]         /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs(108,0): at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(String noun)
+[xUnit.net 00:00:00.99]            at InvokeStub_LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(Object, Span`1)
+[xUnit.net 00:00:00.99]            at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+[xUnit.net 00:00:00.99]     CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(noun: "rendition") [FAIL]
+[xUnit.net 00:00:00.99]       TASK_CONSTITUENT_REVIEW_RED rendition: clarify
+[xUnit.net 00:00:00.99]       Stack Trace:
+[xUnit.net 00:00:00.99]         /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs(108,0): at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(String noun)
+[xUnit.net 00:00:00.99]            at InvokeStub_LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(Object, Span`1)
+[xUnit.net 00:00:00.99]            at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+[xUnit.net 00:00:00.99]     CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(noun: "casing") [FAIL]
+[xUnit.net 00:00:00.99]       TASK_CONSTITUENT_REVIEW_RED casing: clarify
+[xUnit.net 00:00:00.99]       Stack Trace:
+[xUnit.net 00:00:00.99]         /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs(108,0): at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(String noun)
+[xUnit.net 00:00:00.99]            at InvokeStub_LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(Object, Span`1)
+[xUnit.net 00:00:00.99]            at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+[xUnit.net 00:00:00.99]     CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(noun: "lettering") [FAIL]
+[xUnit.net 00:00:00.99]       TASK_CONSTITUENT_REVIEW_RED lettering: clarify
+[xUnit.net 00:00:00.99]       Stack Trace:
+[xUnit.net 00:00:00.99]         /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs(108,0): at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(String noun)
+[xUnit.net 00:00:00.99]            at InvokeStub_LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(Object, Span`1)
+[xUnit.net 00:00:00.99]            at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+[xUnit.net 00:00:00.99]     CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(noun: "counterpart") [FAIL]
+[xUnit.net 00:00:00.99]       TASK_CONSTITUENT_REVIEW_RED counterpart: clarify
+[xUnit.net 00:00:00.99]       Stack Trace:
+[xUnit.net 00:00:00.99]         /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs(108,0): at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(String noun)
+[xUnit.net 00:00:00.99]            at InvokeStub_LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(Object, Span`1)
+[xUnit.net 00:00:00.99]            at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+[xUnit.net 00:00:00.99]     CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(noun: "result") [FAIL]
+[xUnit.net 00:00:00.99]       TASK_CONSTITUENT_REVIEW_RED result: clarify
+[xUnit.net 00:00:00.99]       Stack Trace:
+[xUnit.net 00:00:00.99]         /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs(108,0): at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(String noun)
+[xUnit.net 00:00:00.99]            at InvokeStub_LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(Object, Span`1)
+[xUnit.net 00:00:00.99]            at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+[xUnit.net 00:00:00.99]     CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(noun: "letter") [FAIL]
+[xUnit.net 00:00:00.99]       TASK_CONSTITUENT_REVIEW_RED letter: clarify
+[xUnit.net 00:00:00.99]       Stack Trace:
+[xUnit.net 00:00:00.99]         /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs(108,0): at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(String noun)
+[xUnit.net 00:00:00.99]            at InvokeStub_LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(Object, Span`1)
+[xUnit.net 00:00:00.99]            at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Failed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(noun: "character") [2 ms]
+  Error Message:
+   TASK_CONSTITUENT_REVIEW_RED character: clarify
+  Stack Trace:
+     at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(String noun) in /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs:line 108
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(Object obj, Span`1 copyOfArgs, BindingFlags invokeAttr)
+  Failed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(noun: "case conversion") [< 1 ms]
+  Error Message:
+   TASK_CONSTITUENT_REVIEW_RED case conversion: clarify
+  Stack Trace:
+     at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(String noun) in /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs:line 108
+   at InvokeStub_LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Failed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(noun: "equivalent") [< 1 ms]
+  Error Message:
+   TASK_CONSTITUENT_REVIEW_RED equivalent: clarify
+  Stack Trace:
+     at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(String noun) in /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs:line 108
+   at InvokeStub_LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Failed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(noun: "rendition") [< 1 ms]
+  Error Message:
+   TASK_CONSTITUENT_REVIEW_RED rendition: clarify
+  Stack Trace:
+     at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(String noun) in /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs:line 108
+   at InvokeStub_LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Failed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(noun: "casing") [< 1 ms]
+  Error Message:
+   TASK_CONSTITUENT_REVIEW_RED casing: clarify
+  Stack Trace:
+     at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(String noun) in /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs:line 108
+   at InvokeStub_LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Failed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(noun: "lettering") [< 1 ms]
+  Error Message:
+   TASK_CONSTITUENT_REVIEW_RED lettering: clarify
+  Stack Trace:
+     at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(String noun) in /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs:line 108
+   at InvokeStub_LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Failed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(noun: "counterpart") [< 1 ms]
+  Error Message:
+   TASK_CONSTITUENT_REVIEW_RED counterpart: clarify
+  Stack Trace:
+     at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(String noun) in /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs:line 108
+   at InvokeStub_LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Failed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(noun: "result") [< 1 ms]
+  Error Message:
+   TASK_CONSTITUENT_REVIEW_RED result: clarify
+  Stack Trace:
+     at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(String noun) in /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs:line 108
+   at InvokeStub_LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Failed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(noun: "letter") [< 1 ms]
+  Error Message:
+   TASK_CONSTITUENT_REVIEW_RED letter: clarify
+  Stack Trace:
+     at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(String noun) in /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs:line 108
+   at InvokeStub_LearningCaseRequestSyntaxTests.NominalCompatibilityRequestsAreNotClaimedAsUnaryOperands(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+[xUnit.net 00:00:00.99]     CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(text: "display 'A' as small", status: "abstain") [FAIL]
+[xUnit.net 00:00:00.99]       TASK_CONSTITUENT_RED display 'A' as small: ready, expected abstain
+[xUnit.net 00:00:00.99]       Stack Trace:
+[xUnit.net 00:00:00.99]         /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs(90,0): at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(String text, String status)
+[xUnit.net 00:00:00.99]            at InvokeStub_LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(Object, Span`1)
+[xUnit.net 00:00:00.99]            at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+[xUnit.net 00:00:00.99]     CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(text: "What is the capital letter of mu?", status: "clarify") [FAIL]
+[xUnit.net 00:00:00.99]       TASK_CONSTITUENT_RED What is the capital letter of mu?: abstain, expected clarify
+[xUnit.net 00:00:00.99]       Stack Trace:
+[xUnit.net 00:00:00.99]         /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs(90,0): at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(String text, String status)
+[xUnit.net 00:00:00.99]            at InvokeStub_LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(Object, Span`1)
+[xUnit.net 00:00:00.99]            at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.GrammarSpacingAndPunctuationDoNotNormalizeLiteralData(text: "Could you kindly write '!' in caps!", key: 33) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.GrammarSpacingAndPunctuationDoNotNormalizeLiteralData(text: "Could you kindly write '.' in caps!", key: 46) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.GrammarSpacingAndPunctuationDoNotNormalizeLiteralData(text: "Could you kindly write ''' in caps!", key: 39) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.GrammarSpacingAndPunctuationDoNotNormalizeLiteralData(text: "Please, uppercase 0x00B5!", key: 181) [4 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.GrammarSpacingAndPunctuationDoNotNormalizeLiteralData(text: "Please, uppercase code  point   181!", key: 181) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.GrammarSpacingAndPunctuationDoNotNormalizeLiteralData(text: "Could you kindly write ' ' in caps!", key: 32) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(text: "Please, uppercase my name!", status: "abstain") [< 1 ms]
+  Failed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(text: "display 'A' as small", status: "abstain") [< 1 ms]
+  Error Message:
+   TASK_CONSTITUENT_RED display 'A' as small: ready, expected abstain
+  Stack Trace:
+     at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(String text, String status) in /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs:line 90
+   at InvokeStub_LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Failed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(text: "What is the capital letter of mu?", status: "clarify") [< 1 ms]
+  Error Message:
+   TASK_CONSTITUENT_RED What is the capital letter of mu?: abstain, expected clarify
+  Stack Trace:
+     at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(String text, String status) in /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs:line 90
+   at InvokeStub_LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+[xUnit.net 00:00:00.99]     CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(text: "Please write the uppercase of France.", status: "clarify") [FAIL]
+[xUnit.net 00:00:00.99]       TASK_CONSTITUENT_RED Please write the uppercase of France.: abstain, expected clarify
+[xUnit.net 00:00:00.99]       Stack Trace:
+[xUnit.net 00:00:00.99]         /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs(90,0): at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(String text, String status)
+[xUnit.net 00:00:00.99]            at InvokeStub_LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(Object, Span`1)
+[xUnit.net 00:00:00.99]            at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+[xUnit.net 00:00:00.99]     CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(text: "What is the uppercase of mu?", status: "clarify") [FAIL]
+[xUnit.net 00:00:00.99]       TASK_CONSTITUENT_RED What is the uppercase of mu?: abstain, expected clarify
+[xUnit.net 00:00:00.99]       Stack Trace:
+[xUnit.net 00:00:00.99]         /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs(90,0): at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(String text, String status)
+[xUnit.net 00:00:00.99]            at InvokeStub_LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(Object, Span`1)
+[xUnit.net 00:00:00.99]            at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(text: "Could you kindly render the single quoted characte"···, status: "clarify") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(text: "Please show 'a' to be uppercase.", status: "abstain") [3 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(text: "Please write 81 in caps.", status: "clarify") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(text: "What is the capital of France?", status: "abstain") [< 1 ms]
+  Failed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(text: "Please write the uppercase of France.", status: "clarify") [< 1 ms]
+  Error Message:
+   TASK_CONSTITUENT_RED Please write the uppercase of France.: abstain, expected clarify
+  Stack Trace:
+     at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(String text, String status) in /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs:line 90
+   at InvokeStub_LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(text: "Could you kindly not render 'É' in lowercase?", status: "abstain") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(text: "Please write 'ñ' in caps and email it.", status: "abstain") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(text: "Could you kindly uppercase 'a' or 'b'!", status: "clarify") [< 1 ms]
+  Failed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(text: "What is the uppercase of mu?", status: "clarify") [< 1 ms]
+  Error Message:
+   TASK_CONSTITUENT_RED What is the uppercase of mu?: abstain, expected clarify
+  Stack Trace:
+     at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(String text, String status) in /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs:line 90
+   at InvokeStub_LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+[xUnit.net 00:00:00.99]     CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(text: "change 'A' to small", status: "abstain") [FAIL]
+[xUnit.net 00:00:00.99]       TASK_CONSTITUENT_RED change 'A' to small: ready, expected abstain
+[xUnit.net 00:00:00.99]       Stack Trace:
+[xUnit.net 00:00:00.99]         /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs(90,0): at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(String text, String status)
+[xUnit.net 00:00:00.99]            at InvokeStub_LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(Object, Span`1)
+[xUnit.net 00:00:00.99]            at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+[xUnit.net 00:00:00.99]     CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(text: "render 'A' as small", status: "abstain") [FAIL]
+[xUnit.net 00:00:00.99]       TASK_CONSTITUENT_RED render 'A' as small: ready, expected abstain
+[xUnit.net 00:00:00.99]       Stack Trace:
+[xUnit.net 00:00:00.99]         /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs(90,0): at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(String text, String status)
+[xUnit.net 00:00:00.99]            at InvokeStub_LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(Object, Span`1)
+[xUnit.net 00:00:00.99]            at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+[xUnit.net 00:00:00.99]     CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(text: "What is the lowercase of sigma?", status: "clarify") [FAIL]
+[xUnit.net 00:00:00.99]       TASK_CONSTITUENT_RED What is the lowercase of sigma?: abstain, expected clarify
+[xUnit.net 00:00:00.99]       Stack Trace:
+[xUnit.net 00:00:00.99]         /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs(90,0): at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(String text, String status)
+[xUnit.net 00:00:00.99]            at InvokeStub_LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(Object, Span`1)
+[xUnit.net 00:00:00.99]            at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(text: "Could you kindly render 'É' in lowercase, then ema"···, status: "abstain") [< 1 ms]
+  Failed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(text: "change 'A' to small", status: "abstain") [< 1 ms]
+  Error Message:
+   TASK_CONSTITUENT_RED change 'A' to small: ready, expected abstain
+  Stack Trace:
+     at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(String text, String status) in /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs:line 90
+   at InvokeStub_LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Failed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(text: "render 'A' as small", status: "abstain") [< 1 ms]
+  Error Message:
+   TASK_CONSTITUENT_RED render 'A' as small: ready, expected abstain
+  Stack Trace:
+     at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(String text, String status) in /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs:line 90
+   at InvokeStub_LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(text: "Please give 'a' the uppercase.", status: "abstain") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(text: "Please write 'ab' in caps.", status: "abstain") [< 1 ms]
+  Failed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(text: "What is the lowercase of sigma?", status: "clarify") [< 1 ms]
+  Error Message:
+   TASK_CONSTITUENT_RED What is the lowercase of sigma?: abstain, expected clarify
+  Stack Trace:
+     at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(String text, String status) in /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs:line 90
+   at InvokeStub_LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(text: "Please write 'μ' in caps.", status: "abstain") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(text: "Please write 'a' in caps and caps.", status: "abstain") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(text: "Could you kindly render 'É' in lowercase in Turkis"···, status: "abstain") [1 ms]
+[xUnit.net 00:00:01.00]   Finished:    CnetControlPlane.Tests
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.ClaimedRequestsCannotDiscardUnknownActionsOrAcquireAuthority(text: "Please, uppercase U+000A!", status: "abstain") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.BoundsApplyBeforeTrimmingAndEveryAdditionalActionRemainsUntrusted [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.EveryLatin1LiteralRetainsItsByteAndControlsRemainRefused [4 ms]
+
+Test Run Failed.
+Total tests: 219
+     Passed: 203
+     Failed: 16
+ Total time: 1.2425 Seconds

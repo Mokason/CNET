@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "frozen_at_utc": "2026-09-09 12:30:33 UTC",
+  "source_commit": "29a4091b9a2d52bd06f109f7a588adf11a470a2c",
+  "pins": {
+    "dotnet/CnetControlPlane/Learning/LearningTaskProposal.cs": "5429ff1034c123d8fddffa6ec0ad548dc92164a810a1efcdcdca91da71a5d335",
+    "dotnet/CnetControlPlane/Learning/LearningCaseRequestSyntax.cs": "f9277411fe1dcd38055cd92ead7115800144d49e4d7cb89cc265dcd850018b29",
+    "tools/task_paraphrase_eval/evaluate.py": "30893a95fc08329db530d9be3804dc8b60c4df5f8dfcd4b11f362a2fb6ba7a28",
+    ".artifacts/herdr-probe/bin/TaskParaphraseProbe/debug/cnet-task-paraphrase-probe.dll": "296687132e144fdbb24a200e58909a44fa551afc8aaded3d7681067760044443",
+    ".artifacts/herdr-task/bin/CnetControlPlane/debug/cnet-control.dll": "cd0bbecef103ca6f0d97b3fddc6cf79babae3ba2ee00332516f534dfe048dbf2"
+  },
+  "corpus_sha256": "f47c14e717f414984fcbb1f472ddbf39460b5ef301a805f902af91bb74b59a57",
+  "regression_tests": 2210,
+  "evaluator_tests": 34,
+  "review_cycles": 3,
+  "review_note": "All recorded counterexamples fixed with executed RED/green tests; final nominal-continuation repair regression-verified, no fourth independent review cycle.",
+  "confirmation_scoring_limit": 1,
+  "synthetic": true,
+  "training_eligible": false
+}

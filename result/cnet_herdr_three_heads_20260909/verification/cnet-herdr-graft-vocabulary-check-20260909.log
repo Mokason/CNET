@@ -1,0 +1,3 @@
+deep layer: not built (run `graft build --deep` for concept nodes) — wiring graph is the source of truth
+
+graph check: OK — the wiring graph is in sync with the code. (meaning tier 0% complete — 24267 of 24267 node(s) pending: attic/cnet_compete_fixture.c, attic/cnet_compete_fixture.c#abstain, attic/cnet_compete_fixture.c#answer, attic/cnet_compete_fixture.c#crc8_atm, attic/cnet_compete_fixture.c#main, attic/cnet_compete_fixture.c#numeric_lanes, attic/cnet_compete_fixture.c#ood_lanes, attic/cnet_compete_fixture.c#policy_lane, … +24259 more. Run `graft build --deep` to summarize them; if a deep build already left these pending, that meaning pass failed — see that build's errors (re-running alone will not clear them))

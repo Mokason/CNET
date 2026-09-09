@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "review_cycles": 2,
+  "first_review_rows": 128,
+  "first_review_unique_ids": 128,
+  "second_review_rows": 7,
+  "second_review_unique_ids": 7,
+  "unchanged_reviewed_rows": 121,
+  "unchanged_projection_matches": true,
+  "changed_projection_matches": true,
+  "changed_ids": [
+    "h1_23",
+    "h3_10",
+    "h3_25",
+    "h3_27",
+    "h3_28",
+    "h4_21",
+    "h4_22"
+  ],
+  "second_review_ids_match": true,
+  "final_unreviewed_ids": [],
+  "final_label_mismatch_ids": [],
+  "first_review_findings": 18,
+  "second_review_findings": 7,
+  "reconciled_second_review_findings": 7,
+  "unresolved_substantive_findings": 0,
+  "second_review_findings_reconciled": true,
+  "provider_completions_passed": true,
+  "cnet_executed": false,
+  "training_eligible": false,
+  "label_checks_passed": true
+}

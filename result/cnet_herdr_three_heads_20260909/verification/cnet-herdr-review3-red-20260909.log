@@ -1,0 +1,98 @@
+  CnetControlPlane -> /home/marble/AI/CNET-worktrees/herdr-language-20260909/.artifacts/herdr-task/bin/CnetControlPlane/debug/cnet-control.dll
+/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningRuntimeLedgerTests.cs(22,9): warning CA1416: This call site is reachable on all platforms. 'Directory.CreateDirectory(string, UnixFileMode)' is unsupported on: 'windows'. (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1416) [/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/CnetControlPlane.Tests.csproj]
+/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningRuntimeLedgerTests.cs(21,9): warning CA1416: This call site is reachable on all platforms. 'File.SetUnixFileMode(string, UnixFileMode)' is unsupported on: 'windows'. (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1416) [/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/CnetControlPlane.Tests.csproj]
+/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningRuntimeLedgerTests.cs(23,9): warning CA1416: This call site is reachable on all platforms. 'Directory.CreateDirectory(string, UnixFileMode)' is unsupported on: 'windows'. (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1416) [/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/CnetControlPlane.Tests.csproj]
+/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningNativeLedgerTests.cs(38,43): warning CA1416: This call site is reachable on all platforms. 'File.SetUnixFileMode(string, UnixFileMode)' is unsupported on: 'windows'. (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1416) [/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/CnetControlPlane.Tests.csproj]
+/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningRuntimeLedgerTests.cs(35,13): warning CA1416: This call site is reachable on all platforms. 'File.SetUnixFileMode(string, UnixFileMode)' is unsupported on: 'windows'. (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1416) [/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/CnetControlPlane.Tests.csproj]
+/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningRuntimeLedgerTests.cs(32,36): warning CA1416: This call site is reachable on all platforms. 'File.SetUnixFileMode(string, UnixFileMode)' is unsupported on: 'windows'. (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1416) [/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/CnetControlPlane.Tests.csproj]
+  CnetControlPlane.Tests -> /home/marble/AI/CNET-worktrees/herdr-language-20260909/.artifacts/herdr-task/bin/CnetControlPlane.Tests/debug/CnetControlPlane.Tests.dll
+Test run for /home/marble/AI/CNET-worktrees/herdr-language-20260909/.artifacts/herdr-task/bin/CnetControlPlane.Tests/debug/CnetControlPlane.Tests.dll (.NETCoreApp,Version=v8.0)
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.8.2+699d445a1a (64-bit .NET 8.0.30)
+[xUnit.net 00:00:00.04]   Discovering: CnetControlPlane.Tests
+[xUnit.net 00:00:00.32]   Discovered:  CnetControlPlane.Tests
+[xUnit.net 00:00:00.33]   Starting:    CnetControlPlane.Tests
+[xUnit.net 00:00:01.01]     CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalDeclarationsKeepTheirExistingOwner(text: "uppercase letter is the desired case for 'a'") [FAIL]
+[xUnit.net 00:00:01.01]       TASK_CONSTITUENT_REVIEW3_RED uppercase letter is the desired case for 'a': clarify
+[xUnit.net 00:00:01.01]       Stack Trace:
+[xUnit.net 00:00:01.01]         /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs(125,0): at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalDeclarationsKeepTheirExistingOwner(String text)
+[xUnit.net 00:00:01.01]            at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+[xUnit.net 00:00:01.01]            at System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(Object obj, Span`1 copyOfArgs, BindingFlags invokeAttr)
+[xUnit.net 00:00:01.01]     CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalDeclarationsKeepTheirExistingOwner(text: "uppercase character should take 'a' as its input") [FAIL]
+[xUnit.net 00:00:01.01]       TASK_CONSTITUENT_REVIEW3_RED uppercase character should take 'a' as its input: clarify
+[xUnit.net 00:00:01.01]       Stack Trace:
+[xUnit.net 00:00:01.01]         /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs(125,0): at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalDeclarationsKeepTheirExistingOwner(String text)
+[xUnit.net 00:00:01.01]            at InvokeStub_LearningCaseRequestSyntaxTests.NominalDeclarationsKeepTheirExistingOwner(Object, Span`1)
+[xUnit.net 00:00:01.01]            at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+[xUnit.net 00:00:01.01]     CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalDeclarationsKeepTheirExistingOwner(text: "uppercase character is the requested operation for"···) [FAIL]
+[xUnit.net 00:00:01.01]       TASK_CONSTITUENT_REVIEW3_RED uppercase character is the requested operation for 'a': clarify
+[xUnit.net 00:00:01.01]       Stack Trace:
+[xUnit.net 00:00:01.01]         /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs(125,0): at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalDeclarationsKeepTheirExistingOwner(String text)
+[xUnit.net 00:00:01.01]            at InvokeStub_LearningCaseRequestSyntaxTests.NominalDeclarationsKeepTheirExistingOwner(Object, Span`1)
+[xUnit.net 00:00:01.01]            at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+[xUnit.net 00:00:01.01]     CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalDeclarationsKeepTheirExistingOwner(text: "uppercase character is wanted for 'a'") [FAIL]
+[xUnit.net 00:00:01.01]       TASK_CONSTITUENT_REVIEW3_RED uppercase character is wanted for 'a': clarify
+[xUnit.net 00:00:01.01]       Stack Trace:
+[xUnit.net 00:00:01.01]         /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs(125,0): at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalDeclarationsKeepTheirExistingOwner(String text)
+[xUnit.net 00:00:01.01]            at InvokeStub_LearningCaseRequestSyntaxTests.NominalDeclarationsKeepTheirExistingOwner(Object, Span`1)
+[xUnit.net 00:00:01.01]            at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+[xUnit.net 00:00:01.01]     CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalDeclarationsKeepTheirExistingOwner(text: "uppercase character when converting 'a'") [FAIL]
+[xUnit.net 00:00:01.01]       TASK_CONSTITUENT_REVIEW3_RED uppercase character when converting 'a': clarify
+[xUnit.net 00:00:01.01]       Stack Trace:
+[xUnit.net 00:00:01.01]         /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs(125,0): at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalDeclarationsKeepTheirExistingOwner(String text)
+[xUnit.net 00:00:01.01]            at InvokeStub_LearningCaseRequestSyntaxTests.NominalDeclarationsKeepTheirExistingOwner(Object, Span`1)
+[xUnit.net 00:00:01.01]            at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+[xUnit.net 00:00:01.01]     CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalDeclarationsKeepTheirExistingOwner(text: "uppercase letter is to be applied to 'a'") [FAIL]
+[xUnit.net 00:00:01.01]       TASK_CONSTITUENT_REVIEW3_RED uppercase letter is to be applied to 'a': clarify
+[xUnit.net 00:00:01.01]       Stack Trace:
+[xUnit.net 00:00:01.01]         /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs(125,0): at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalDeclarationsKeepTheirExistingOwner(String text)
+[xUnit.net 00:00:01.01]            at InvokeStub_LearningCaseRequestSyntaxTests.NominalDeclarationsKeepTheirExistingOwner(Object, Span`1)
+[xUnit.net 00:00:01.01]            at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+[xUnit.net 00:00:01.01]   Finished:    CnetControlPlane.Tests
+  Failed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalDeclarationsKeepTheirExistingOwner(text: "uppercase letter is the desired case for 'a'") [658 ms]
+  Error Message:
+   TASK_CONSTITUENT_REVIEW3_RED uppercase letter is the desired case for 'a': clarify
+  Stack Trace:
+     at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalDeclarationsKeepTheirExistingOwner(String text) in /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs:line 125
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(Object obj, Span`1 copyOfArgs, BindingFlags invokeAttr)
+  Failed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalDeclarationsKeepTheirExistingOwner(text: "uppercase character should take 'a' as its input") [< 1 ms]
+  Error Message:
+   TASK_CONSTITUENT_REVIEW3_RED uppercase character should take 'a' as its input: clarify
+  Stack Trace:
+     at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalDeclarationsKeepTheirExistingOwner(String text) in /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs:line 125
+   at InvokeStub_LearningCaseRequestSyntaxTests.NominalDeclarationsKeepTheirExistingOwner(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Failed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalDeclarationsKeepTheirExistingOwner(text: "uppercase character is the requested operation for"···) [< 1 ms]
+  Error Message:
+   TASK_CONSTITUENT_REVIEW3_RED uppercase character is the requested operation for 'a': clarify
+  Stack Trace:
+     at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalDeclarationsKeepTheirExistingOwner(String text) in /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs:line 125
+   at InvokeStub_LearningCaseRequestSyntaxTests.NominalDeclarationsKeepTheirExistingOwner(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Failed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalDeclarationsKeepTheirExistingOwner(text: "uppercase character is wanted for 'a'") [< 1 ms]
+  Error Message:
+   TASK_CONSTITUENT_REVIEW3_RED uppercase character is wanted for 'a': clarify
+  Stack Trace:
+     at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalDeclarationsKeepTheirExistingOwner(String text) in /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs:line 125
+   at InvokeStub_LearningCaseRequestSyntaxTests.NominalDeclarationsKeepTheirExistingOwner(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Failed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalDeclarationsKeepTheirExistingOwner(text: "uppercase character when converting 'a'") [< 1 ms]
+  Error Message:
+   TASK_CONSTITUENT_REVIEW3_RED uppercase character when converting 'a': clarify
+  Stack Trace:
+     at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalDeclarationsKeepTheirExistingOwner(String text) in /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs:line 125
+   at InvokeStub_LearningCaseRequestSyntaxTests.NominalDeclarationsKeepTheirExistingOwner(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Failed CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalDeclarationsKeepTheirExistingOwner(text: "uppercase letter is to be applied to 'a'") [< 1 ms]
+  Error Message:
+   TASK_CONSTITUENT_REVIEW3_RED uppercase letter is to be applied to 'a': clarify
+  Stack Trace:
+     at CnetControlPlane.Tests.LearningCaseRequestSyntaxTests.NominalDeclarationsKeepTheirExistingOwner(String text) in /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseRequestSyntaxTests.cs:line 125
+   at InvokeStub_LearningCaseRequestSyntaxTests.NominalDeclarationsKeepTheirExistingOwner(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+
+Test Run Failed.
+Total tests: 6
+     Failed: 6
+ Total time: 1.2689 Seconds

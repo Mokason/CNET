@@ -1,0 +1,223 @@
+{
+  "schema_version": 1,
+  "kind": "synthetic_warm_managed_parser",
+  "candidate_scope": "vocabulary_second_candidate",
+  "input_sha256": "75a0f5d0697b4efd585ec530ddefbaa6a0e47c101b86d030ac99a66c40f04147",
+  "harness_assembly_sha256": "f4984e77cb3f3960e4b67a52184453b2fd569b95dff1736adb1ccdcc9eea4df4",
+  "parser_build_configuration": "Debug",
+  "harness_build_configuration": "Release",
+  "rebuilds_performed": 0,
+  "request_count": 128,
+  "warmup_calls_per_run": 8192,
+  "measured_calls_per_run": 32768,
+  "native_calls": 0,
+  "learning_events": 0,
+  "run_order": [
+    "baseline-vocabulary-1.json",
+    "vocabulary-1.json",
+    "baseline-vocabulary-2.json",
+    "vocabulary-2.json",
+    "baseline-vocabulary-3.json",
+    "vocabulary-3.json"
+  ],
+  "same_input_hash_all_current_and_first_runs": true,
+  "stable_assembly_hash_within_each_cohort": true,
+  "frozen_binary_hashes_verified_before_and_after": true,
+  "aggregation": "Median and observed minimum/maximum of three per-run values; quantile samples are not pooled.",
+  "baseline": {
+    "source_commit": "5041f00e39bbaf903eca83f86c296b40cf084f79",
+    "assembly_sha256": "50c7dd24adec1024437320a6670f1e4e4ca2ca58f5f27fc7cef05338ff7a2568",
+    "run_count": 3,
+    "runs": [
+      "baseline-vocabulary-1.json",
+      "baseline-vocabulary-2.json",
+      "baseline-vocabulary-3.json"
+    ],
+    "metrics": {
+      "p50_microseconds": {
+        "median": 18.184,
+        "min": 11.411,
+        "max": 21.3
+      },
+      "p95_microseconds": {
+        "median": 32.391,
+        "min": 32.091,
+        "max": 33.042
+      },
+      "p99_microseconds": {
+        "median": 41.397,
+        "min": 41.348,
+        "max": 41.588
+      },
+      "calls_per_second": {
+        "median": 57936.79041001843,
+        "min": 49085.09211094357,
+        "max": 64795.837152210304
+      },
+      "allocated_bytes_per_call": {
+        "median": 2653.6025390625,
+        "min": 2653.6025390625,
+        "max": 2653.6025390625
+      },
+      "gen0_collections": {
+        "median": 5,
+        "min": 5,
+        "max": 5
+      }
+    }
+  },
+  "vocabulary": {
+    "source_commit": "61d92cf078ff89443883d39fa13eb6427c51fd87",
+    "assembly_sha256": "d547e11d0ddc3a591f940f4432c23e0379c0380faec636b6f37b3460e66c967f",
+    "run_count": 3,
+    "runs": [
+      "vocabulary-1.json",
+      "vocabulary-2.json",
+      "vocabulary-3.json"
+    ],
+    "metrics": {
+      "p50_microseconds": {
+        "median": 11.621,
+        "min": 11.471,
+        "max": 11.802
+      },
+      "p95_microseconds": {
+        "median": 37.561,
+        "min": 37.29,
+        "max": 37.852
+      },
+      "p99_microseconds": {
+        "median": 48.471,
+        "min": 48.081,
+        "max": 48.681
+      },
+      "calls_per_second": {
+        "median": 64595.52787150757,
+        "min": 64457.37036432341,
+        "max": 65596.69005764133
+      },
+      "allocated_bytes_per_call": {
+        "median": 6406.955078125,
+        "min": 6406.93359375,
+        "max": 6406.9697265625
+      },
+      "gen0_collections": {
+        "median": 12,
+        "min": 12,
+        "max": 12
+      }
+    }
+  },
+  "historical_first_slice": {
+    "evidence": "../../benchmarks-first/latency/summary.json",
+    "source_commit": "29a4091b9a2d52bd06f109f7a588adf11a470a2c",
+    "assembly_sha256": "cd0bbecef103ca6f0d97b3fddc6cf79babae3ba2ee00332516f534dfe048dbf2",
+    "run_count": 3,
+    "metrics": {
+      "p50_microseconds": {
+        "median": 11.732,
+        "min": 11.672,
+        "max": 11.932
+      },
+      "p95_microseconds": {
+        "median": 36.759,
+        "min": 36.619,
+        "max": 37.651
+      },
+      "p99_microseconds": {
+        "median": 46.508,
+        "min": 45.255,
+        "max": 50.094
+      },
+      "calls_per_second": {
+        "median": 63659.13764481784,
+        "min": 63202.17134022241,
+        "max": 63670.97526104361
+      },
+      "allocated_bytes_per_call": {
+        "median": 6373.7041015625,
+        "min": 6373.7041015625,
+        "max": 6373.7041015625
+      },
+      "gen0_collections": {
+        "median": 13,
+        "min": 13,
+        "max": 13
+      }
+    }
+  },
+  "historical_first_baseline": {
+    "source_commit": "5041f00e39bbaf903eca83f86c296b40cf084f79",
+    "assembly_sha256": "50c7dd24adec1024437320a6670f1e4e4ca2ca58f5f27fc7cef05338ff7a2568",
+    "run_count": 3,
+    "metrics": {
+      "p50_microseconds": {
+        "median": 10.87,
+        "min": 10.56,
+        "max": 20.449
+      },
+      "p95_microseconds": {
+        "median": 32.531,
+        "min": 32.32,
+        "max": 32.952
+      },
+      "p99_microseconds": {
+        "median": 41.268,
+        "min": 41.147,
+        "max": 41.878
+      },
+      "calls_per_second": {
+        "median": 65114.59138745865,
+        "min": 54063.962379612894,
+        "max": 65225.70826066237
+      },
+      "allocated_bytes_per_call": {
+        "median": 2653.6025390625,
+        "min": 2653.6025390625,
+        "max": 2653.6025390625
+      },
+      "gen0_collections": {
+        "median": 5,
+        "min": 5,
+        "max": 5
+      }
+    }
+  },
+  "median_percent_change_vocabulary_vs_current_baseline": {
+    "p50_microseconds": -36.09216893972723,
+    "p95_microseconds": 15.961223796733659,
+    "p99_microseconds": 17.088194796724387,
+    "calls_per_second": 11.493107254242574,
+    "allocated_bytes_per_call": 141.44365947089176,
+    "gen0_collections": 140
+  },
+  "median_percent_change_vocabulary_vs_historical_first_slice": {
+    "p50_microseconds": -0.9461302420729512,
+    "p95_microseconds": 2.1817786120405858,
+    "p99_microseconds": 4.220779220779214,
+    "calls_per_second": 1.4709439388171708,
+    "allocated_bytes_per_call": 0.5216899942742659,
+    "gen0_collections": -7.692307692307687
+  },
+  "median_percent_change_vocabulary_vs_historical_first_baseline": {
+    "p50_microseconds": 6.908923643054288,
+    "p95_microseconds": 15.462174541206863,
+    "p99_microseconds": 17.454201802849646,
+    "calls_per_second": -0.7971539172570985,
+    "allocated_bytes_per_call": 141.44365947089176,
+    "gen0_collections": 140
+  },
+  "allocation_ratio_vocabulary_to_baseline": 2.4144365947089175,
+  "sanitization": "Reports contain only metrics, counts, hashes and scope notes; request contents and private corpus were not copied.",
+  "caveats": [
+    "per-call samples include delegate/timer overhead; throughput includes loop overhead; no startup or native work",
+    "Same existing request bytes and harness; no source or artifact rebuilds. Native binaries ran only after the six latency processes completed.",
+    "Synthetic warm parser calls only; excludes startup, HTTP/server/native work, model calls, learning and language-quality accuracy.",
+    "Three runs per cohort, each measuring less than one second; observed ranges are not confidence intervals.",
+    "Current baseline p50 varies from 11.411 to 21.3 microseconds, and historical baseline median was 10.87 microseconds. No clean speedup or significance claim.",
+    "Comparisons to the first slice use its earlier three-run session, not a contemporaneous first-slice rerun.",
+    "Vocabulary allocation is about 2.414 times baseline and above the first slice; current Gen0 counts are retained without treating them as a throughput guarantee.",
+    "Run metadata does not establish CPU affinity, frequency controls or host isolation.",
+    "These measurements do not establish language acceptance."
+  ]
+}

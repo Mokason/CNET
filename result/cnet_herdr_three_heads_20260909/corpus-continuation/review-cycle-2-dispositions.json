@@ -1,0 +1,78 @@
+{
+  "schema": 1,
+  "cycle": 2,
+  "findings": [
+    {
+      "finding": 1,
+      "classification": "contract_misread",
+      "resolved": true,
+      "ids": [
+        "h3_10"
+      ],
+      "disposition": "A single case operation expressed through a result clause is allowed natural paraphrase. The supplied contract explicitly distinguishes grammatical indirectness from a separate embedded task. No second task is requested."
+    },
+    {
+      "finding": 2,
+      "classification": "already_considered_reporting_limitation",
+      "resolved": true,
+      "ids": [
+        "h3_25",
+        "h4_21"
+      ],
+      "disposition": "Both labels are stable under missing-direction rules. Author family aliases are preserved for provenance and combined in normalized metadata; raw family counts are not independent mechanisms."
+    },
+    {
+      "finding": 3,
+      "classification": "contract_misread",
+      "resolved": true,
+      "ids": [
+        "h3_27"
+      ],
+      "disposition": "A prohibition of the case conversion is negated task intent. The reviewer also identifies an alternative abstain trigger, which does not alter the status. No executable direction is authorized."
+    },
+    {
+      "finding": 4,
+      "classification": "contract_misread",
+      "resolved": true,
+      "ids": [
+        "h3_28"
+      ],
+      "disposition": "The request explicitly identifies a whole string, so the stated full-string abstain rule governs. The contract explicitly gives abstain triggers precedence over mere ambiguity."
+    },
+    {
+      "finding": 5,
+      "classification": "contract_misread",
+      "resolved": true,
+      "ids": [
+        "h4_22"
+      ],
+      "disposition": "Natural non-imperative requests are expressly allowed, and no input is supplied. Reference to needing an operation does not create an unrelated task or supply an operand."
+    },
+    {
+      "finding": 6,
+      "classification": "contract_misread",
+      "resolved": true,
+      "ids": [
+        "h1_23"
+      ],
+      "disposition": "An explicit choice between two possible operands is precisely the multiple-candidate ambiguity covered by the contract. Requesting the intended candidate does not create a second task."
+    },
+    {
+      "finding": 7,
+      "classification": "already_considered_benchmark_limitation",
+      "resolved": true,
+      "ids": [
+        "h1_23",
+        "h3_10",
+        "h3_25",
+        "h3_27",
+        "h3_28",
+        "h4_21",
+        "h4_22"
+      ],
+      "disposition": "This seven-row repair subset is not claimed to be an independent benchmark. The full corpus retains correlated paraphrases and incomplete guard coverage, documented without statistical or completeness claims."
+    }
+  ],
+  "unresolved_substantive_count": 0,
+  "stop_condition": "Only contract misreads and already-considered reporting or benchmark limitations remain; every final label has independent derivation."
+}

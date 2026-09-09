@@ -1,0 +1,113 @@
+== portable knowledge capsule (certified unit + its gate) ==
+  source: unit built + sealed                                    PASS
+  source: coverage over a strict subset                          PASS
+  export: capsule written                                        PASS
+  export: coverage travelled with it                             PASS
+  export: contract exemplars recorded                            PASS
+  import: accepted into a fresh base                             PASS
+  import: unit present in target                                 PASS
+  import: gate restored, not silently dropped                    PASS
+  round-trip: coverage record found on both sides                PASS
+  round-trip: coverage dims identical                            PASS
+  round-trip: coverage INPUT rows bit-identical                  PASS
+  round-trip: coverage TARGETS bit-identical                     PASS
+  round-trip: coverage bound to the same port tags               PASS
+  import: unit materialises (CNU1 seal verified)                 PASS
+  replay: all 8 contract exemplars reproduce (not held-out)      PASS
+  OOD: only certified symbols admitted                           PASS
+  OOD: uncovered symbols refused                                 PASS
+  neg: payload tampered                                          PASS
+  neg: corrupt payload REJECTED                                  PASS
+      payload_integrity_mismatch
+  neg: version rewritten + resealed                              PASS
+  neg: foreign cnb_version REJECTED                              PASS
+      incompatible_cnb_version=99_expected=5
+  neg: coverage row tampered (checksum left stale)               PASS
+  neg: tampered coverage row REJECTED                            PASS
+      manifest_integrity_mismatch
+  neg: coverage target tampered                                  PASS
+  neg: tampered coverage target REJECTED                         PASS
+      manifest_integrity_mismatch
+  neg: manifest tag rewritten and resealed                       PASS
+  neg: manifest tag not matching payload REJECTED                PASS
+      contract_port_mismatch
+  neg: provenance rewritten and resealed                         PASS
+  neg: provenance not matching payload REJECTED                  PASS
+      provenance_mismatch
+  neg: hostile coverage rows/in written                          PASS
+  neg: overflowing coverage rows/in REJECTED by BOUND            PASS
+      coverage_bounds
+  neg: hostile coverage OUT dim written                          PASS
+  neg: overflowing coverage out_dim REJECTED by BOUND (not by oom) PASS
+      coverage_bounds
+  neg: pack cloned for symlink test                              PASS
+  neg: symlinked payload REJECTED                                PASS
+      payload_missing_or_symlink
+  neg: coverage-bearing capsule with cov=NULL REJECTED           PASS
+      coverage_present_but_no_target_registry
+  neg: overlong provenance written and resealed                  PASS
+  neg: overlong provenance REJECTED by FIELD BOUND (no overwrite) PASS
+      provenance_field_too_long
+  neg: coverage out_dim mismatched to output port                PASS
+  neg: cov_out REJECTED by OUTPUT-PORT BINDING (not parse fallout) PASS
+      coverage_out_dim_mismatch
+  conflict: incumbent owns the coverage port shape               PASS
+  conflict: a second owner on one shape is admitted              PASS
+  conflict: the second owner's unit lands                        PASS
+  conflict: the interface now has two owners                     PASS
+  conflict: the incumbent still admits its own row               PASS
+  conflict: the newcomer has its OWN record, not the incumbent's PASS
+  conflict: the newcomer's record holds the capsule's own rows   PASS
+  conflict: the two owners' domains are distinct                 PASS
+  conflict: the shape-only lookup fails closed while ambiguous   PASS
+  conflict: incumbent record still present                       PASS
+  conflict: incumbent rows/targets/tags byte-identical           PASS
+  atomicity: mutually near-miss tags REFUSED                     PASS
+  atomicity: tag_count unchanged after refusal                   PASS
+  atomicity: blob_count unchanged after refusal                  PASS
+  atomicity: unit_count unchanged after refusal                  PASS
+  same-owner: scratch btn allocated                              PASS
+  same-owner: pre-existing gate for the same unit name           PASS
+  same-owner: conflicting payload REJECTED                       PASS
+      target_already_has_unit_refusing_duplicate_import
+  same-owner: old gate still present                             PASS
+  same-owner: old rows/targets byte-identical                    PASS
+  same-owner: base counts unchanged                              PASS
+  slots: rejected imports consume no registry slots              PASS
+  slots: coverage_count stays within bound                       PASS
+  slots: registry still usable after the loop                    PASS
+  reclaim: four records stored                                   PASS
+  reclaim: middle record forgotten                               PASS
+  reclaim: count decreased                                       PASS
+  reclaim: array compacted, no stranded slot                     PASS
+  reclaim: all remaining records preserved                       PASS
+  symlink: payload temp planted                                  PASS
+  symlink: victim file byte-identical (temp not followed)        PASS
+  cov0: source unit built                                        PASS
+  cov0: inputs-only coverage recorded                            PASS
+  cov0: exports with targets omitted                             PASS
+  cov0: imports (targets are optional by design)                 PASS
+  cov0: inputs-only gate restored                                PASS
+  allocfail: scratch btn allocated                               PASS
+  allocfail: base unchanged after injected failure               PASS
+  allocfail: base unchanged after injected failure               PASS
+  allocfail: base unchanged after injected failure               PASS
+  allocfail: every injected reservation failure refused          PASS
+  allocfail: normal admit still succeeds afterwards              PASS
+  allocfail: exactly one unit added                              PASS
+  dup-name: same unit built in target                            PASS
+  dup-name: duplicate import REJECTED (not idempotent)           PASS
+      target_already_has_unit_refusing_duplicate_import
+  dup-name: base counts preserved                                PASS
+  other-ports: owner holds a record on different ports           PASS
+  other-ports: import REJECTED                                   PASS
+      target_already_has_coverage_for_unit_refusing_duplicate
+  other-ports: no unit admitted                                  PASS
+  other-ports: coverage count preserved                          PASS
+  other-ports: existing record byte-identical                    PASS
+  transactional: coverage table saturated                        PASS
+  transactional: import refused when gate cannot be stored       PASS
+  transactional: NO ungated unit left behind                     PASS
+      coverage_restore_failed
+checks=94 failures=0
+KNOWLEDGE_CAPSULE_PASS checks=94 coverage_rows=5

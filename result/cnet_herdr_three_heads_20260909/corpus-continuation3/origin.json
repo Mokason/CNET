@@ -1,0 +1,500 @@
+{
+  "schema": 1,
+  "experiment": "cnet_herdr_three_heads_20260909",
+  "continuation": 3,
+  "private_root": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private",
+  "worktree": "/home/marble/AI/CNET-worktrees/herdr-language-20260909",
+  "herdr": {
+    "session": "cnet-three-heads-20260909",
+    "author_pane": "w3:p1",
+    "review_pane": "w2:p1"
+  },
+  "author": {
+    "requested_model": "grok-4.6",
+    "requested_provider": "xai-oauth",
+    "installed_cli": "Hermes Agent v0.21.1 (2026.9.7), upstream b2aa855b",
+    "fresh_one_shot_contexts": true,
+    "prior_texts_provided": false,
+    "candidate_source_or_outputs_provided": false,
+    "initial_prompts_prepared_before_responses": true,
+    "safe_mode": true,
+    "toolsets": [
+      "clarify"
+    ],
+    "max_turns": 1,
+    "run_budget_seconds": 150,
+    "outer_timeout_seconds": 180,
+    "kill_grace_seconds": 10,
+    "stream_guard_seconds": 120,
+    "api_guard_seconds": 150,
+    "initial_batch_rows": [
+      32,
+      32,
+      32,
+      32
+    ],
+    "completed_initial_batches": 4,
+    "completed_repair_invocations": 2,
+    "failed_invocations": 0,
+    "repair_attempts": [
+      {
+        "name": "repair-1",
+        "issue_class": "three exact old-overlap IDs, three duplicate pairs, and two vague case-intent requests in an unscored draft",
+        "replacement_ids": [
+          "t1_03",
+          "t1_10",
+          "t1_15",
+          "t3_02",
+          "t3_08",
+          "t3_24",
+          "t4_01",
+          "t4_22"
+        ],
+        "completed": true,
+        "exit": 0,
+        "attempt_for_detected_issue": 1
+      },
+      {
+        "name": "repair-2",
+        "issue_class": "first blind-review wording ambiguity and custodian everyday-language concerns",
+        "replacement_ids": [
+          "t1_16",
+          "t1_19",
+          "t1_27",
+          "t2_23",
+          "t2_26",
+          "t3_21",
+          "t4_21",
+          "t4_23"
+        ],
+        "completed": true,
+        "exit": 0,
+        "attempt_for_detected_issue": 1
+      }
+    ],
+    "maximum_repair_invocations_per_detected_issue": 2,
+    "all_typed_categories_operations_and_original_keys_preserved_during_repairs": true,
+    "session_metadata_source": "read-only selected fields from /home/marble/.hermes/state.db; no credential/configuration fields read",
+    "sessions": [
+      {
+        "id": "20260909_161647_9ce634",
+        "model": "grok-4.6",
+        "started_at_utc": "2026-09-09 13:16:48",
+        "ended_at_utc": "2026-09-09 13:19:00",
+        "end_reason": "cli_close",
+        "message_count": 2,
+        "tool_call_count": 0,
+        "billing_provider": "xai-oauth",
+        "cost_status": "unknown",
+        "api_call_count": 1
+      },
+      {
+        "id": "20260909_161901_7b9432",
+        "model": "grok-4.6",
+        "started_at_utc": "2026-09-09 13:19:02",
+        "ended_at_utc": "2026-09-09 13:20:47",
+        "end_reason": "cli_close",
+        "message_count": 2,
+        "tool_call_count": 0,
+        "billing_provider": "xai-oauth",
+        "cost_status": "unknown",
+        "api_call_count": 1
+      },
+      {
+        "id": "20260909_162048_32af74",
+        "model": "grok-4.6",
+        "started_at_utc": "2026-09-09 13:20:49",
+        "ended_at_utc": "2026-09-09 13:22:35",
+        "end_reason": "cli_close",
+        "message_count": 2,
+        "tool_call_count": 0,
+        "billing_provider": "xai-oauth",
+        "cost_status": "unknown",
+        "api_call_count": 1
+      },
+      {
+        "id": "20260909_162236_084c4e",
+        "model": "grok-4.6",
+        "started_at_utc": "2026-09-09 13:22:37",
+        "ended_at_utc": "2026-09-09 13:24:37",
+        "end_reason": "cli_close",
+        "message_count": 2,
+        "tool_call_count": 0,
+        "billing_provider": "xai-oauth",
+        "cost_status": "unknown",
+        "api_call_count": 1
+      },
+      {
+        "id": "20260909_162656_130e96",
+        "model": "grok-4.6",
+        "started_at_utc": "2026-09-09 13:26:57",
+        "ended_at_utc": "2026-09-09 13:27:53",
+        "end_reason": "cli_close",
+        "message_count": 2,
+        "tool_call_count": 0,
+        "billing_provider": "xai-oauth",
+        "cost_status": "unknown",
+        "api_call_count": 1
+      },
+      {
+        "id": "20260909_163623_762c71",
+        "model": "grok-4.6",
+        "started_at_utc": "2026-09-09 13:36:24",
+        "ended_at_utc": "2026-09-09 13:37:04",
+        "end_reason": "cli_close",
+        "message_count": 2,
+        "tool_call_count": 0,
+        "billing_provider": "xai-oauth",
+        "cost_status": "unknown",
+        "api_call_count": 1
+      }
+    ],
+    "cost_basis": "Hermes session cost_status unknown; no actual-dollar-spend or dollar-cap claim. All original wall-clock/run/turn/tool bounds retained."
+  },
+  "review": {
+    "requested_alias": "opus",
+    "installed_cli": "Claude Code 2.1.261",
+    "resolved_main_model": "claude-opus-5",
+    "cli_auxiliary_model": "claude-haiku-4-5-20251001",
+    "auxiliary_disclosure": "Auxiliary usage is reported by the installed CLI; it was not a separate requested reviewer or additional provider.",
+    "fresh_contexts": true,
+    "inputs": "contract plus opaque IDs and original texts only from first review onward",
+    "withheld": [
+      "families",
+      "statuses",
+      "operations",
+      "keys",
+      "author rationale",
+      "old corpora",
+      "prior critiques",
+      "implementation",
+      "tests",
+      "scores",
+      "candidate outputs"
+    ],
+    "effort": "high",
+    "permission_mode": "plan",
+    "restricted": true,
+    "safe_mode": true,
+    "strict_mcp_config": true,
+    "tools": [],
+    "max_budget_usd_per_invocation": 3,
+    "outer_timeout_seconds": 600,
+    "kill_grace_seconds": 15,
+    "maximum_cycles": 3,
+    "completed_cycles": 2,
+    "failed_invocations": 0,
+    "reviewed_rows_by_cycle": [
+      128,
+      8
+    ],
+    "runs": [
+      {
+        "type": "result",
+        "subtype": "success",
+        "is_error": false,
+        "duration_ms": 338072,
+        "num_turns": 1,
+        "total_cost_usd": 0.8723154999999998,
+        "modelUsage": {
+          "claude-haiku-4-5-20251001": {
+            "inputTokens": 6748,
+            "outputTokens": 16,
+            "cacheReadInputTokens": 0,
+            "cacheCreationInputTokens": 0,
+            "webSearchRequests": 0,
+            "costUSD": 0.006828,
+            "contextWindow": 200000,
+            "maxOutputTokens": 32000,
+            "thinkingTokens": 0,
+            "canonicalModel": "claude-haiku-4-5",
+            "provider": "firstParty",
+            "costBasis": "list"
+          },
+          "claude-opus-5": {
+            "inputTokens": 2,
+            "outputTokens": 30767,
+            "cacheReadInputTokens": 2365,
+            "cacheCreationInputTokens": 9512,
+            "webSearchRequests": 0,
+            "costUSD": 0.8654874999999999,
+            "contextWindow": 1000000,
+            "maxOutputTokens": 64000,
+            "thinkingTokens": 25449,
+            "canonicalModel": "claude-opus-5",
+            "provider": "firstParty",
+            "costBasis": "list"
+          }
+        }
+      },
+      {
+        "type": "result",
+        "subtype": "success",
+        "is_error": false,
+        "duration_ms": 66014,
+        "num_turns": 1,
+        "total_cost_usd": 0.1805735,
+        "modelUsage": {
+          "claude-haiku-4-5-20251001": {
+            "inputTokens": 2901,
+            "outputTokens": 13,
+            "cacheReadInputTokens": 0,
+            "cacheCreationInputTokens": 0,
+            "webSearchRequests": 0,
+            "costUSD": 0.002966,
+            "contextWindow": 200000,
+            "maxOutputTokens": 32000,
+            "thinkingTokens": 0,
+            "canonicalModel": "claude-haiku-4-5",
+            "provider": "firstParty",
+            "costBasis": "list"
+          },
+          "claude-opus-5": {
+            "inputTokens": 2,
+            "outputTokens": 5017,
+            "cacheReadInputTokens": 2365,
+            "cacheCreationInputTokens": 5099,
+            "webSearchRequests": 0,
+            "costUSD": 0.1776075,
+            "contextWindow": 1000000,
+            "maxOutputTokens": 64000,
+            "thinkingTokens": 3668,
+            "canonicalModel": "claude-opus-5",
+            "provider": "firstParty",
+            "costBasis": "list"
+          }
+        }
+      }
+    ],
+    "reported_total_list_price_usd": 1.0528889999999997,
+    "cost_disclaimer": "CLI total_cost_usd/modelUsage costUSD use list-price reporting; these are not verified actual bills or provider debit. No larger spending/time/tool authority was used."
+  },
+  "process_exits": {
+    "author_batch_exits": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "author_repair_exits": [
+      0,
+      0
+    ],
+    "review_exits": [
+      0,
+      0
+    ]
+  },
+  "all_raw_drafts_responses_stderr_and_exits_retained": true,
+  "all_failures_retained": true,
+  "original_draft_sha256": "067fa07843ed404de2b076b9fef92da4fd3ce20ec5918997e31c994ed6e57aba",
+  "first_revised_sha256": "0d8ed557cc1fd77fa19e090ad5996132a57c8d357a5bdb07688837153d717561",
+  "final_corpus_sha256": "7b71796aa4d40e61439668af3ad5a100c0aa2cdb2667e5d3cc239810cb063e0c",
+  "private_artifacts": [
+    {
+      "sha256": "432358c1b34a27bcbe17955ff87477d29ace4eff8c2eda06dbb01da6b3d8209b",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/label-review-1.prompt.md"
+    },
+    {
+      "sha256": "6e8f53f4a32244fb7658a8c96aa4c6644e36bb3e4f201dc14c35e03ee3d88220",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/label-review-2.prompt.md"
+    },
+    {
+      "sha256": "53811393bf73f21c8080992f7a5f01cd39776e653720018f2246f1dc51483822",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/part-1.prompt.md"
+    },
+    {
+      "sha256": "9502b6f7dbef65424ddccc8d103d2cde02a8024291ce8db1c2c046bd986f46dc",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/part-2.prompt.md"
+    },
+    {
+      "sha256": "9ca29543bca89262b24aee0459aec7e7c3d51424a73cc5a112d94e8dd8615398",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/part-3.prompt.md"
+    },
+    {
+      "sha256": "2cf5350de37345233754c7dd13df53d9cd54e859ac3c16ef0f4a24edbb3b22b3",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/part-4.prompt.md"
+    },
+    {
+      "sha256": "3dcd8d334c0fe643b0aa3d2fdf6600f4ffbbc86402a47fe07683f4dad5d90c05",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/repair-1.prompt.md"
+    },
+    {
+      "sha256": "39be02094bd172406116b2465bb97c4cf128f13d298ad1ffbbfa5c7809f729f3",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/repair-2.prompt.md"
+    },
+    {
+      "sha256": "f3393d6f5cb25dd24c546bebf90395ce888aaa25d3862421fdd6dc2950e5b8a4",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/run-claude-review-1.sh"
+    },
+    {
+      "sha256": "67c9ccf97b88958723c12a6f9b8adcfee5bb85a48bb4f485ce07ce1284d3c425",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/run-claude-review-2.sh"
+    },
+    {
+      "sha256": "38ebb8094706b9f5204d6c849ef53f67b4d363834759e1bae3d0cc22753f23fb",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/run-hermes-batches.sh"
+    },
+    {
+      "sha256": "125e689183c939d1c7e4a50703a3d934232284de886050c378672f55675d5ddd",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/run-hermes-repair-1.sh"
+    },
+    {
+      "sha256": "42df0e55d76750c555b51e3161b86ae8045943d4fc064575524bea4070dfa357",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/run-hermes-repair-2.sh"
+    },
+    {
+      "sha256": "067fa07843ed404de2b076b9fef92da4fd3ce20ec5918997e31c994ed6e57aba",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/confirmation-draft.json"
+    },
+    {
+      "sha256": "7b71796aa4d40e61439668af3ad5a100c0aa2cdb2667e5d3cc239810cb063e0c",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/confirmation-frozen.json"
+    },
+    {
+      "sha256": "0d8ed557cc1fd77fa19e090ad5996132a57c8d357a5bdb07688837153d717561",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/confirmation-revised-1.json"
+    },
+    {
+      "sha256": "7b71796aa4d40e61439668af3ad5a100c0aa2cdb2667e5d3cc239810cb063e0c",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/confirmation-revised-2.json"
+    },
+    {
+      "sha256": "a9727805c2df8593b0593fa2d0b9e3356e02082877d95a2897cf15ce5e7fcb73",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/label-review-1.input.json"
+    },
+    {
+      "sha256": "09d6b68f630678201b2b9feb53cef0f5a6a30df6654633f291b879a559c84bed",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/label-review-1.response.json"
+    },
+    {
+      "sha256": "b472352f1a9766ac96f58fbc3a755cb32aeceac68c201adec337f23318cb6a0c",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/label-review-2.input.json"
+    },
+    {
+      "sha256": "0c07794ae5c1f311960aed2324f49b4f43be27820444f75c3161227800d2875a",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/label-review-2.response.json"
+    },
+    {
+      "sha256": "2e363849e26bc1d537935b6c6bffa284dc068528c33b40272e1fb4e5d0441784",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/part-1.response.txt"
+    },
+    {
+      "sha256": "c188901538ce57590ec36e0155dbc7de9196906016b3ceb8ff962aa24fe2e4db",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/part-2.response.txt"
+    },
+    {
+      "sha256": "28cafd97a3478ed1f53d3daf0daa70e8fe2749f6cbfdde2c272cfe227a549322",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/part-3.response.txt"
+    },
+    {
+      "sha256": "d4a1d55fd48b76a05d6caa7e2bcdb34f7495c0e71fe64cb9c878ec671dc1bca0",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/part-4.response.txt"
+    },
+    {
+      "sha256": "6849940e75a95ae56a6a2ed3b1f9964adcb92b06991acb88df8474b450f1181f",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/repair-1.response.txt"
+    },
+    {
+      "sha256": "a0bc980dec0cae6b822aab2aba65ea81552b373df483a510ff1ea8f073227937",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/repair-2.response.txt"
+    },
+    {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/label-review-1.stderr.log"
+    },
+    {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/label-review-2.stderr.log"
+    },
+    {
+      "sha256": "244e253ddd577cad98db7cb468ef0b3350bc60754b7cfc78ac613fdd426bb290",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/part-1.stderr.log"
+    },
+    {
+      "sha256": "8b6a53f03d3b911d58473013e0530f5fa20ece792c89400c309ce8505276d6ed",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/part-2.stderr.log"
+    },
+    {
+      "sha256": "83ac88f312f4c0d5512b3cbc587b4e1026d712f2b3cb2af18dc636a98ad94b29",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/part-3.stderr.log"
+    },
+    {
+      "sha256": "835bb39e673e5942dad5cb5aa0acd38e70b096dd89224813e7a87c5842d54406",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/part-4.stderr.log"
+    },
+    {
+      "sha256": "a49ee7cfbde385256285b4777f701d874f9359fbdc53e27c67f90c1f12ab1393",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/repair-1.stderr.log"
+    },
+    {
+      "sha256": "af3c13da985206818526f965bc7d4be603b354562151435746bf0a268cfbbab0",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/repair-2.stderr.log"
+    },
+    {
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/label-review-1.exit"
+    },
+    {
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/label-review-2.exit"
+    },
+    {
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/part-1.exit"
+    },
+    {
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/part-2.exit"
+    },
+    {
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/part-3.exit"
+    },
+    {
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/part-4.exit"
+    },
+    {
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/repair-1.exit"
+    },
+    {
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/repair-2.exit"
+    },
+    {
+      "sha256": "9fc8935ce9ab8002770eabe6a85253414c5ebf272145349121467ffeb16e7198",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/assemble-repair-2.jq"
+    },
+    {
+      "sha256": "31f15ec518f57ea465e712b9d2a9be9e79726b037828b22d3778ab4bf14b7b1f",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/assemble-repair.jq"
+    },
+    {
+      "sha256": "ea8fb219bf1dd8a0da7fe687dee64d3e29cb3fd0511f6259715b106557728157",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/check-labels.jq"
+    },
+    {
+      "sha256": "22af349495da8b0ad214876964d557da0af603258b52aa78f8a934baa836c42a",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/family-metadata.jq"
+    },
+    {
+      "sha256": "a551f9ce28e704345cf81dcf8a3a69ec98cc396fb466749e9d2b2a2aa3eecf87",
+      "path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation3/private/validate_draft.py"
+    }
+  ],
+  "candidate_inspected": false,
+  "cnet_score_runs_by_custodian": 0,
+  "native_execution_by_custodian": false,
+  "production_edits_by_custodian": false,
+  "commits_pushes_deployments": false,
+  "credential_or_config_changes": false,
+  "training_eligible": false,
+  "limitations": [
+    "Synthetic contract-authored population, not a third-party human or real-user benchmark.",
+    "Exact-text disjointness does not prove IID, independent templates, comprehensive inputs, or exhaustive trigger coverage.",
+    "Previous scored confirmations remain exposed development evidence, intact and separately reported; no pooled-score or unbiased sequential-stopping claim.",
+    "Fixed later probe receives original UTF-16 texts only and retains every row, including possible native coverage refusal."
+  ]
+}

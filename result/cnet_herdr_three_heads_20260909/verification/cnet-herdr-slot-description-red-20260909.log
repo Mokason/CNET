@@ -1,0 +1,85 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  CnetControlPlane -> /home/marble/AI/CNET-worktrees/herdr-language-20260909/.artifacts/herdr-clarification/bin/CnetControlPlane/debug/cnet-control.dll
+/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningRuntimeLedgerTests.cs(21,9): warning CA1416: This call site is reachable on all platforms. 'File.SetUnixFileMode(string, UnixFileMode)' is unsupported on: 'windows'. (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1416) [/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/CnetControlPlane.Tests.csproj]
+/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningRuntimeLedgerTests.cs(23,9): warning CA1416: This call site is reachable on all platforms. 'Directory.CreateDirectory(string, UnixFileMode)' is unsupported on: 'windows'. (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1416) [/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/CnetControlPlane.Tests.csproj]
+/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningRuntimeLedgerTests.cs(22,9): warning CA1416: This call site is reachable on all platforms. 'Directory.CreateDirectory(string, UnixFileMode)' is unsupported on: 'windows'. (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1416) [/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/CnetControlPlane.Tests.csproj]
+/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningNativeLedgerTests.cs(38,43): warning CA1416: This call site is reachable on all platforms. 'File.SetUnixFileMode(string, UnixFileMode)' is unsupported on: 'windows'. (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1416) [/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/CnetControlPlane.Tests.csproj]
+/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningRuntimeLedgerTests.cs(32,36): warning CA1416: This call site is reachable on all platforms. 'File.SetUnixFileMode(string, UnixFileMode)' is unsupported on: 'windows'. (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1416) [/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/CnetControlPlane.Tests.csproj]
+/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningRuntimeLedgerTests.cs(35,13): warning CA1416: This call site is reachable on all platforms. 'File.SetUnixFileMode(string, UnixFileMode)' is unsupported on: 'windows'. (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1416) [/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/CnetControlPlane.Tests.csproj]
+  CnetControlPlane.Tests -> /home/marble/AI/CNET-worktrees/herdr-language-20260909/.artifacts/herdr-clarification/bin/CnetControlPlane.Tests/debug/CnetControlPlane.Tests.dll
+Test run for /home/marble/AI/CNET-worktrees/herdr-language-20260909/.artifacts/herdr-clarification/bin/CnetControlPlane.Tests/debug/CnetControlPlane.Tests.dll (.NETCoreApp,Version=v8.0)
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.8.2+699d445a1a (64-bit .NET 8.0.30)
+[xUnit.net 00:00:00.03]   Discovering: CnetControlPlane.Tests
+[xUnit.net 00:00:00.35]   Discovered:  CnetControlPlane.Tests
+[xUnit.net 00:00:00.35]   Starting:    CnetControlPlane.Tests
+[xUnit.net 00:00:01.09]     CnetControlPlane.Tests.LearningCaseSlotTests.UnresolvedSlotsNeverSelectAnAction(text: "Uppercase shown as E.", expected: "clarify") [FAIL]
+[xUnit.net 00:00:01.09]       TASK_SLOT_RED Uppercase shown as E.: ready, expected clarify
+[xUnit.net 00:00:01.09]       Stack Trace:
+[xUnit.net 00:00:01.09]         /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseSlotTests.cs(61,0): at CnetControlPlane.Tests.LearningCaseSlotTests.UnresolvedSlotsNeverSelectAnAction(String text, String expected)
+[xUnit.net 00:00:01.09]            at InvokeStub_LearningCaseSlotTests.UnresolvedSlotsNeverSelectAnAction(Object, Span`1)
+[xUnit.net 00:00:01.09]            at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Passed CnetControlPlane.Tests.LearningCaseSlotTests.UnresolvedSlotsNeverSelectAnAction(text: "Would you mind putting 'G' in lowercase and sendin"···, expected: "abstain") [703 ms]
+  Passed CnetControlPlane.Tests.LearningCaseSlotTests.UnresolvedSlotsNeverSelectAnAction(text: "I need a case conversion applied to the word hello"···, expected: "abstain") [2 ms]
+  Passed CnetControlPlane.Tests.LearningCaseSlotTests.UnresolvedSlotsNeverSelectAnAction(text: "Uppercase U+0218, whichever you prefer.", expected: "abstain") [1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseSlotTests.UnresolvedSlotsNeverSelectAnAction(text: "Uppercase a, whichever you prefer.", expected: "clarify") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseSlotTests.UnresolvedSlotsNeverSelectAnAction(text: "Apply an uppercase conversion to the letter shown "···, expected: "clarify") [1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseSlotTests.UnresolvedSlotsNeverSelectAnAction(text: "Raise 'a' so that it is lowercase.", expected: "clarify") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseSlotTests.UnresolvedSlotsNeverSelectAnAction(text: "If you have a moment, capitalize 'a' and send it.", expected: "abstain") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseSlotTests.UnresolvedSlotsNeverSelectAnAction(text: "Uppercase either r or s, whichever you prefer.", expected: "clarify") [< 1 ms]
+  Failed CnetControlPlane.Tests.LearningCaseSlotTests.UnresolvedSlotsNeverSelectAnAction(text: "Uppercase shown as E.", expected: "clarify") [< 1 ms]
+  Error Message:
+   TASK_SLOT_RED Uppercase shown as E.: ready, expected clarify
+  Stack Trace:
+     at CnetControlPlane.Tests.LearningCaseSlotTests.UnresolvedSlotsNeverSelectAnAction(String text, String expected) in /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseSlotTests.cs:line 61
+   at InvokeStub_LearningCaseSlotTests.UnresolvedSlotsNeverSelectAnAction(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Passed CnetControlPlane.Tests.LearningCaseSlotTests.UnresolvedSlotsNeverSelectAnAction(text: "I need a case conversion applied to the letter S.", expected: "clarify") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseSlotTests.UnresolvedSlotsNeverSelectAnAction(text: "Raise U+0218 to lowercase.", expected: "abstain") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseSlotTests.UnresolvedSlotsNeverSelectAnAction(text: "Change this to uppercase: 'a' and delete it", expected: "abstain") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseSlotTests.UnresolvedSlotsNeverSelectAnAction(text: "Downcase the byte 75.", expected: "clarify") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseSlotTests.UnresolvedSlotsNeverSelectAnAction(text: "Make uppercase: 'Q", expected: "clarify") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseSlotTests.UnresolvedSlotsNeverSelectAnAction(text: "Raise this to lowercase: U+000A", expected: "abstain") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseSlotTests.UnresolvedSlotsNeverSelectAnAction(text: "Force uppercase on 'a' using Turkish rules.", expected: "abstain") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseSlotTests.UnresolvedSlotsNeverSelectAnAction(text: "If 'a' is uppercase, lowercase 'b'.", expected: "abstain") [1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseSlotTests.UnresolvedSlotsNeverSelectAnAction(text: "Raise this to lowercase: 'a'", expected: "clarify") [< 1 ms]
+[xUnit.net 00:00:01.11]     CnetControlPlane.Tests.LearningCaseSlotTests.UnresolvedSlotsNeverSelectAnAction(text: "Apply uppercase to shown as E.", expected: "clarify") [FAIL]
+[xUnit.net 00:00:01.11]       TASK_SLOT_RED Apply uppercase to shown as E.: ready, expected clarify
+[xUnit.net 00:00:01.11]       Stack Trace:
+[xUnit.net 00:00:01.11]         /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseSlotTests.cs(61,0): at CnetControlPlane.Tests.LearningCaseSlotTests.UnresolvedSlotsNeverSelectAnAction(String text, String expected)
+[xUnit.net 00:00:01.11]            at InvokeStub_LearningCaseSlotTests.UnresolvedSlotsNeverSelectAnAction(Object, Span`1)
+[xUnit.net 00:00:01.11]            at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Passed CnetControlPlane.Tests.LearningCaseSlotTests.UnresolvedSlotsNeverSelectAnAction(text: "Raise 'a' to lowercase.", expected: "clarify") [< 1 ms]
+  Failed CnetControlPlane.Tests.LearningCaseSlotTests.UnresolvedSlotsNeverSelectAnAction(text: "Apply uppercase to shown as E.", expected: "clarify") [< 1 ms]
+  Error Message:
+   TASK_SLOT_RED Apply uppercase to shown as E.: ready, expected clarify
+  Stack Trace:
+     at CnetControlPlane.Tests.LearningCaseSlotTests.UnresolvedSlotsNeverSelectAnAction(String text, String expected) in /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseSlotTests.cs:line 61
+   at InvokeStub_LearningCaseSlotTests.UnresolvedSlotsNeverSelectAnAction(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Passed CnetControlPlane.Tests.LearningCaseSlotTests.UnresolvedSlotsNeverSelectAnAction(text: "Change A to uppercase: 'b'", expected: "abstain") [1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseSlotTests.UnresolvedSlotsNeverSelectAnAction(text: "Uppercase the letter shown as E or as U+000A.", expected: "abstain") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseSlotTests.UnresolvedSlotsNeverSelectAnAction(text: "Make uppercase: 'ab'", expected: "abstain") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseSlotTests.UnresolvedSlotsNeverSelectAnAction(text: "Change this to uppercase: 'a' or 'b'", expected: "clarify") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseSlotTests.UnresolvedSlotsNeverSelectAnAction(text: "Downcase the byte 0x0A.", expected: "abstain") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseSlotTests.UnresolvedSlotsNeverSelectAnAction(text: "Change this to uppercase: U+000A", expected: "abstain") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseSlotTests.UnresolvedSlotsNeverSelectAnAction(text: "lowercase a or b, whichever you prefer", expected: "clarify") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseSlotTests.ExplicitSlotsPreserveTheOriginalScalar(text: "Make uppercase: 'a'", direction: "upper", key: 97) [1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseSlotTests.ExplicitSlotsPreserveTheOriginalScalar(text: "Uppercase the letter shown as E.", direction: "upper", key: 69) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseSlotTests.ExplicitSlotsPreserveTheOriginalScalar(text: "If you have a moment, capitalize the letter d.", direction: "upper", key: 100) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseSlotTests.ExplicitSlotsPreserveTheOriginalScalar(text: "Change this to upper case: \"9\"", direction: "upper", key: 57) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseSlotTests.ExplicitSlotsPreserveTheOriginalScalar(text: "Downcase the byte 0x4B.", direction: "lower", key: 75) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseSlotTests.ExplicitSlotsPreserveTheOriginalScalar(text: "Would you mind putting G in lowercase?", direction: "lower", key: 71) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseSlotTests.ExplicitSlotsPreserveTheOriginalScalar(text: "Uppercase: 'a'", direction: "upper", key: 97) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseSlotTests.ExplicitSlotsPreserveTheOriginalScalar(text: "Change that to lowercase: U+0041", direction: "lower", key: 65) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseSlotTests.ExplicitSlotsPreserveTheOriginalScalar(text: "Force uppercase on the letter o.", direction: "upper", key: 111) [< 1 ms]
+[xUnit.net 00:00:01.11]   Finished:    CnetControlPlane.Tests
+  Passed CnetControlPlane.Tests.LearningCaseSlotTests.ExplicitSlotsPreserveTheOriginalScalar(text: "Raise decimal codepoint 250 to uppercase.", direction: "upper", key: 250) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseSlotTests.ExplicitSlotsPreserveTheOriginalScalar(text: "Would you mind putting \"P\" into lowercase?", direction: "lower", key: 80) [< 1 ms]
+
+Test Run Failed.
+Total tests: 38
+     Passed: 36
+     Failed: 2
+ Total time: 1.3580 Seconds

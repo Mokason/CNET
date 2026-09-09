@@ -1,0 +1,188 @@
+{
+  "schema": 1,
+  "stages": [
+    {
+      "stage": "original_unscored_draft",
+      "validator_exit": 1,
+      "validator": {
+        "admitted_as_confirmation": false,
+        "bounds_ids": [],
+        "bytes": 23865,
+        "cases": 128,
+        "cnet_executed": false,
+        "draft_sha256": "067fa07843ed404de2b076b9fef92da4fd3ce20ec5918997e31c994ed6e57aba",
+        "duplicate_groups": [
+          [
+            "t2_08",
+            "t3_08"
+          ],
+          [
+            "t2_11",
+            "t3_24"
+          ],
+          [
+            "t3_19",
+            "t4_22"
+          ]
+        ],
+        "family_count": 33,
+        "independent_label_review_complete": false,
+        "operation_counts": {
+          "lower": 40,
+          "none": 48,
+          "upper": 40
+        },
+        "overlap_ids": [
+          "t1_10",
+          "t1_15",
+          "t4_01"
+        ],
+        "prior_collections": 14,
+        "prior_unique_texts": 1792,
+        "schema": 1,
+        "status_counts": {
+          "abstain": 24,
+          "clarify": 24,
+          "ready": 80
+        },
+        "strict_schema_error": "duplicate_case",
+        "structural_checks_passed": false,
+        "training_eligible": false
+      }
+    },
+    {
+      "stage": "after_structural_repair",
+      "validator_exit": 0,
+      "validator": {
+        "admitted_as_confirmation": false,
+        "bounds_ids": [],
+        "bytes": 24016,
+        "cases": 128,
+        "cnet_executed": false,
+        "draft_sha256": "0d8ed557cc1fd77fa19e090ad5996132a57c8d357a5bdb07688837153d717561",
+        "duplicate_groups": [],
+        "family_count": 35,
+        "independent_label_review_complete": false,
+        "operation_counts": {
+          "lower": 40,
+          "none": 48,
+          "upper": 40
+        },
+        "overlap_ids": [],
+        "prior_collections": 14,
+        "prior_unique_texts": 1792,
+        "schema": 1,
+        "status_counts": {
+          "abstain": 24,
+          "clarify": 24,
+          "ready": 80
+        },
+        "strict_schema_error": null,
+        "structural_checks_passed": true,
+        "training_eligible": false
+      }
+    },
+    {
+      "stage": "after_wording_repair",
+      "validator_exit": 0,
+      "validator": {
+        "admitted_as_confirmation": false,
+        "bounds_ids": [],
+        "bytes": 23950,
+        "cases": 128,
+        "cnet_executed": false,
+        "draft_sha256": "7b71796aa4d40e61439668af3ad5a100c0aa2cdb2667e5d3cc239810cb063e0c",
+        "duplicate_groups": [],
+        "family_count": 38,
+        "independent_label_review_complete": false,
+        "operation_counts": {
+          "lower": 40,
+          "none": 48,
+          "upper": 40
+        },
+        "overlap_ids": [],
+        "prior_collections": 14,
+        "prior_unique_texts": 1792,
+        "schema": 1,
+        "status_counts": {
+          "abstain": 24,
+          "clarify": 24,
+          "ready": 80
+        },
+        "strict_schema_error": null,
+        "structural_checks_passed": true,
+        "training_eligible": false
+      }
+    },
+    {
+      "stage": "original_existing_validator_on_final",
+      "validator_exit": 0,
+      "validator": {
+        "admitted_as_confirmation": false,
+        "bounds_ids": [],
+        "bytes": 23950,
+        "cases": 128,
+        "cnet_executed": false,
+        "draft_sha256": "7b71796aa4d40e61439668af3ad5a100c0aa2cdb2667e5d3cc239810cb063e0c",
+        "family_count": 38,
+        "independent_label_review_complete": false,
+        "operation_counts": {
+          "lower": 40,
+          "none": 48,
+          "upper": 40
+        },
+        "overlap_ids": [],
+        "prior_collections": 12,
+        "prior_unique_texts": 1536,
+        "schema": 1,
+        "status_counts": {
+          "abstain": 24,
+          "clarify": 24,
+          "ready": 80
+        },
+        "strict_schema_error": null,
+        "structural_checks_passed": true,
+        "training_eligible": false
+      }
+    },
+    {
+      "stage": "frozen_full_extended_validator",
+      "validator_exit": 0,
+      "validator": {
+        "admitted_as_confirmation": false,
+        "bounds_ids": [],
+        "bytes": 23950,
+        "cases": 128,
+        "cnet_executed": false,
+        "draft_sha256": "7b71796aa4d40e61439668af3ad5a100c0aa2cdb2667e5d3cc239810cb063e0c",
+        "duplicate_groups": [],
+        "family_count": 38,
+        "independent_label_review_complete": false,
+        "operation_counts": {
+          "lower": 40,
+          "none": 48,
+          "upper": 40
+        },
+        "overlap_ids": [],
+        "prior_collections": 14,
+        "prior_unique_texts": 1792,
+        "schema": 1,
+        "status_counts": {
+          "abstain": 24,
+          "clarify": 24,
+          "ready": 80
+        },
+        "strict_schema_error": null,
+        "structural_checks_passed": true,
+        "training_eligible": false
+      }
+    }
+  ],
+  "punctuation_only_duplicate_groups": [],
+  "punctuation_check_definition": "ASCII lowercase and trailing '.', '?' and '!' trimming; no stronger semantic duplicate claim.",
+  "admission_flag_note": "Validators deliberately leave independent_label_review_complete and admitted_as_confirmation false; they check structure only. The separate immutable admission receipt binds completed review.",
+  "original_draft_preserved": true,
+  "prior_frozen_hashes_verified": true,
+  "previous_collection_count": 14,
+  "previous_unique_text_count": 1792
+}

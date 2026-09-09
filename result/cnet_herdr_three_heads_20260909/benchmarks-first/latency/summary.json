@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "kind": "synthetic_warm_managed_parser",
+  "candidate_scope": "first_candidate_only",
+  "input_sha256": "75a0f5d0697b4efd585ec530ddefbaa6a0e47c101b86d030ac99a66c40f04147",
+  "harness_assembly_sha256": "f4984e77cb3f3960e4b67a52184453b2fd569b95dff1736adb1ccdcc9eea4df4",
+  "request_count": 128,
+  "warmup_calls_per_run": 8192,
+  "measured_calls_per_run": 32768,
+  "native_calls": 0,
+  "learning_events": 0,
+  "same_input_hash_all_six_runs": true,
+  "stable_assembly_hash_within_each_cohort": true,
+  "aggregation": "Median and observed minimum/maximum of three per-run values; quantile samples are not pooled.",
+  "baseline": {
+    "source_commit": "5041f00e39bbaf903eca83f86c296b40cf084f79",
+    "assembly_sha256": "50c7dd24adec1024437320a6670f1e4e4ca2ca58f5f27fc7cef05338ff7a2568",
+    "run_count": 3,
+    "runs": [
+      "baseline-1.json",
+      "baseline-2.json",
+      "baseline-3.json"
+    ],
+    "metrics": {
+      "p50_microseconds": {
+        "median": 10.87,
+        "min": 10.56,
+        "max": 20.449
+      },
+      "p95_microseconds": {
+        "median": 32.531,
+        "min": 32.32,
+        "max": 32.952
+      },
+      "p99_microseconds": {
+        "median": 41.268,
+        "min": 41.147,
+        "max": 41.878
+      },
+      "calls_per_second": {
+        "median": 65114.59138745865,
+        "min": 54063.962379612894,
+        "max": 65225.70826066237
+      },
+      "allocated_bytes_per_call": {
+        "median": 2653.6025390625,
+        "min": 2653.6025390625,
+        "max": 2653.6025390625
+      },
+      "gen0_collections": {
+        "median": 5,
+        "min": 5,
+        "max": 5
+      }
+    }
+  },
+  "candidate": {
+    "source_commit": "29a4091b9a2d52bd06f109f7a588adf11a470a2c",
+    "assembly_sha256": "cd0bbecef103ca6f0d97b3fddc6cf79babae3ba2ee00332516f534dfe048dbf2",
+    "run_count": 3,
+    "runs": [
+      "candidate-1.json",
+      "candidate-2.json",
+      "candidate-3.json"
+    ],
+    "metrics": {
+      "p50_microseconds": {
+        "median": 11.732,
+        "min": 11.672,
+        "max": 11.932
+      },
+      "p95_microseconds": {
+        "median": 36.759,
+        "min": 36.619,
+        "max": 37.651
+      },
+      "p99_microseconds": {
+        "median": 46.508,
+        "min": 45.255,
+        "max": 50.094
+      },
+      "calls_per_second": {
+        "median": 63659.13764481784,
+        "min": 63202.17134022241,
+        "max": 63670.97526104361
+      },
+      "allocated_bytes_per_call": {
+        "median": 6373.7041015625,
+        "min": 6373.7041015625,
+        "max": 6373.7041015625
+      },
+      "gen0_collections": {
+        "median": 13,
+        "min": 13,
+        "max": 13
+      }
+    }
+  },
+  "median_percent_change_candidate_vs_baseline": {
+    "p50_microseconds": 7.930082796688143,
+    "p95_microseconds": 12.99683378930867,
+    "p99_microseconds": 12.697489580304367,
+    "calls_per_second": -2.2352190371283442,
+    "allocated_bytes_per_call": 140.19060909605122,
+    "gen0_collections": 160
+  },
+  "sanitization": "Copied per-run reports contain metrics, counts, hashes and scope notes only; request contents and private corpus were not copied.",
+  "caveats": [
+    "per-call samples include delegate/timer overhead; throughput includes loop overhead; no startup or native work",
+    "Synthetic warm parser microbenchmark; excludes startup, HTTP/server work, native execution and learning.",
+    "Three runs per cohort, each measuring less than one second; observed ranges are not confidence intervals.",
+    "Baseline run 3 p50 was 20.449 microseconds and throughput was 54063.962379612894 calls/second; all runs retained.",
+    "Run JSON does not establish host isolation, CPU affinity or frequency controls; no statistical significance claim.",
+    "First candidate failed the separate unchanged language-quality acceptance floors; timing and native gates do not establish language acceptance.",
+    "Original latency report modification times precede the first native build log creation time; these native gates did not overlap the six latency runs."
+  ]
+}

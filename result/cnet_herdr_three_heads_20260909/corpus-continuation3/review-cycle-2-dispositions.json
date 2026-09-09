@@ -1,0 +1,60 @@
+{
+  "schema": 1,
+  "cycle": 2,
+  "reviewed_rows": 8,
+  "all_expected_labels_independently_matched": true,
+  "review_findings_count": 2,
+  "findings": [
+    {
+      "index": 1,
+      "ids": [
+        "t2_23",
+        "t3_21"
+      ],
+      "resolved": true,
+      "disposition": "retain_explicit_supplied_contract_rule",
+      "reason": "Both author and reviewer explicitly received the shared hexadecimal-prefix rule. The shorter original contract does not forbid this declared hexadecimal form; the supplied clarification governs it. An interpretation obtained by withholding that rule is not an alternate reading under the supplied contract."
+    },
+    {
+      "index": 2,
+      "ids": [
+        "t1_19"
+      ],
+      "resolved": true,
+      "disposition": "retain_explicit_supplied_contract_rule",
+      "reason": "The operand-selection clause expressly distinguishes selecting an input and describing its one conversion from an additional task. A second verb is not itself a second requested operation. Ignoring this explicit distinction does not create unresolved contract ambiguity."
+    }
+  ],
+  "limitations": [
+    {
+      "index": 1,
+      "resolved": true,
+      "disposition": "scoped_review_union",
+      "reason": "This was a changed-row review, not an acceptance score or replacement denominator. All other 120 rows are proven unchanged from the full first review. Both reviews together cover the complete 128-row population; no benchmark floor is claimed passed by label review."
+    },
+    {
+      "index": 2,
+      "resolved": true,
+      "disposition": "partial_subset_with_count_correction",
+      "reason": "The replacement subset is intentionally partial and contains four upper, three lower and one clarify row, not the operation split asserted by the reviewer. Full-population 40/40 operation quotas and all syntax/input coverage are checked separately."
+    },
+    {
+      "index": 3,
+      "resolved": true,
+      "disposition": "acknowledged",
+      "reason": "Paired syntax and correlated constructions remain. No effective independent sample-size, independent-template or real-user coverage claim is made."
+    },
+    {
+      "index": 4,
+      "resolved": true,
+      "disposition": "separate_validator_evidence",
+      "reason": "Family names and labels remained withheld. Full-file schema, bounds, hash, overlap and quota validation are separate custodian evidence."
+    }
+  ],
+  "unresolved_rule_findings": 0,
+  "unresolved_replacement_findings": 0,
+  "stop_reason": "Two fresh-context reviews are complete. Final labels agree; remaining findings rely on disregarding explicit supplied contract rules. A third cycle is not required to erase honest recorded critiques.",
+  "candidate_inspected": false,
+  "cnet_executed": false,
+  "training_eligible": false
+}

@@ -1,0 +1,89 @@
+== certified capsule composition (ASI = Artificial Specialized Intelligence; NOT AGI) ==
+   chain: num_raw --kc_incr--> val_incr --kc_double--> qty_dbl --kc_offset--> res_final
+      kc_incr exact 16/16 at seed=2
+  build: A increment certified                                   PASS
+      kc_double exact 16/16 at seed=1
+  build: B double certified                                      PASS
+      kc_offset exact 16/16 at seed=2
+  build: C offset certified                                      PASS
+  capsule: all three exported independently                      PASS
+  capsule: all three imported into a FRESH base                  PASS
+  bridge: cnb_load_registry populated the planner registry       PASS
+      registry count=3 skipped=0 base_units=3
+      reg[0] name=kc_incr certified=1 state=2
+      reg[1] name=kc_double certified=1 state=2
+      reg[2] name=kc_offset certified=1 state=2
+  bridge: exactly three primitives registered                    PASS
+  plan: planner found a route num_raw -> res_final               PASS
+      plan members (3): kc_offset kc_double kc_incr
+  plan: chain has exactly three primitive members                PASS
+  plan: contains A, B and C by name (no shortcut primitive)      PASS
+  plan: no direct num_raw->res_final composite exists            PASS
+      composed: ran=14 correct=14 (expected f(x)=((x+1)*2+3) mod 16)
+  compose: every in-coverage composed task exact under the guard PASS
+  refuse-root: distinct guard refusal code                       PASS
+  refuse-root: refused AT A                                      PASS
+  refuse-root: B and C never consulted (A never served)          PASS
+  refuse-mid: found x in A coverage whose A(x) is outside B      PASS
+  refuse-mid: distinct guard refusal code                        PASS
+  refuse-mid: refused AT B, not A                                PASS
+  refuse-mid: A ran, B checked and stopped, C never consulted    PASS
+  causality: guard OFF -> the same chain executes                PASS
+  causality: unguarded chain even produces the right answer      PASS
+      causality: x=3 intermediate=4 (outside B coverage)
+  bind: located B's live BTN in the registry                     PASS
+  bind: found a fully in-coverage composed input                 PASS
+  bind-in-tag: SETUP wrong-binding record stored                 PASS
+  bind-in-tag: SETUP metadata present (so refusal is about binding) PASS
+  bind-in-tag: refused (-2)                                      PASS
+  bind-in-tag: refused AT B                                      PASS
+  bind-in-tag: C never consulted                                 PASS
+  bind-in-tag: B's btn_forward did not run                       PASS
+  bind-in-width: SETUP wrong-binding record stored               PASS
+  bind-in-width: SETUP metadata present (so refusal is about binding) PASS
+  bind-in-width: refused (-2)                                    PASS
+  bind-in-width: refused AT B                                    PASS
+  bind-in-width: C never consulted                               PASS
+  bind-in-width: B's btn_forward did not run                     PASS
+  bind-covdim: SETUP wrong-binding record stored                 PASS
+  bind-covdim: SETUP metadata present (so refusal is about binding) PASS
+  bind-covdim: strict query refuses in_dim != assembled length   PASS
+  bind-covdim: refused (-2)                                      PASS
+  bind-covdim: refused AT B                                      PASS
+  bind-covdim: C never consulted                                 PASS
+  bind-covdim: B's btn_forward did not run                       PASS
+  bind-out-tag: SETUP wrong-binding record stored                PASS
+  bind-out-tag: SETUP metadata present (so refusal is about binding) PASS
+  bind-out-tag: refused (-2)                                     PASS
+  bind-out-tag: refused AT B                                     PASS
+  bind-out-tag: C never consulted                                PASS
+  bind-out-tag: B's btn_forward did not run                      PASS
+  bind-out-shape: SETUP wrong-binding record stored              PASS
+  bind-out-shape: SETUP metadata present (so refusal is about binding) PASS
+  bind-out-shape: refused (-2)                                   PASS
+  bind-out-shape: refused AT B                                   PASS
+  bind-out-shape: C never consulted                              PASS
+  bind-out-shape: B's btn_forward did not run                    PASS
+  bind-missing: SETUP record actually removed                    PASS
+  bind-missing: SETUP metadata really absent                     PASS
+  bind-missing: refused (-2)                                     PASS
+  bind-missing: refused AT B                                     PASS
+  bind-missing: C never consulted                                PASS
+  bind-missing: B's btn_forward did not run                      PASS
+  bind-restore: SETUP wrong-binding record stored                PASS
+  bind-restore: SETUP metadata present (so refusal is about binding) PASS
+  bind-restore: correct port binding admits and computes exactly PASS
+  shape-v1: multi-INPUT primitive refused (unsupported, not allowed) PASS
+  shape-v1: refusal names the unsupported shape                  PASS
+  shape-v1: multi-OUTPUT primitive refused                       PASS
+  uncert: shortcut btn allocated                                 PASS
+  uncert: uncertified direct num_raw->res_final registered       PASS
+  uncert: it really is uncertified                               PASS
+  uncert: require_certified=1 -> uncertified shortcut NOT usable PASS
+  uncert: causality — with the gate off the same shortcut IS usable PASS
+      uncert causality members (1): kc_shortcut
+  uncert: and the chosen member is exactly kc_shortcut           PASS
+  negative: with B reset, num_raw -> res_final is unplannable    PASS
+  negative: unknown goal tag yields no plan (typed refusal)      PASS
+checks=74 failures=0
+KNOWLEDGE_COMPOSITION_BENCH_PASS members=3 hops_guarded=every refusals=root+intermediate

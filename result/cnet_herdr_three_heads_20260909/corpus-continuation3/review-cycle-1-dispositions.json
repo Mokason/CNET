@@ -1,0 +1,139 @@
+{
+  "schema": 1,
+  "cycle": 1,
+  "review_label_count": 128,
+  "unique_review_ids": 128,
+  "all_expected_labels_independently_matched": true,
+  "review_findings_count": 6,
+  "findings": [
+    {
+      "index": 1,
+      "ids": [
+        "t2_12"
+      ],
+      "resolved": true,
+      "disposition": "retain_explicit_contract_rule",
+      "reason": "Matching quotes are explicitly required for literal digits even when a noun identifies their character type. Ordinary reference determinacy does not waive the contract."
+    },
+    {
+      "index": 2,
+      "ids": [
+        "t2_26"
+      ],
+      "resolved": true,
+      "disposition": "author_replacement_requested",
+      "reason": "Conjoining mandatory operands creates an ordinary plausible conflict between the multiple-candidate and compound-task clauses. Replace before admission while preserving the intended category."
+    },
+    {
+      "index": 3,
+      "ids": [
+        "t2_07",
+        "t3_07",
+        "t4_12"
+      ],
+      "resolved": true,
+      "disposition": "retain_explicit_contract_rule",
+      "reason": "The contract requires one grounded input and directs multiple possible candidates to clarification. Delegating an arbitrary choice does not make one original scalar uniquely grounded; no guessing is authorized."
+    },
+    {
+      "index": 4,
+      "ids": [
+        "t2_23"
+      ],
+      "resolved": true,
+      "disposition": "author_replacement_requested",
+      "reason": "The coined direction phrase is not sufficiently conventional under the everyday/common-synonym authoring requirement. Replace before admission, preserving typed intent and original input."
+    },
+    {
+      "index": 5,
+      "ids": [
+        "t1_19",
+        "t3_21",
+        "t4_23"
+      ],
+      "resolved": true,
+      "disposition": "author_replacement_requested",
+      "reason": "A technical folding verb may designate an operation distinct from simple upper/lower mapping. Avoid this genuine lexical ambiguity without changing typed intent or original inputs."
+    },
+    {
+      "index": 6,
+      "ids": [
+        "t4_21"
+      ],
+      "resolved": true,
+      "disposition": "author_replacement_requested",
+      "reason": "The named casing style plausibly conflicts with the exclusion of title/full-string casing. Replace before admission while retaining the one-character typed intent."
+    }
+  ],
+  "custodian_additional_findings": [
+    {
+      "ids": [
+        "t1_16",
+        "t1_27"
+      ],
+      "resolved": true,
+      "disposition": "author_replacement_requested",
+      "reason": "Specialist typography vocabulary is not everyday wording as requested; one term also has an ordinary font-size interpretation. Preserve both operation and original input while requesting fresh common-language wording."
+    },
+    {
+      "ids": [
+        "t1_08"
+      ],
+      "resolved": true,
+      "disposition": "retain_explicit_contract_rule",
+      "reason": "The question contains case-conversion intent but does not select among its candidate operands. Its advisory surface form does not negate the explicit multiple-candidate clarification rule."
+    }
+  ],
+  "limitations": [
+    {
+      "index": 1,
+      "resolved": true,
+      "disposition": "acknowledged",
+      "reason": "Four quota-aligned batches and recurring order create correlation and index leakage to readers. The fixed candidate probe receives only original text UTF-16 units, never IDs, ordering metadata, families or expected fields. No IID or independent-template claim."
+    },
+    {
+      "index": 2,
+      "resolved": true,
+      "disposition": "acknowledged",
+      "reason": "Exact distinctness does not mean 128 distinct constructions. Report raw and normalized family counts and distinct operation/input pairs, without inflating semantic breadth."
+    },
+    {
+      "index": 3,
+      "resolved": true,
+      "disposition": "acknowledged",
+      "reason": "Latin-1 input coverage is partial. No new hand-selected edge rows or retrospective per-rule quotas are introduced; this population cannot establish exhaustive Unicode behavior."
+    },
+    {
+      "index": 4,
+      "resolved": true,
+      "disposition": "acknowledged",
+      "reason": "Several contract triggers are absent. The frozen natural-language authoring protocol specifically excludes exact legacy commands and limits every text to 256 UTF-16 units. Neither legacy nor overlength coverage is claimed; no mandatory per-trigger quotas were declared."
+    },
+    {
+      "index": 5,
+      "resolved": true,
+      "disposition": "acknowledged_with_correction",
+      "reason": "Caseless inputs are intentionally valid proposals even if native coverage later refuses. Exact typed scoring still checks operation as well as original input, so identity output does not eliminate direction discrimination. This is not a case-converted answer benchmark."
+    },
+    {
+      "index": 6,
+      "resolved": true,
+      "disposition": "separate_validator_evidence",
+      "reason": "Family names and expected fields were withheld to prevent label leakage. Strict full-file structural validation, overlap checks, encoding/bounds and family counts remain custodian duties and are recorded separately."
+    }
+  ],
+  "unresolved_rule_findings": 0,
+  "pending_replacement_review_ids": [
+    "t1_16",
+    "t1_19",
+    "t1_27",
+    "t2_23",
+    "t2_26",
+    "t3_21",
+    "t4_21",
+    "t4_23"
+  ],
+  "candidate_inspected": false,
+  "cnet_executed": false,
+  "training_eligible": false
+}

@@ -1,0 +1,42 @@
+test_hash_mismatch_refuses_before_parser_execution (test_task_paraphrase_eval.ActualManagedProbe.test_hash_mismatch_refuses_before_parser_execution) ... ok
+test_lone_surrogates_reach_the_actual_parser_as_abstentions (test_task_paraphrase_eval.ActualManagedProbe.test_lone_surrogates_reach_the_actual_parser_as_abstentions) ... ok
+test_probe_input_bounds_and_types_refuse (test_task_paraphrase_eval.ActualManagedProbe.test_probe_input_bounds_and_types_refuse) ... ok
+test_unchanged_real_parser_returns_only_proposals (test_task_paraphrase_eval.ActualManagedProbe.test_unchanged_real_parser_returns_only_proposals) ... ok
+test_hash_duplicate_json_properties_and_byte_bound (test_task_paraphrase_eval.CorpusIntegrity.test_hash_duplicate_json_properties_and_byte_bound) ... ok
+test_mutations_refuse_without_changing_denominators (test_task_paraphrase_eval.CorpusIntegrity.test_mutations_refuse_without_changing_denominators) ... ok
+test_nonscalar_fields_fail_with_validation_errors (test_task_paraphrase_eval.CorpusIntegrity.test_nonscalar_fields_fail_with_validation_errors) ... ok
+test_valid_fixed_population (test_task_paraphrase_eval.CorpusIntegrity.test_valid_fixed_population) ... ok
+test_bad_parser_pin_and_existing_output_refuse (test_task_paraphrase_eval.EvaluationCommand.test_bad_parser_pin_and_existing_output_refuse) ... ok
+test_missing_pins_do_not_return_success (test_task_paraphrase_eval.EvaluationCommand.test_missing_pins_do_not_return_success) ... ok
+test_clarification_and_ood_floors_are_separate (test_task_paraphrase_eval.ExactScoring.test_clarification_and_ood_floors_are_separate) ... ok
+test_conservative_refusals_reduce_useful_coverage (test_task_paraphrase_eval.ExactScoring.test_conservative_refusals_reduce_useful_coverage) ... ok
+test_exact_success_reports_all_rows_and_categories (test_task_paraphrase_eval.ExactScoring.test_exact_success_reports_all_rows_and_categories) ... ok
+test_malformed_or_missing_outputs_cannot_be_scored_as_safe (test_task_paraphrase_eval.ExactScoring.test_malformed_or_missing_outputs_cannot_be_scored_as_safe) ... ok
+test_operation_floor_cannot_be_hidden_by_other_operation (test_task_paraphrase_eval.ExactScoring.test_operation_floor_cannot_be_hidden_by_other_operation) ... ok
+test_wrong_ready_proposal_cannot_hide_inside_high_accuracy (test_task_paraphrase_eval.ExactScoring.test_wrong_ready_proposal_cannot_hide_inside_high_accuracy) ... ok
+test_bounded_read_and_strict_utf8 (test_task_paraphrase_eval.RunnerIntegrity.test_bounded_read_and_strict_utf8) ... ok
+test_changed_artifacts_cannot_issue_a_successful_score (test_task_paraphrase_eval.RunnerIntegrity.test_changed_artifacts_cannot_issue_a_successful_score) ... ok
+test_followup_reads_only_its_separately_pinned_confirmation (test_task_paraphrase_eval.RunnerIntegrity.test_followup_reads_only_its_separately_pinned_confirmation) ... ok
+test_identity_bound_report_keeps_all_cases_and_synthetic_origin (test_task_paraphrase_eval.RunnerIntegrity.test_identity_bound_report_keeps_all_cases_and_synthetic_origin) ... ok
+test_invalid_manifest_identity_refuses_before_corpus_read (test_task_paraphrase_eval.RunnerIntegrity.test_invalid_manifest_identity_refuses_before_corpus_read) ... ok
+test_main_reports_quality_failure_and_reserves_output (test_task_paraphrase_eval.RunnerIntegrity.test_main_reports_quality_failure_and_reserves_output) ... PARAPHRASE_EVALUATION_REFUSED
+PARAPHRASE_EVALUATION_REFUSED
+ok
+test_missing_runtime_failed_probe_and_malformed_receipts_refuse (test_task_paraphrase_eval.RunnerIntegrity.test_missing_runtime_failed_probe_and_malformed_receipts_refuse) ... ok
+test_reports_identify_the_selected_suite (test_task_paraphrase_eval.RunnerIntegrity.test_reports_identify_the_selected_suite) ... ok
+test_round10_keeps_its_own_flat_manifest_and_collection (test_task_paraphrase_eval.RunnerIntegrity.test_round10_keeps_its_own_flat_manifest_and_collection) ... ok
+test_round11_keeps_its_own_flat_manifest_and_collection (test_task_paraphrase_eval.RunnerIntegrity.test_round11_keeps_its_own_flat_manifest_and_collection) ... ok
+test_round3_uses_only_its_own_frozen_confirmation (test_task_paraphrase_eval.RunnerIntegrity.test_round3_uses_only_its_own_frozen_confirmation) ... ok
+test_round4_keeps_its_own_flat_manifest_and_collection (test_task_paraphrase_eval.RunnerIntegrity.test_round4_keeps_its_own_flat_manifest_and_collection) ... ok
+test_round5_keeps_its_own_flat_manifest_and_collection (test_task_paraphrase_eval.RunnerIntegrity.test_round5_keeps_its_own_flat_manifest_and_collection) ... ok
+test_round6_keeps_its_own_flat_manifest_and_collection (test_task_paraphrase_eval.RunnerIntegrity.test_round6_keeps_its_own_flat_manifest_and_collection) ... ok
+test_round7_keeps_its_own_flat_manifest_and_collection (test_task_paraphrase_eval.RunnerIntegrity.test_round7_keeps_its_own_flat_manifest_and_collection) ... ok
+test_round8_keeps_its_own_flat_manifest_and_collection (test_task_paraphrase_eval.RunnerIntegrity.test_round8_keeps_its_own_flat_manifest_and_collection) ... ok
+test_round9_keeps_its_own_flat_manifest_and_collection (test_task_paraphrase_eval.RunnerIntegrity.test_round9_keeps_its_own_flat_manifest_and_collection) ... ok
+test_unknown_suites_and_unavailable_collections_refuse (test_task_paraphrase_eval.RunnerIntegrity.test_unknown_suites_and_unavailable_collections_refuse) ... ok
+
+----------------------------------------------------------------------
+Ran 34 tests in 2.109s
+
+OK
+{"by_status": {"abstain": {"exact": 24, "total": 24}, "clarify": {"exact": 24, "total": 24}, "ready": {"exact": 79, "total": 80}}, "collection": "qualification", "exact": 127, "gates": {"abstain_95_percent": true, "clarify_90_percent": true, "lower_85_percent": true, "ready_90_percent": true, "upper_85_percent": true, "zero_wrong_ready": false}, "passed": false, "suite": "original", "total": 128, "wrong_ready": 1}

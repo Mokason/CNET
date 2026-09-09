@@ -1,0 +1,111 @@
+  Determining projects to restore...
+  Restored /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane/CnetControlPlane.csproj (in 127 ms).
+  Restored /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/CnetControlPlane.Tests.csproj (in 127 ms).
+  CnetControlPlane -> /home/marble/AI/CNET-worktrees/herdr-language-20260909/.artifacts/herdr-vocabulary-review/bin/CnetControlPlane/debug/cnet-control.dll
+/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningNativeLedgerTests.cs(38,43): warning CA1416: This call site is reachable on all platforms. 'File.SetUnixFileMode(string, UnixFileMode)' is unsupported on: 'windows'. (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1416) [/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/CnetControlPlane.Tests.csproj]
+/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningRuntimeLedgerTests.cs(21,9): warning CA1416: This call site is reachable on all platforms. 'File.SetUnixFileMode(string, UnixFileMode)' is unsupported on: 'windows'. (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1416) [/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/CnetControlPlane.Tests.csproj]
+/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningRuntimeLedgerTests.cs(22,9): warning CA1416: This call site is reachable on all platforms. 'Directory.CreateDirectory(string, UnixFileMode)' is unsupported on: 'windows'. (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1416) [/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/CnetControlPlane.Tests.csproj]
+/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningRuntimeLedgerTests.cs(23,9): warning CA1416: This call site is reachable on all platforms. 'Directory.CreateDirectory(string, UnixFileMode)' is unsupported on: 'windows'. (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1416) [/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/CnetControlPlane.Tests.csproj]
+/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningRuntimeLedgerTests.cs(32,36): warning CA1416: This call site is reachable on all platforms. 'File.SetUnixFileMode(string, UnixFileMode)' is unsupported on: 'windows'. (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1416) [/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/CnetControlPlane.Tests.csproj]
+/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningRuntimeLedgerTests.cs(35,13): warning CA1416: This call site is reachable on all platforms. 'File.SetUnixFileMode(string, UnixFileMode)' is unsupported on: 'windows'. (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1416) [/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/CnetControlPlane.Tests.csproj]
+  CnetControlPlane.Tests -> /home/marble/AI/CNET-worktrees/herdr-language-20260909/.artifacts/herdr-vocabulary-review/bin/CnetControlPlane.Tests/debug/CnetControlPlane.Tests.dll
+Test run for /home/marble/AI/CNET-worktrees/herdr-language-20260909/.artifacts/herdr-vocabulary-review/bin/CnetControlPlane.Tests/debug/CnetControlPlane.Tests.dll (.NETCoreApp,Version=v8.0)
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.8.2+699d445a1a (64-bit .NET 8.0.30)
+[xUnit.net 00:00:00.03]   Discovering: CnetControlPlane.Tests
+[xUnit.net 00:00:00.32]   Discovered:  CnetControlPlane.Tests
+[xUnit.net 00:00:00.33]   Starting:    CnetControlPlane.Tests
+[xUnit.net 00:00:01.11]     CnetControlPlane.Tests.LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(text: "Make A uppercase 'b'", status: "clarify") [FAIL]
+[xUnit.net 00:00:01.11]       TASK_VOCABULARY_RED Make A uppercase 'b': ready, expected clarify
+[xUnit.net 00:00:01.11]       Stack Trace:
+[xUnit.net 00:00:01.11]         /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseVocabularyTests.cs(74,0): at CnetControlPlane.Tests.LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(String text, String status)
+[xUnit.net 00:00:01.11]            at InvokeStub_LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(Object, Span`1)
+[xUnit.net 00:00:01.11]            at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(text: "Uppercase the letters f and g.", status: "clarify") [756 ms]
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(text: "Map 'A' to small.", status: "abstain") [2 ms]
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(text: "Convert to uppercase whichever single letter is in"···, status: "clarify") [1 ms]
+  Failed CnetControlPlane.Tests.LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(text: "Make A uppercase 'b'", status: "clarify") [< 1 ms]
+  Error Message:
+   TASK_VOCABULARY_RED Make A uppercase 'b': ready, expected clarify
+  Stack Trace:
+     at CnetControlPlane.Tests.LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(String text, String status) in /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseVocabularyTests.cs:line 74
+   at InvokeStub_LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(text: "Downcase U+000A.", status: "abstain") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(text: "Please uppercase the character specified as U+0218"···, status: "abstain") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(text: "Go ahead and downcase 'A' and send it.", status: "abstain") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(text: "Map the punctuation U+000A to uppercase.", status: "abstain") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(text: "Convert the hyphen '+' to uppercase.", status: "clarify") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(text: "Downcase 'A' and send it.", status: "abstain") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(text: "Convert the hyphen to uppercase.", status: "clarify") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(text: "Upcase the letters a.", status: "clarify") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(text: "Convert to uppercase whichever single letter is in"···, status: "clarify") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(text: "Take 'a' up to lowercase.", status: "clarify") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(text: "I am requesting a case change for the letter p.", status: "clarify") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(text: "Take U+0218 up to lowercase.", status: "abstain") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(text: "Make a uppercase U+0218", status: "abstain") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(text: "Upcase the word hello.", status: "abstain") [< 1 ms]
+[xUnit.net 00:00:01.17]     CnetControlPlane.Tests.LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(text: "Make A lower case 'B'", status: "clarify") [FAIL]
+[xUnit.net 00:00:01.17]       TASK_VOCABULARY_RED Make A lower case 'B': ready, expected clarify
+[xUnit.net 00:00:01.17]       Stack Trace:
+[xUnit.net 00:00:01.17]         /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseVocabularyTests.cs(74,0): at CnetControlPlane.Tests.LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(String text, String status)
+[xUnit.net 00:00:01.17]            at InvokeStub_LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(Object, Span`1)
+[xUnit.net 00:00:01.17]            at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(text: "The letter c should undergo case conversion.", status: "clarify") [< 1 ms]
+  Failed CnetControlPlane.Tests.LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(text: "Make A lower case 'B'", status: "clarify") [< 1 ms]
+  Error Message:
+   TASK_VOCABULARY_RED Make A lower case 'B': ready, expected clarify
+  Stack Trace:
+     at CnetControlPlane.Tests.LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(String text, String status) in /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseVocabularyTests.cs:line 74
+   at InvokeStub_LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(text: "Upcase the punctuation 'a'.", status: "clarify") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(text: "Go ahead and lowercase it.", status: "clarify") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(text: "Rewrite 'A' so that it is uppercase and delete it.", status: "abstain") [47 ms]
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(text: "Downcase the hyphen U+0218.", status: "abstain") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(text: "Rewrite 'A' so that it is uppercase; then lowercas"···, status: "abstain") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(text: "Apply uppercase mapping to 'a' using Turkish rules"···, status: "abstain") [1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(text: "I still need uppercase applied, yet no letter has "···, status: "clarify") [< 1 ms]
+[xUnit.net 00:00:01.17]     CnetControlPlane.Tests.LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(text: "Make a uppercase the letter 'b'", status: "clarify") [FAIL]
+[xUnit.net 00:00:01.17]       TASK_VOCABULARY_RED Make a uppercase the letter 'b': ready, expected clarify
+[xUnit.net 00:00:01.17]       Stack Trace:
+[xUnit.net 00:00:01.17]         /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseVocabularyTests.cs(74,0): at CnetControlPlane.Tests.LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(String text, String status)
+[xUnit.net 00:00:01.17]            at InvokeStub_LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(Object, Span`1)
+[xUnit.net 00:00:01.17]            at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(text: "Convert to lowercase whichever character is intend"···, status: "abstain") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(text: "Make uppercase the digit 8'", status: "clarify") [< 1 ms]
+  Failed CnetControlPlane.Tests.LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(text: "Make a uppercase the letter 'b'", status: "clarify") [< 1 ms]
+  Error Message:
+   TASK_VOCABULARY_RED Make a uppercase the letter 'b': ready, expected clarify
+  Stack Trace:
+     at CnetControlPlane.Tests.LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(String text, String status) in /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningCaseVocabularyTests.cs:line 74
+   at InvokeStub_LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(text: "Would you mind lowercasing the word hello?", status: "abstain") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.MissingOrConflictingRolesNeverBecomeExecutable(text: "Lowercase the letters a and b", status: "clarify") [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.SharedCaseVocabularyAndExplicitDescriptionsPreserveOriginalInputs(text: "Map the punctuation \".\" to lowercase.", operation: "lower", key: 46) [1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.SharedCaseVocabularyAndExplicitDescriptionsPreserveOriginalInputs(text: "Rewrite the letter k so that it is uppercase.", operation: "upper", key: 107) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.SharedCaseVocabularyAndExplicitDescriptionsPreserveOriginalInputs(text: "Convert the hyphen '-' to uppercase.", operation: "upper", key: 45) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.SharedCaseVocabularyAndExplicitDescriptionsPreserveOriginalInputs(text: "Would you mind lowercasing Q?", operation: "lower", key: 81) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.SharedCaseVocabularyAndExplicitDescriptionsPreserveOriginalInputs(text: "Downcase F please.", operation: "lower", key: 70) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.SharedCaseVocabularyAndExplicitDescriptionsPreserveOriginalInputs(text: "Take decimal codepoint 250 and put it in uppercase"···, operation: "upper", key: 250) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.SharedCaseVocabularyAndExplicitDescriptionsPreserveOriginalInputs(text: "Take 'S' down to lowercase, please.", operation: "lower", key: 83) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.SharedCaseVocabularyAndExplicitDescriptionsPreserveOriginalInputs(text: "Downcase the semicolon ';'.", operation: "lower", key: 59) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.SharedCaseVocabularyAndExplicitDescriptionsPreserveOriginalInputs(text: "Please downcase the digit '0'.", operation: "lower", key: 48) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.SharedCaseVocabularyAndExplicitDescriptionsPreserveOriginalInputs(text: "Would you recast the letter H so it appears in low"···, operation: "lower", key: 72) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.SharedCaseVocabularyAndExplicitDescriptionsPreserveOriginalInputs(text: "Fold U+00C9 to lower case.", operation: "lower", key: 201) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.SharedCaseVocabularyAndExplicitDescriptionsPreserveOriginalInputs(text: "Downcase the character 'H'", operation: "lower", key: 72) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.SharedCaseVocabularyAndExplicitDescriptionsPreserveOriginalInputs(text: "Map ' ' to uppercase.", operation: "upper", key: 32) [< 1 ms]
+[xUnit.net 00:00:01.18]   Finished:    CnetControlPlane.Tests
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.SharedCaseVocabularyAndExplicitDescriptionsPreserveOriginalInputs(text: "Apply uppercase mapping to ','.", operation: "upper", key: 44) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.SharedCaseVocabularyAndExplicitDescriptionsPreserveOriginalInputs(text: "Give me a lowercase plus sign '+'.", operation: "lower", key: 43) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.SharedCaseVocabularyAndExplicitDescriptionsPreserveOriginalInputs(text: "Apply lowercase to the quoted punctuation '!'", operation: "lower", key: 33) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.SharedCaseVocabularyAndExplicitDescriptionsPreserveOriginalInputs(text: "Apply uppercase mapping to the quoted digit '7'", operation: "upper", key: 55) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.SharedCaseVocabularyAndExplicitDescriptionsPreserveOriginalInputs(text: "Convert the space ' ' to lowercase.", operation: "lower", key: 32) [< 1 ms]
+  Passed CnetControlPlane.Tests.LearningCaseVocabularyTests.SharedCaseVocabularyAndExplicitDescriptionsPreserveOriginalInputs(text: "The asterisk '*' should be uppercased.", operation: "upper", key: 42) [< 1 ms]
+
+Test Run Failed.
+Total tests: 51
+     Passed: 48
+     Failed: 3
+ Total time: 1.4173 Seconds

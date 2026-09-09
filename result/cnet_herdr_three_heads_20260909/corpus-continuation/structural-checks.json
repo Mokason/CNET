@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "draft_sha256": "f47c14e717f414984fcbb1f472ddbf39460b5ef301a805f902af91bb74b59a57",
+  "bytes": 23746,
+  "cases": 128,
+  "status_counts": {
+    "ready": 80,
+    "clarify": 24,
+    "abstain": 24
+  },
+  "operation_counts": {
+    "upper": 40,
+    "lower": 40,
+    "none": 48
+  },
+  "family_count": 43,
+  "prior_collections": 12,
+  "prior_unique_texts": 1536,
+  "overlap_ids": [],
+  "bounds_ids": [],
+  "strict_schema_error": null,
+  "structural_checks_passed": true,
+  "validator": "/tmp/cnet-herdr-three-heads-PK7L3c/validate_draft.py",
+  "validator_note": "The existing validator always reports independent_label_review_complete=false and admitted_as_confirmation=false; those later decisions are separately documented by label-checks.json and admission.json.",
+  "cnet_executed": false,
+  "training_eligible": false
+}

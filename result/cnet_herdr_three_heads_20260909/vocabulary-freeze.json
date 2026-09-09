@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "frozen_at_utc": "2026-09-09 12:56:11 UTC",
+  "source_commit": "61d92cf078ff89443883d39fa13eb6427c51fd87",
+  "pins": {
+    "/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane/Learning/LearningTaskProposal.cs": "b62fa21c534612f1306ea5981b9202527bff63747e4b4977629f0481a8e08f9d",
+    "/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane/Learning/LearningCaseRequestSyntax.cs": "2a3d84290a0b1316252337c85efe16369258fa0b46cccfe6bc3d025140eb25aa",
+    "/home/marble/AI/CNET-worktrees/herdr-language-20260909/tools/task_paraphrase_eval/evaluate.py": "30893a95fc08329db530d9be3804dc8b60c4df5f8dfcd4b11f362a2fb6ba7a28",
+    "/home/marble/AI/CNET-worktrees/herdr-language-20260909/.artifacts/herdr-probe/bin/TaskParaphraseProbe/debug/cnet-task-paraphrase-probe.dll": "296687132e144fdbb24a200e58909a44fa551afc8aaded3d7681067760044443",
+    "/home/marble/AI/CNET-worktrees/herdr-language-20260909/.artifacts/herdr-vocabulary/bin/CnetControlPlane/debug/cnet-control.dll": "d547e11d0ddc3a591f940f4432c23e0379c0380faec636b6f37b3460e66c967f",
+    "/tmp/cnet-herdr-three-heads-PK7L3c/score-vocabulary.py": "e1945179e4298a7bf3b2845e5585869cb2845ca9c4cdc656d06cc7ab3e05469b"
+  },
+  "regression_tests": 2263,
+  "evaluator_tests": 34,
+  "review_cycles": 2,
+  "review_note": "Second artifact independently reviewed clean in cycle 2; 44 read-only probes, all prior findings fixed with executed RED/green.",
+  "assembly_note": "Full regression-tested artifact; embedded revision may refer to 29a4091 because source commit followed the tested build. Parser source bytes match 61d92cf; do not rebuild this frozen artifact.",
+  "confirmation_scoring_limit": 1,
+  "synthetic": true,
+  "training_eligible": false,
+  "confirmation_bound_at_utc": "2026-09-09 13:14:29 UTC",
+  "corpus_path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation2/confirmation-frozen.json",
+  "corpus_sha256": "102f76da2de5ed7a93b6c97730736e95d254bf9fffd76a894483cf7c440b669b",
+  "admission_path": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/result/cnet_herdr_three_heads_20260909/corpus-continuation2/admission.json",
+  "admission_sha256": "4c3270728c2ed677980dfcc5748c524eaa318490e0a7cce01d0c75d8a520efe0"
+}

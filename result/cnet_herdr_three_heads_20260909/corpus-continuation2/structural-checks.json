@@ -1,0 +1,31 @@
+{
+  "admitted_as_confirmation": false,
+  "bounds_ids": [],
+  "bytes": 23616,
+  "cases": 128,
+  "cnet_executed": false,
+  "draft_sha256": "102f76da2de5ed7a93b6c97730736e95d254bf9fffd76a894483cf7c440b669b",
+  "duplicate_groups": [],
+  "family_count": 37,
+  "independent_label_review_complete": false,
+  "operation_counts": {
+    "lower": 40,
+    "none": 48,
+    "upper": 40
+  },
+  "overlap_ids": [],
+  "prior_collections": 13,
+  "prior_unique_texts": 1664,
+  "schema": 1,
+  "status_counts": {
+    "abstain": 24,
+    "clarify": 24,
+    "ready": 80
+  },
+  "strict_schema_error": null,
+  "structural_checks_passed": true,
+  "training_eligible": false,
+  "validated_path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation2/confirmation-frozen.json",
+  "validator_note": "The existing validator's admission/independent-review flags remain false because it only validates structure; final review and admission are separately recorded in label-checks.json and admission.json.",
+  "punctuation_only_duplicate_groups": []
+}

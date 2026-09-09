@@ -1,0 +1,1030 @@
+{
+  "schema": 1,
+  "name": "confirmation",
+  "cases": [
+    {
+      "id": "n1_01",
+      "family": "bare_letter",
+      "text": "Please uppercase the letter q",
+      "status": "ready",
+      "operation": "upper",
+      "key": 113
+    },
+    {
+      "id": "n1_02",
+      "family": "dual_letter",
+      "text": "Convert the letter R or the letter W to uppercase.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n1_03",
+      "family": "quoted_letter",
+      "text": "Could you make 'Z' lowercase?",
+      "status": "ready",
+      "operation": "lower",
+      "key": 90
+    },
+    {
+      "id": "n1_04",
+      "family": "negated",
+      "text": "Don't lowercase the letter M",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n1_05",
+      "family": "quoted_digit",
+      "text": "Change this to upper case: \"9\"",
+      "status": "ready",
+      "operation": "upper",
+      "key": 57
+    },
+    {
+      "id": "n1_06",
+      "family": "hex_0x",
+      "text": "Turn 0x41 into lowercase",
+      "status": "ready",
+      "operation": "lower",
+      "key": 65
+    },
+    {
+      "id": "n1_07",
+      "family": "unspecified_direction",
+      "text": "Could you change the case of the letter q?",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n1_08",
+      "family": "full_string",
+      "text": "Lowercase the string hello",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n1_09",
+      "family": "u_plus_hex",
+      "text": "Convert U+00E9 to uppercase",
+      "status": "ready",
+      "operation": "upper",
+      "key": 233
+    },
+    {
+      "id": "n1_10",
+      "family": "quoted_punct",
+      "text": "Convert '!' to lowercase",
+      "status": "ready",
+      "operation": "lower",
+      "key": 33
+    },
+    {
+      "id": "n1_11",
+      "family": "decimal_codepoint",
+      "text": "Make the character at decimal codepoint 98 uppercase",
+      "status": "ready",
+      "operation": "upper",
+      "key": 98
+    },
+    {
+      "id": "n1_12",
+      "family": "malformed_quote",
+      "text": "Make uppercase: 'Q",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n1_13",
+      "family": "quoted_letter",
+      "text": "Change \"É\" to lower case",
+      "status": "ready",
+      "operation": "lower",
+      "key": 201
+    },
+    {
+      "id": "n1_14",
+      "family": "locale",
+      "text": "Turkish locale uppercase for i",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n1_15",
+      "family": "quoted_space",
+      "text": "Uppercase \" \"",
+      "status": "ready",
+      "operation": "upper",
+      "key": 32
+    },
+    {
+      "id": "n1_16",
+      "family": "decimal_codepoint",
+      "text": "lowercase decimal codepoint 255",
+      "status": "ready",
+      "operation": "lower",
+      "key": 255
+    },
+    {
+      "id": "n1_17",
+      "family": "bare_digit",
+      "text": "lowercase 7",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n1_18",
+      "family": "nonlatin",
+      "text": "Please convert the letter α to uppercase.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n1_19",
+      "family": "bare_letter",
+      "text": "I'd like you to capitalize w",
+      "status": "ready",
+      "operation": "upper",
+      "key": 119
+    },
+    {
+      "id": "n1_20",
+      "family": "bare_letter",
+      "text": "kindly switch F to small letters",
+      "status": "ready",
+      "operation": "lower",
+      "key": 70
+    },
+    {
+      "id": "n1_21",
+      "family": "hex_0x",
+      "text": "Could you uppercase 0xF6",
+      "status": "ready",
+      "operation": "upper",
+      "key": 246
+    },
+    {
+      "id": "n1_22",
+      "family": "bare_punct",
+      "text": "Please put * into uppercase",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n1_23",
+      "family": "quoted_digit",
+      "text": "Please lowercase \"0\"",
+      "status": "ready",
+      "operation": "lower",
+      "key": 48
+    },
+    {
+      "id": "n1_24",
+      "family": "compound",
+      "text": "Convert \"a\" and also tell me the weather",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n1_25",
+      "family": "quoted_punct",
+      "text": "Please convert \"#\" to upper case",
+      "status": "ready",
+      "operation": "upper",
+      "key": 35
+    },
+    {
+      "id": "n1_26",
+      "family": "u_plus_hex",
+      "text": "Give me the lowercase of U+00C7",
+      "status": "ready",
+      "operation": "lower",
+      "key": 199
+    },
+    {
+      "id": "n1_27",
+      "family": "quoted_letter",
+      "text": "Put \"m\" in uppercase",
+      "status": "ready",
+      "operation": "upper",
+      "key": 109
+    },
+    {
+      "id": "n1_28",
+      "family": "missing_input",
+      "text": "Please convert to uppercase",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n1_29",
+      "family": "decimal_codepoint",
+      "text": "Convert decimal codepoint 80 to lowercase",
+      "status": "ready",
+      "operation": "lower",
+      "key": 80
+    },
+    {
+      "id": "n1_30",
+      "family": "control_codepoint",
+      "text": "Apply lowercase to U+0009",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n1_31",
+      "family": "bare_letter",
+      "text": "Turn d into its uppercase form",
+      "status": "ready",
+      "operation": "upper",
+      "key": 100
+    },
+    {
+      "id": "n1_32",
+      "family": "bare_letter",
+      "text": "can you downcase the letter B",
+      "status": "ready",
+      "operation": "lower",
+      "key": 66
+    },
+    {
+      "id": "n2_01",
+      "family": "bare_letter",
+      "text": "Please make g uppercase.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 103
+    },
+    {
+      "id": "n2_02",
+      "family": "missing_slot",
+      "text": "Could you lowercase that character for me?",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n2_03",
+      "family": "quoted_char",
+      "text": "Convert \"R\" to lowercase.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 82
+    },
+    {
+      "id": "n2_04",
+      "family": "full_string",
+      "text": "Uppercase the entire word garden.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n2_05",
+      "family": "hex_u_plus",
+      "text": "Apply uppercase to U+00E4.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 228
+    },
+    {
+      "id": "n2_06",
+      "family": "hex_0x",
+      "text": "Downcase the byte 0x4B.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 75
+    },
+    {
+      "id": "n2_07",
+      "family": "shown_pair",
+      "text": "Apply an uppercase conversion to the letter shown as E or as U.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n2_08",
+      "family": "quoted_digit",
+      "text": "Put \"3\" in uppercase.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 51
+    },
+    {
+      "id": "n2_09",
+      "family": "negated",
+      "text": "Do not lowercase the letter Z.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n2_10",
+      "family": "bare_letter",
+      "text": "I need the small-letter form of D.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 68
+    },
+    {
+      "id": "n2_11",
+      "family": "bare_letter",
+      "text": "Capitalize the letter v.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 118
+    },
+    {
+      "id": "n2_12",
+      "family": "malformed_quote",
+      "text": "Lowercase the character \"q.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n2_13",
+      "family": "decimal_codepoint",
+      "text": "Convert decimal codepoint 220 to lowercase.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 220
+    },
+    {
+      "id": "n2_14",
+      "family": "locale",
+      "text": "Lowercase the letter I according to Turkish rules.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n2_15",
+      "family": "quoted_punct",
+      "text": "Make \".\" uppercase.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 46
+    },
+    {
+      "id": "n2_16",
+      "family": "bare_letter",
+      "text": "Turn J into lowercase.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 74
+    },
+    {
+      "id": "n2_17",
+      "family": "bare_number",
+      "text": "Uppercase 101.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n2_18",
+      "family": "hex_0x",
+      "text": "Change 0xe9 to uppercase.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 233
+    },
+    {
+      "id": "n2_19",
+      "family": "unrelated",
+      "text": "How many teaspoons are in a tablespoon?",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n2_20",
+      "family": "quoted_space",
+      "text": "Convert \" \" to lowercase.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 32
+    },
+    {
+      "id": "n2_21",
+      "family": "decimal_codepoint",
+      "text": "Uppercase the character at decimal codepoint 98.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 98
+    },
+    {
+      "id": "n2_22",
+      "family": "missing_slot",
+      "text": "Capitalize, please.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n2_23",
+      "family": "decimal_codepoint",
+      "text": "Take decimal codepoint 199 and make that character lowercase.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 199
+    },
+    {
+      "id": "n2_24",
+      "family": "compound",
+      "text": "Lowercase B and then tell me its Morse code.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n2_25",
+      "family": "quoted_char",
+      "text": "Change \"ñ\" so it is uppercase.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 241
+    },
+    {
+      "id": "n2_26",
+      "family": "bare_punct",
+      "text": "Make ? lowercase.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n2_27",
+      "family": "bare_letter",
+      "text": "Switch T to lower case.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 84
+    },
+    {
+      "id": "n2_28",
+      "family": "oob_codepoint",
+      "text": "Uppercase U+0101.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n2_29",
+      "family": "bare_letter",
+      "text": "I'd like w written as a capital.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 119
+    },
+    {
+      "id": "n2_30",
+      "family": "quoted_punct",
+      "text": "Take \",\" and lowercase it.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 44
+    },
+    {
+      "id": "n2_31",
+      "family": "bare_letter",
+      "text": "Force uppercase on the letter o.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 111
+    },
+    {
+      "id": "n2_32",
+      "family": "hex_0x",
+      "text": "Please convert 0x59 to lower case.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 89
+    },
+    {
+      "id": "n3_01",
+      "family": "bare_letter",
+      "text": "Please capitalize b",
+      "status": "ready",
+      "operation": "upper",
+      "key": 98
+    },
+    {
+      "id": "n3_02",
+      "family": "missing_direction",
+      "text": "Change the case of the letter h",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n3_03",
+      "family": "quoted_letter",
+      "text": "please make 'R' lowercase",
+      "status": "ready",
+      "operation": "lower",
+      "key": 82
+    },
+    {
+      "id": "n3_04",
+      "family": "negated",
+      "text": "Don't uppercase the letter c",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n3_05",
+      "family": "quoted_digit",
+      "text": "I need the uppercase version of '7'",
+      "status": "ready",
+      "operation": "upper",
+      "key": 55
+    },
+    {
+      "id": "n3_06",
+      "family": "hex_u_plus",
+      "text": "Please downcase U+00C4",
+      "status": "ready",
+      "operation": "lower",
+      "key": 196
+    },
+    {
+      "id": "n3_07",
+      "family": "missing_input",
+      "text": "Please switch this to uppercase",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n3_08",
+      "family": "hex_0x",
+      "text": "Turn 0x6A into a capital letter",
+      "status": "ready",
+      "operation": "upper",
+      "key": 106
+    },
+    {
+      "id": "n3_09",
+      "family": "full_string",
+      "text": "uppercase the word Hello",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n3_10",
+      "family": "natural_lower",
+      "text": "Produce a lowercase version of the letter M.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 77
+    },
+    {
+      "id": "n3_11",
+      "family": "quoted_punct",
+      "text": "Give me the uppercase form of '.'",
+      "status": "ready",
+      "operation": "upper",
+      "key": 46
+    },
+    {
+      "id": "n3_12",
+      "family": "multi_candidate",
+      "text": "lowercase a or b, whichever you prefer",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n3_13",
+      "family": "quoted_digit",
+      "text": "lowercase the character '4'",
+      "status": "ready",
+      "operation": "lower",
+      "key": 52
+    },
+    {
+      "id": "n3_14",
+      "family": "locale",
+      "text": "Apply Turkish lowercase to I",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n3_15",
+      "family": "decimal_codepoint",
+      "text": "Apply uppercase to decimal codepoint 250",
+      "status": "ready",
+      "operation": "upper",
+      "key": 250
+    },
+    {
+      "id": "n3_16",
+      "family": "hex_0x",
+      "text": "convert 0x53 to lowercase",
+      "status": "ready",
+      "operation": "lower",
+      "key": 83
+    },
+    {
+      "id": "n3_17",
+      "family": "mismatched_quotes",
+      "text": "uppercase 'x",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n3_18",
+      "family": "bare_letter",
+      "text": "Could you make the letter w a capital?",
+      "status": "ready",
+      "operation": "upper",
+      "key": 119
+    },
+    {
+      "id": "n3_19",
+      "family": "unrelated",
+      "text": "Remind me to water the plants this evening.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n3_20",
+      "family": "decimal_codepoint",
+      "text": "Convert codepoint 216 to lowercase",
+      "status": "ready",
+      "operation": "lower",
+      "key": 216
+    },
+    {
+      "id": "n3_21",
+      "family": "bare_letter",
+      "text": "Put k in caps",
+      "status": "ready",
+      "operation": "upper",
+      "key": 107
+    },
+    {
+      "id": "n3_22",
+      "family": "bare_numeric",
+      "text": "make 65 uppercase",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n3_23",
+      "family": "bare_letter",
+      "text": "I need the small-letter version of Q",
+      "status": "ready",
+      "operation": "lower",
+      "key": 81
+    },
+    {
+      "id": "n3_24",
+      "family": "compound",
+      "text": "uppercase t and then lowercase V",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n3_25",
+      "family": "quoted_letter",
+      "text": "Change 'n' to upper case",
+      "status": "ready",
+      "operation": "upper",
+      "key": 110
+    },
+    {
+      "id": "n3_26",
+      "family": "quoted_punct",
+      "text": "Change '*' to lowercase",
+      "status": "ready",
+      "operation": "lower",
+      "key": 42
+    },
+    {
+      "id": "n3_27",
+      "family": "bare_punct",
+      "text": "lowercase ?",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n3_28",
+      "family": "hex_u_plus",
+      "text": "Please make U+00F1 uppercase",
+      "status": "ready",
+      "operation": "upper",
+      "key": 241
+    },
+    {
+      "id": "n3_29",
+      "family": "control_operand",
+      "text": "Please lowercase U+0009",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n3_30",
+      "family": "bare_letter",
+      "text": "Would you mind putting G in lowercase?",
+      "status": "ready",
+      "operation": "lower",
+      "key": 71
+    },
+    {
+      "id": "n3_31",
+      "family": "quoted_space",
+      "text": "Can you uppercase the space character ' '?",
+      "status": "ready",
+      "operation": "upper",
+      "key": 32
+    },
+    {
+      "id": "n3_32",
+      "family": "quoted_letter",
+      "text": "Give me the lowercase of 'Ü'",
+      "status": "ready",
+      "operation": "lower",
+      "key": 220
+    },
+    {
+      "id": "n4_01",
+      "family": "bare_letter",
+      "text": "Please put k in uppercase.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 107
+    },
+    {
+      "id": "n4_02",
+      "family": "quoted_letter",
+      "text": "Could you convert 'M' to lowercase?",
+      "status": "ready",
+      "operation": "lower",
+      "key": 77
+    },
+    {
+      "id": "n4_03",
+      "family": "negated",
+      "text": "Don't lowercase the letter Z.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n4_04",
+      "family": "nodir",
+      "text": "I need a case conversion applied to the letter S.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n4_05",
+      "family": "hex_u_plus",
+      "text": "Make U+00F1 uppercase.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 241
+    },
+    {
+      "id": "n4_06",
+      "family": "decimal_codepoint",
+      "text": "Lowercase the character at decimal codepoint 220.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 220
+    },
+    {
+      "id": "n4_07",
+      "family": "quoted_digit",
+      "text": "Capitalize the digit '7'.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 55
+    },
+    {
+      "id": "n4_08",
+      "family": "full_string",
+      "text": "Lowercase the whole word Hello.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n4_09",
+      "family": "malformed_quote",
+      "text": "Uppercase the character 'x\".",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n4_10",
+      "family": "bare_letter",
+      "text": "I'd like w in small letters, please.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 119
+    },
+    {
+      "id": "n4_11",
+      "family": "multi_candidate",
+      "text": "Uppercase either r or s, whichever you prefer.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n4_12",
+      "family": "hex_0x",
+      "text": "Turn 0x61 into its uppercase form.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 97
+    },
+    {
+      "id": "n4_13",
+      "family": "quoted_punct",
+      "text": "Change '?' to lowercase.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 63
+    },
+    {
+      "id": "n4_14",
+      "family": "locale",
+      "text": "Apply Turkish locale uppercase to the letter i.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n4_15",
+      "family": "quoted_space",
+      "text": "Put the character ' ' in uppercase.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 32
+    },
+    {
+      "id": "n4_16",
+      "family": "missing_input",
+      "text": "Please convert it to lowercase.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n4_17",
+      "family": "bare_letter",
+      "text": "downcase H",
+      "status": "ready",
+      "operation": "lower",
+      "key": 72
+    },
+    {
+      "id": "n4_18",
+      "family": "bare_letter",
+      "text": "Convert y to capital letters.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 121
+    },
+    {
+      "id": "n4_19",
+      "family": "hex_u_plus",
+      "text": "Can you convert U+00C6 to lowercase?",
+      "status": "ready",
+      "operation": "lower",
+      "key": 198
+    },
+    {
+      "id": "n4_20",
+      "family": "unrelated",
+      "text": "What's the square root of 81?",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n4_21",
+      "family": "decimal_codepoint",
+      "text": "Raise decimal codepoint 250 to uppercase.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 250
+    },
+    {
+      "id": "n4_22",
+      "family": "bare_numeric",
+      "text": "uppercase 9",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n4_23",
+      "family": "quoted_digit",
+      "text": "Make the quoted digit '0' lowercase.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 48
+    },
+    {
+      "id": "n4_24",
+      "family": "quoted_punct",
+      "text": "I need an uppercase version of the character '&'.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 38
+    },
+    {
+      "id": "n4_25",
+      "family": "compound",
+      "text": "Uppercase b and then tell me tomorrow's weather.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n4_26",
+      "family": "hex_0x",
+      "text": "Please lowercase 0xD1.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 209
+    },
+    {
+      "id": "n4_27",
+      "family": "ambiguous_direction",
+      "text": "Change the case of letter T.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n4_28",
+      "family": "quoted_letter",
+      "text": "Would you mind putting \"P\" into lowercase?",
+      "status": "ready",
+      "operation": "lower",
+      "key": 80
+    },
+    {
+      "id": "n4_29",
+      "family": "encoded_control",
+      "text": "Uppercase U+0007.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "n4_30",
+      "family": "bare_letter",
+      "text": "If you have a moment, capitalize the letter d.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 100
+    },
+    {
+      "id": "n4_31",
+      "family": "bare_letter",
+      "text": "Please make G lowercase.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 71
+    },
+    {
+      "id": "n4_32",
+      "family": "decimal_upper",
+      "text": "Convert the character at decimal codepoint 231 to uppercase.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 231
+    }
+  ]
+}

@@ -1,0 +1,136 @@
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_tensor.o src/cce/cce_tensor.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_block.o src/cce/cce_block.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_cascade.o src/cce/cce_cascade.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_archive.o src/cce/cce_archive.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_forest.o src/cce/cce_forest.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_router.o src/cce/cce_router.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_sparse_kv.o src/cce/cce_sparse_kv.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_dsa.o src/cce/cce_dsa.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_kv_page.o src/cce/cce_kv_page.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_mtk.o src/cce/cce_mtk.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_mla.o src/cce/cce_mla.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_deepseek_map.o src/cce/cce_deepseek_map.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_ds_runtime.o src/cce/cce_ds_runtime.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_infer_backend.o src/cce/cce_infer_backend.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_uncertainty.o src/cce/cce_uncertainty.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_compression.o src/cce/cce_compression.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_learn.o src/cce/cce_learn.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_lora.o src/cce/cce_lora.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_lily.o src/cce/cce_lily.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_block_patch.o src/cce/cce_block_patch.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_gpu.o src/cce/cce_gpu.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_abi.o src/cce/cce_abi.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_perceptual_leaf.o src/cce/cce_perceptual_leaf.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_wordlm.o src/cce/cce_wordlm.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_model.o src/cce/cce_model.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_model_io.o src/cce/cce_model_io.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_dataset.o src/cce/cce_dataset.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_autograd.o src/cce/cce_autograd.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_autograd_ops.o src/cce/cce_autograd_ops.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_safetensors.o src/cce/cce_safetensors.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_gguf.o src/cce/cce_gguf.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_aicimo.o src/cce/cce_aicimo.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_qgkp.o src/cce/cce_qgkp.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_detect.o src/cce/cce_detect.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_ssm.o src/cce/cce_ssm.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_hybrid.o src/cce/cce_hybrid.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_qwen35.o src/cce/cce_qwen35.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_gguf_qwen35.o src/cce/cce_gguf_qwen35.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_st_llama.o src/cce/cce_st_llama.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_specgraph.o src/cce/cce_specgraph.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_weight_store.o src/cce/cce_weight_store.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_tier_runtime.o src/cce/cce_tier_runtime.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_similar.o src/cce/cce_similar.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_clgemm.o src/cce/cce_clgemm.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_hipgemm.o src/cce/cce_hipgemm.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_cudagemm.o src/cce/cce_cudagemm.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_transformer_qat.o src/cce/cce_transformer_qat.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_transformer_qat_load.o src/cce/cce_transformer_qat_load.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_trit_kernel.o src/cce/cce_trit_kernel.c
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce  -fPIC -MMD -MP -c -o build/cce/cce_mojo_dispatch.o src/cce/cce_mojo_dispatch.c
+ar rcs bin/libcce.a build/cce/cce_tensor.o build/cce/cce_block.o build/cce/cce_cascade.o build/cce/cce_archive.o build/cce/cce_forest.o build/cce/cce_router.o build/cce/cce_sparse_kv.o build/cce/cce_dsa.o build/cce/cce_kv_page.o build/cce/cce_mtk.o build/cce/cce_mla.o build/cce/cce_deepseek_map.o build/cce/cce_ds_runtime.o build/cce/cce_infer_backend.o build/cce/cce_uncertainty.o build/cce/cce_compression.o build/cce/cce_learn.o build/cce/cce_lora.o build/cce/cce_lily.o build/cce/cce_block_patch.o build/cce/cce_gpu.o build/cce/cce_abi.o build/cce/cce_perceptual_leaf.o build/cce/cce_wordlm.o build/cce/cce_model.o build/cce/cce_model_io.o build/cce/cce_dataset.o build/cce/cce_autograd.o build/cce/cce_autograd_ops.o build/cce/cce_safetensors.o build/cce/cce_gguf.o build/cce/cce_aicimo.o build/cce/cce_qgkp.o build/cce/cce_detect.o build/cce/cce_ssm.o build/cce/cce_hybrid.o build/cce/cce_qwen35.o build/cce/cce_gguf_qwen35.o build/cce/cce_st_llama.o build/cce/cce_specgraph.o build/cce/cce_weight_store.o build/cce/cce_tier_runtime.o build/cce/cce_similar.o build/cce/cce_clgemm.o build/cce/cce_hipgemm.o build/cce/cce_cudagemm.o build/cce/cce_transformer_qat.o build/cce/cce_transformer_qat_load.o build/cce/cce_trit_kernel.o build/cce/cce_mojo_dispatch.o 
+Built bin/libcce.a (50 objects)
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -fPIC -shared -o bin/libcnet_capsule_core.so src/personal_ai.c src/cnet_moe.c src/cnet_acct.c src/cnet_seal_trust.c src/cnet_distrust.c src/cnet_live_miss.c src/hybrid_ai.c src/serve/cnet_sparse_serve.c src/residual_gguf.c src/residual_http.c src/cnet_pilot.c src/selfimprove/cnet_curiosity.c src/resource_governor.c src/selfimprove/self_improve.c src/gap_lane.c src/selfimprove/cnet_auto_learn.c src/cnet_charter.c src/cnet_record_teacher.c src/cnet_fault.c src/selfimprove/cnet_promote.c src/serve/cnet_serve_decode.c src/cnet_evidence_bundle.c src/cnet_health_layers.c src/external_teacher.c src/model_runtime.c src/cce/cce_contract_adapter.c src/specialist_adapters.c src/specialist.c src/specialist_health.c src/nn.c src/router/dag_full.c src/router/registry.c src/router/route.c src/plan_table.c src/contract/contract.c src/contract/unit.c src/property.c src/consolidate.c src/scan.c src/contract/coverage.c src/acquire.c src/runtime_identity.c src/base.c src/library.c src/cnet_dc_type.c src/cnet_swap.c src/memory/cnet_capsule.c \
+	src/serve/cnet_capsule_core.c src/serve/cnet_capsule_demand.c src/serve/cnet_core_cell.c src/serve/cnet_core_selector.c src/serve/cnet_cell_capsule.c src/serve/cnet_core_candidate.c src/serve/cnet_core_host.c src/serve/cnet_capsule_snapshot.c src/serve/cnet_capsule_store.c src/serve/cnet_capsule_evidence.c src/serve/cnet_capsule_table.c src/serve/cnet_learning_sandbox.c src/cce/cce_campaign_provenance.c src/serve/cnet_capsule_reuse.c src/memory/cnet_semantic_cortex.c src/memory/cnet_shared_workspace.c bin/libcce.a -lm -lpthread -lcurl  -pthread
+src/serve/cnet_capsule_demand.c:1: warning: "_GNU_SOURCE" redefined
+    1 | #define _GNU_SOURCE
+      | 
+<command-line>: note: this is the location of the previous definition
+src/serve/cnet_core_candidate.c:1: warning: "_GNU_SOURCE" redefined
+    1 | #define _GNU_SOURCE
+      | 
+<command-line>: note: this is the location of the previous definition
+In file included from /usr/include/features.h:502,
+                 from /usr/include/x86_64-linux-gnu/bits/libc-header-start.h:33,
+                 from /usr/include/stdlib.h:26,
+                 from ./include/cnet_platform.h:40,
+                 from <command-line>:
+In function ‘read’,
+    inlined from ‘cnet_capsule_table_read’ at src/serve/cnet_capsule_table.c:148:37:
+/usr/include/x86_64-linux-gnu/bits/unistd.h:28:10: warning: ‘__read_alias’ writing 9223372036854771714 or more bytes into a region of size 4097 overflows the destination [-Wstringop-overflow=]
+   28 |   return __glibc_fortify (read, __nbytes, sizeof (char),
+      |          ^~~~~~~~~~~~~~~
+src/serve/cnet_capsule_table.c: In function ‘cnet_capsule_table_read’:
+src/serve/cnet_capsule_table.c:147:10: note: at offset [0, 4095] into destination object ‘bytes’ of size 4097
+  147 |     char bytes[CNET_CAPSULE_TABLE_MAX_BYTES+1];size_t used=0,n=bad?0:(size_t)before.st_size;
+      |          ^~~~~
+/usr/include/x86_64-linux-gnu/bits/unistd-decl.h:29:16: note: in a call to function ‘__read_alias’ declared with attribute ‘access (write_only, 2, 3)’
+   29 | extern ssize_t __REDIRECT_FORTIFY (__read_alias, (int __fd, void *__buf,
+      |                ^~~~~~~~~~~~~~~~~~
+src/serve/cnet_learning_sandbox.c:1: warning: "_GNU_SOURCE" redefined
+    1 | #define _GNU_SOURCE
+      | 
+<command-line>: note: this is the location of the previous definition
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -Werror -o bin/cnet_table_capsule tools/cnet_table_capsule.c -Lbin -lcnet_capsule_core \
+	-Wl,-rpath,'$ORIGIN' -lm -lpthread -lcurl
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -D_GNU_SOURCE -Werror -Isrc/serve -o bin/cnet_table_verify tools/cnet_table_verify.c \
+	-Lbin -lcnet_capsule_core -Wl,-rpath,'$ORIGIN' -lm -lpthread -lcurl
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -D_GNU_SOURCE -Werror -Isrc/serve -o bin/cnet_learning_snapshot tools/cnet_learning_snapshot.c \
+	-Lbin -lcnet_capsule_core -Wl,-rpath,'$ORIGIN' -lm -lpthread -lcurl
+gcc -std=c11 -Wall -Wextra -pedantic -O3 -march=native -DCNET_HAVE_CURL=1 -D_DEFAULT_SOURCE -D_GNU_SOURCE -include include/cnet_platform.h -Iinclude -Iinclude/cce -D_GNU_SOURCE -Werror -Isrc/serve -o bin/cnet_capsulectl tools/cnet_capsulectl.c \
+	-Lbin -lcnet_capsule_core -Wl,-rpath,'$ORIGIN' -lm -lpthread -lcurl
+make: 'bin/libcnet_capsule_core.so' is up to date.
+gcc -std=c11 -Wall -Wextra -Werror -O2 -D_POSIX_C_SOURCE=200809L -Iinclude -include include/cnet_platform.h -D_DEFAULT_SOURCE -D_GNU_SOURCE -DCNET_HAVE_CURL=1 \
+	$(pkg-config --cflags libcurl) -o bin/cnetd \
+	src/roe/cnet_roe_asi.c src/roe/cnet_roe_net.c src/selfimprove/cnet_asi_improve.c src/cnet_domain_route.c src/serve/cnet_utterance.c \
+	src/serve/cnetd_protocol.c src/serve/cnet_capsule_control.c src/memory/cnet_query_alias.c \
+	src/memory/cnet_dialog_ctx.c src/cnet_slot_extract.c \
+	src/cnet_typed_en.c src/cnet_ffi_convert.c src/cnet_cert_solver.c \
+	src/cnet_roe_gold.c \
+	src/serve/cnet_showrunner.c src/serve/cnet_marble_live.c \
+	src/memory/cnet_md_memory.c src/serve/cnet_mcp_client.c src/serve/cnet_mcp_read_brick.c \
+	src/memory/cnet_chat_lookup.c src/memory/cnet_kb_recall.c src/memory/cnet_lookup.c \
+	src/cce/cce_campaign_provenance.c src/serve/cnet_c_speak.c \
+	src/cce/cce_wordlm.c src/cnet_skill_lane.c \
+	src/memory/cnet_capsule_loop.c src/serve/cnet_paragraph.c \
+	src/cnet_ood_skill.c src/cnet_held_model.c src/cnet_hemisphere.c \
+	src/cnet_brain_mirror.c src/cnet_rlm.c \
+	src/serve/cnet_core_serve.c src/cnet_live_miss.c \
+	src/memory/cnet_ember.c src/memory/cnet_ember_ckpt.c \
+	src/memory/cnet_ember_session.c src/memory/cnet_ember_steer.c \
+	tools/cnetd.c -lm -lcurl $(pkg-config --libs libcurl) -ldl \
+	-Lbin -lcnet_capsule_core -Wl,-rpath,'$ORIGIN'
+cnetd built -> bin/cnetd
+	Command being timed: "make -j4 bin/cnet_table_capsule bin/cnet_table_verify bin/cnet_learning_snapshot bin/cnet_capsulectl bin/cnetd bin/libcnet_capsule_core.so"
+	User time (seconds): 23.89
+	System time (seconds): 1.74
+	Percent of CPU this job got: 153%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:16.73
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 178188
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 2
+	Minor (reclaiming a frame) page faults: 1078146
+	Voluntary context switches: 1418
+	Involuntary context switches: 1735
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 37184
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

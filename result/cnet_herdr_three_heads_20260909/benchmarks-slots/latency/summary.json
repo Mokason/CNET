@@ -1,0 +1,308 @@
+{
+  "schema_version": 1,
+  "kind": "synthetic_warm_managed_parser",
+  "candidate_scope": "slots_third_candidate",
+  "input_sha256": "75a0f5d0697b4efd585ec530ddefbaa6a0e47c101b86d030ac99a66c40f04147",
+  "harness_assembly_sha256": "f4984e77cb3f3960e4b67a52184453b2fd569b95dff1736adb1ccdcc9eea4df4",
+  "parser_build_configuration": "Debug",
+  "harness_build_configuration": "Release",
+  "rebuilds_performed": 0,
+  "request_count": 128,
+  "warmup_calls_per_run": 8192,
+  "measured_calls_per_run": 32768,
+  "native_calls": 0,
+  "learning_events": 0,
+  "run_order": [
+    "baseline-slots-1.json",
+    "slots-1.json",
+    "baseline-slots-2.json",
+    "slots-2.json",
+    "baseline-slots-3.json",
+    "slots-3.json"
+  ],
+  "same_input_hash_all_current_and_prior_runs": true,
+  "stable_assembly_hash_within_each_cohort": true,
+  "frozen_binary_hashes_verified_before_and_after": true,
+  "aggregation": "Median and observed minimum/maximum of three per-run values; quantile samples are not pooled.",
+  "baseline": {
+    "source_commit": "5041f00e39bbaf903eca83f86c296b40cf084f79",
+    "assembly_sha256": "50c7dd24adec1024437320a6670f1e4e4ca2ca58f5f27fc7cef05338ff7a2568",
+    "run_count": 3,
+    "runs": [
+      "baseline-slots-1.json",
+      "baseline-slots-2.json",
+      "baseline-slots-3.json"
+    ],
+    "metrics": {
+      "p50_microseconds": {
+        "median": 15.99,
+        "min": 15.76,
+        "max": 16.051
+      },
+      "p95_microseconds": {
+        "median": 31.94,
+        "min": 31.54,
+        "max": 31.991
+      },
+      "p99_microseconds": {
+        "median": 40.837,
+        "min": 39.965,
+        "max": 40.867
+      },
+      "calls_per_second": {
+        "median": 62847.56951869863,
+        "min": 62800.269538266235,
+        "max": 63673.808530479306
+      },
+      "allocated_bytes_per_call": {
+        "median": 2653.6025390625,
+        "min": 2653.6025390625,
+        "max": 2653.6025390625
+      },
+      "gen0_collections": {
+        "median": 5,
+        "min": 5,
+        "max": 5
+      }
+    }
+  },
+  "slots": {
+    "source_commit": "8cefc80793116426df0d6bb780dfa36d43830194",
+    "assembly_sha256": "590d1ba2e46e6fafadb5d522253a3194ed8f6a5328d3f2f46494520c3941b213",
+    "run_count": 3,
+    "runs": [
+      "slots-1.json",
+      "slots-2.json",
+      "slots-3.json"
+    ],
+    "metrics": {
+      "p50_microseconds": {
+        "median": 11.782,
+        "min": 11.652,
+        "max": 11.832
+      },
+      "p95_microseconds": {
+        "median": 37.3,
+        "min": 37.059,
+        "max": 37.4
+      },
+      "p99_microseconds": {
+        "median": 46.277,
+        "min": 45.997,
+        "max": 46.327
+      },
+      "calls_per_second": {
+        "median": 64927.61525949548,
+        "min": 64623.80908523824,
+        "max": 65717.8676268706
+      },
+      "allocated_bytes_per_call": {
+        "median": 6417.05859375,
+        "min": 6417.05859375,
+        "max": 6417.05859375
+      },
+      "gen0_collections": {
+        "median": 12,
+        "min": 12,
+        "max": 12
+      }
+    }
+  },
+  "historical": {
+    "first_slice": {
+      "source_commit": "29a4091b9a2d52bd06f109f7a588adf11a470a2c",
+      "assembly_sha256": "cd0bbecef103ca6f0d97b3fddc6cf79babae3ba2ee00332516f534dfe048dbf2",
+      "run_count": 3,
+      "metrics": {
+        "p50_microseconds": {
+          "median": 11.732,
+          "min": 11.672,
+          "max": 11.932
+        },
+        "p95_microseconds": {
+          "median": 36.759,
+          "min": 36.619,
+          "max": 37.651
+        },
+        "p99_microseconds": {
+          "median": 46.508,
+          "min": 45.255,
+          "max": 50.094
+        },
+        "calls_per_second": {
+          "median": 63659.13764481784,
+          "min": 63202.17134022241,
+          "max": 63670.97526104361
+        },
+        "allocated_bytes_per_call": {
+          "median": 6373.7041015625,
+          "min": 6373.7041015625,
+          "max": 6373.7041015625
+        },
+        "gen0_collections": {
+          "median": 13,
+          "min": 13,
+          "max": 13
+        }
+      }
+    },
+    "vocabulary": {
+      "source_commit": "61d92cf078ff89443883d39fa13eb6427c51fd87",
+      "assembly_sha256": "d547e11d0ddc3a591f940f4432c23e0379c0380faec636b6f37b3460e66c967f",
+      "run_count": 3,
+      "metrics": {
+        "p50_microseconds": {
+          "median": 11.621,
+          "min": 11.471,
+          "max": 11.802
+        },
+        "p95_microseconds": {
+          "median": 37.561,
+          "min": 37.29,
+          "max": 37.852
+        },
+        "p99_microseconds": {
+          "median": 48.471,
+          "min": 48.081,
+          "max": 48.681
+        },
+        "calls_per_second": {
+          "median": 64595.52787150757,
+          "min": 64457.37036432341,
+          "max": 65596.69005764133
+        },
+        "allocated_bytes_per_call": {
+          "median": 6406.955078125,
+          "min": 6406.93359375,
+          "max": 6406.9697265625
+        },
+        "gen0_collections": {
+          "median": 12,
+          "min": 12,
+          "max": 12
+        }
+      }
+    },
+    "first_baseline": {
+      "source_commit": "5041f00e39bbaf903eca83f86c296b40cf084f79",
+      "assembly_sha256": "50c7dd24adec1024437320a6670f1e4e4ca2ca58f5f27fc7cef05338ff7a2568",
+      "run_count": 3,
+      "metrics": {
+        "p50_microseconds": {
+          "median": 10.87,
+          "min": 10.56,
+          "max": 20.449
+        },
+        "p95_microseconds": {
+          "median": 32.531,
+          "min": 32.32,
+          "max": 32.952
+        },
+        "p99_microseconds": {
+          "median": 41.268,
+          "min": 41.147,
+          "max": 41.878
+        },
+        "calls_per_second": {
+          "median": 65114.59138745865,
+          "min": 54063.962379612894,
+          "max": 65225.70826066237
+        },
+        "allocated_bytes_per_call": {
+          "median": 2653.6025390625,
+          "min": 2653.6025390625,
+          "max": 2653.6025390625
+        },
+        "gen0_collections": {
+          "median": 5,
+          "min": 5,
+          "max": 5
+        }
+      }
+    },
+    "vocabulary_baseline": {
+      "source_commit": "5041f00e39bbaf903eca83f86c296b40cf084f79",
+      "assembly_sha256": "50c7dd24adec1024437320a6670f1e4e4ca2ca58f5f27fc7cef05338ff7a2568",
+      "run_count": 3,
+      "metrics": {
+        "p50_microseconds": {
+          "median": 18.184,
+          "min": 11.411,
+          "max": 21.3
+        },
+        "p95_microseconds": {
+          "median": 32.391,
+          "min": 32.091,
+          "max": 33.042
+        },
+        "p99_microseconds": {
+          "median": 41.397,
+          "min": 41.348,
+          "max": 41.588
+        },
+        "calls_per_second": {
+          "median": 57936.79041001843,
+          "min": 49085.09211094357,
+          "max": 64795.837152210304
+        },
+        "allocated_bytes_per_call": {
+          "median": 2653.6025390625,
+          "min": 2653.6025390625,
+          "max": 2653.6025390625
+        },
+        "gen0_collections": {
+          "median": 5,
+          "min": 5,
+          "max": 5
+        }
+      }
+    }
+  },
+  "median_percent_changes": {
+    "vs_current_baseline": {
+      "p50_microseconds": -26.31644777986242,
+      "p95_microseconds": 16.781465247338744,
+      "p99_microseconds": 13.321252785464166,
+      "calls_per_second": 3.309667751237355,
+      "allocated_bytes_per_call": 141.82440660525987,
+      "gen0_collections": 140
+    },
+    "vs_historical_first_slice": {
+      "p50_microseconds": 0.4261847937265584,
+      "p95_microseconds": 1.471748415354046,
+      "p99_microseconds": -0.4966887417218624,
+      "calls_per_second": 1.9926088564928834,
+      "allocated_bytes_per_call": 0.680208737284671,
+      "gen0_collections": -7.692307692307687
+    },
+    "vs_historical_vocabulary": {
+      "p50_microseconds": 1.3854229412270769,
+      "p95_microseconds": -0.6948696786560626,
+      "p99_microseconds": -4.526417858100706,
+      "calls_per_second": 0.5141027543710042,
+      "allocated_bytes_per_call": 0.15769605845210588,
+      "gen0_collections": 0
+    },
+    "vs_historical_first_baseline": {
+      "p50_microseconds": 8.390064397424112,
+      "p95_microseconds": 14.659862900003073,
+      "p99_microseconds": 12.137733837355814,
+      "calls_per_second": -0.28714935313128853,
+      "allocated_bytes_per_call": 141.82440660525987,
+      "gen0_collections": 140
+    }
+  },
+  "allocation_ratio_slots_to_baseline": 2.4182440660525986,
+  "sanitization": "Reports contain only metrics, counts, hashes and scope notes; request contents and private corpus were not copied.",
+  "caveats": [
+    "per-call samples include delegate/timer overhead; throughput includes loop overhead; no startup or native work",
+    "Same existing request bytes and harness, with no source or artifact rebuilds. Native binaries ran only after the six latency processes completed.",
+    "Synthetic warm parser calls only; excludes startup, HTTP/server/native work, model calls, learning and language-quality accuracy.",
+    "Three runs per cohort, each measuring less than one second; observed ranges are not confidence intervals.",
+    "Same-binary baseline p50 median varies across sessions: 10.87, 18.184 and 15.99 microseconds. No clean speedup or significance claim.",
+    "First-slice and vocabulary comparisons use their earlier three-run sessions, not contemporaneous reruns of those candidates.",
+    "Allocation remains about 2.418 times baseline and above both earlier candidates; Gen0 counts are retained without treating them as a throughput guarantee.",
+    "Run metadata does not establish CPU affinity, frequency controls or host isolation.",
+    "These measurements do not establish language acceptance."
+  ]
+}

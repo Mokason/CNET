@@ -1,0 +1,26 @@
+{
+  "schema_version": 2,
+  "framing": "ASI = Artificial Specialized Intelligence; NOT AGI; NOT artificial superintelligence",
+  "symbols": 8, "coverage_rows_per_unit": 5,
+  "isolation_units_correct": 32, "isolation_units_total": 32,
+  "interference_answer_drift": 0, "interference_probes": 8,
+  "contract_replay_units": 8, "contract_replay_match": 8,
+  "corruption_rejected": 1, "incompatible_rejected": 1,
+  "ood_refused": 96, "ood_admitted": 160,
+  "pre_import_unservable": 8, "pre_import_total": 8, "post_import_served": 8,
+  "roundtrip_coverage_bit_identical": 8,
+  "unit_functions": "distinct permutations of 8 symbols", "pairwise_distinct": 1,
+  "contract_replay_note": "exhaustive replay of the certified exemplars = serialization fidelity, NOT held-out generalisation",
+  "trust_boundary": "local transfer object; unkeyed checksums detect accident, NOT forgery — no signing",
+  "timing_note": "lookup = cnb_get_unit materialise incl. CNU1 verify; serve = btn_forward only; mean of 200 reps, single run, no variance estimate",
+  "capsule_payload_bytes": 2583,
+  "composition": "withheld_planner_does_not_chain_disjoint_tags",
+  "semantic_intent_understanding": "WITHHELD_no_semantic_path_exercised",
+  "broad_intelligence": "WITHHELD",
+  "scales": [
+    {"n": 1, "units_in_base": 1, "build_ms": 23.08, "lookup_ms_per_unit": 0.0065, "serve_ms_per_query": 0.0001},
+    {"n": 8, "units_in_base": 8, "build_ms": 178.69, "lookup_ms_per_unit": 0.0062, "serve_ms_per_query": 0.0001},
+    {"n": 32, "units_in_base": 32, "build_ms": 702.55, "lookup_ms_per_unit": 0.0063, "serve_ms_per_query": 0.0001}
+  ],
+  "checks": 12, "failures": 0
+}

@@ -1,0 +1,18 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  CnetControlPlane -> /home/marble/AI/CNET-worktrees/herdr-language-20260909/.artifacts/herdr-vocabulary/bin/CnetControlPlane/debug/cnet-control.dll
+  CnetControlPlane.Tests -> /home/marble/AI/CNET-worktrees/herdr-language-20260909/.artifacts/herdr-vocabulary/bin/CnetControlPlane.Tests/debug/CnetControlPlane.Tests.dll
+Test run for /home/marble/AI/CNET-worktrees/herdr-language-20260909/.artifacts/herdr-vocabulary/bin/CnetControlPlane.Tests/debug/CnetControlPlane.Tests.dll (.NETCoreApp,Version=v8.0)
+A total of 1 test files matched the specified pattern.
+Data collection : Unable to find a datacollector with friendly name 'XPlat Code Coverage'.
+Data collection : Could not find data collector 'XPlat Code Coverage'
+[xUnit.net 00:00:02.34]     CnetControlPlane.Tests.LearningTaskParserTests.ParaphrasesProposeOnlyTypedInputs(text: "MAKE a UPPERCASE", kind: "upper", key: 97) [FAIL]
+  Failed CnetControlPlane.Tests.LearningTaskParserTests.ParaphrasesProposeOnlyTypedInputs(text: "MAKE a UPPERCASE", kind: "upper", key: 97) [< 1 ms]
+  Error Message:
+   TASK_GRAMMAR_RED MAKE a UPPERCASE: clarify
+  Stack Trace:
+     at CnetControlPlane.Tests.LearningTaskParserTests.ParaphrasesProposeOnlyTypedInputs(String text, String kind, Byte key) in /home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane.Tests/LearningTaskParserTests.cs:line 53
+   at InvokeStub_LearningTaskParserTests.ParaphrasesProposeOnlyTypedInputs(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+
+Failed!  - Failed:     1, Passed:  2256, Skipped:     0, Total:  2257, Duration: 1 m 24 s - CnetControlPlane.Tests.dll (net8.0)

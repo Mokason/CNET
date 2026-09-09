@@ -1,0 +1,48 @@
+{
+  "admitted_as_confirmation": false,
+  "bounds_ids": [],
+  "bytes": 23430,
+  "cases": 128,
+  "cnet_executed": false,
+  "draft_sha256": "720e1d8bdd6c6e0e7f5175cbd689c67fdb565f06aacc7f6d2a3baaabcc3b358d",
+  "family_count": 43,
+  "independent_label_review_complete": false,
+  "operation_counts": {
+    "lower": 40,
+    "none": 48,
+    "upper": 40
+  },
+  "overlap_ids": [
+    "h1_31",
+    "h2_25",
+    "h2_30",
+    "h4_23"
+  ],
+  "prior_collections": 12,
+  "prior_unique_texts": 1536,
+  "schema": 1,
+  "status_counts": {
+    "abstain": 24,
+    "clarify": 24,
+    "ready": 80
+  },
+  "strict_schema_error": "duplicate_case",
+  "structural_checks_passed": false,
+  "training_eligible": false,
+  "duplicate_ids": [
+    {
+      "id": "h4_11",
+      "duplicate_of": "h2_17"
+    }
+  ],
+  "unique_texts": 127,
+  "author": {
+    "agent": "Hermes",
+    "model": "grok-4.6",
+    "provider": "xai-oauth",
+    "batch_count": 4,
+    "cases_per_batch": 32
+  },
+  "draft_path": "/tmp/cnet-herdr-three-heads-PK7L3c/evaluator/confirmation-draft.json",
+  "rejected_at": "pre_admission_structure_and_overlap"
+}

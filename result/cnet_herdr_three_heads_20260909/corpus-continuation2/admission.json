@@ -1,0 +1,109 @@
+{
+  "schema": 1,
+  "admitted_as_confirmation": true,
+  "admitted_at_utc": "2026-09-09 13:12:51 UTC",
+  "frozen_at_utc": "2026-09-09 13:11:17 UTC",
+  "corpus_path": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation2/confirmation-frozen.json",
+  "corpus_sha256": "102f76da2de5ed7a93b6c97730736e95d254bf9fffd76a894483cf7c440b669b",
+  "bytes": 23616,
+  "file_mode": "0444",
+  "cases": 128,
+  "status_counts": {
+    "ready": 80,
+    "clarify": 24,
+    "abstain": 24
+  },
+  "ready_operation_counts": {
+    "upper": 40,
+    "lower": 40
+  },
+  "raw_family_count": 37,
+  "normalized_family_count": 21,
+  "distinct_ready_operation_input_pairs": 58,
+  "structural_checks_passed": true,
+  "independent_label_review_complete": true,
+  "independently_reviewed_final_rows": 128,
+  "final_review_fields_supplied": [
+    "id",
+    "text"
+  ],
+  "final_review_author_fields_withheld": [
+    "family",
+    "status",
+    "operation",
+    "key"
+  ],
+  "independent_label_mismatch_ids": [],
+  "unreviewed_final_ids": [],
+  "review_cycles": 2,
+  "review_findings_counts": [
+    5,
+    3
+  ],
+  "review_limitations_counts": [
+    9,
+    5
+  ],
+  "unresolved_substantive_findings": 0,
+  "review_stop_condition": "Second review returns only explicit contract misreads, one already reconciled, and documented nonblocking limitations. All 128 independently derived final labels match.",
+  "custodian_contract_review": {
+    "rows_checked": 128,
+    "original_input_keys_checked": 80,
+    "unresolved_label_findings": 0,
+    "non_ascii_ready_literal_rows_checked": 3,
+    "non_ascii_ready_literals_all_single_precomposed_latin1": true,
+    "source_or_candidate_outputs_inspected": false
+  },
+  "prior_overlap": {
+    "collections": 13,
+    "unique_texts": 1664,
+    "exact_overlap_ids": [],
+    "previous_frozen_population_sha256": "f47c14e717f414984fcbb1f472ddbf39460b5ef301a805f902af91bb74b59a57"
+  },
+  "duplicate_groups": [],
+  "punctuation_only_duplicate_groups": [],
+  "original_draft_preserved_sha256": "0e070ee1ae2caf0f767ec90cb358c466a847151603627139c20938580271a2d8",
+  "original_floors": {
+    "wrong_ready_max": 0,
+    "ready_exact_min": 72,
+    "ready_denominator": 80,
+    "upper_exact_min": 34,
+    "upper_denominator": 40,
+    "lower_exact_min": 34,
+    "lower_denominator": 40,
+    "clarify_exact_min": 22,
+    "clarify_denominator": 24,
+    "abstain_exact_min": 23,
+    "abstain_denominator": 24,
+    "nonready_executable_fields_max": 0,
+    "declared_families_min": 8
+  },
+  "cnet_scoring_runs": 0,
+  "scoring_count_scope": "This new population at admission; earlier scored populations remain separate.",
+  "candidate_freeze_required_before_scoring": true,
+  "confirmation_scoring_limit": 1,
+  "all_scored_rows_must_be_retained": true,
+  "prior_scored_population_unchanged": true,
+  "synthetic": true,
+  "training_eligible": false,
+  "iid_claimed": false,
+  "unbiased_sequential_stopping_claimed": false,
+  "limitations": [
+    "Synthetic contract-only authoring is not a third-party human or real-user benchmark.",
+    "Batches share one author model and correlated templates; repeated operation/input pairs are retained.",
+    "Raw family names contain aliases and are normalized separately for reporting.",
+    "Surrogate, overlength, merely-quoted-instruction and named-only character-guessing boundaries are not directly exercised.",
+    "Proposal scores do not establish native execution coverage or output correctness.",
+    "First review retained family hints; final full review withheld family/status/operation/key.",
+    "All previous failures and failed requests remain; no scored row was dropped, repaired, relabeled or rescored here."
+  ],
+  "evidence_files": [
+    "protocol.md",
+    "origin.json",
+    "structural-checks.json",
+    "label-checks.json",
+    "family-counts.json",
+    "review-reconciliation.md",
+    "review-cycle-2-dispositions.json"
+  ]
+}

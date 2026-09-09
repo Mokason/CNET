@@ -1,0 +1,27 @@
+== knowledge accumulation bench (ASI = Artificial Specialized Intelligence; NOT AGI) ==
+  corruption reject_reason=payload_integrity_mismatch
+  incompatible reject_reason=payload_integrity_mismatch
+  isolation: every unit individually correct                   PASS
+  interference: baseline answers captured at N=1               PASS
+  interference: unit 0 answers identical after 31 later adds   PASS
+  round-trip: contract replay identical after transfer         PASS
+  negative control: corrupted capsule rejected                 PASS
+  negative control: truncated payload rejected                 PASS
+  OOD: uncovered inputs refused                                PASS
+  OOD: covered inputs admitted                                 PASS
+  distinctness: all 32 unit functions differ pairwise          PASS
+  round-trip: coverage rows+targets+tags bit-identical to source PASS
+  pre-import: same queries unservable on the fresh target      PASS
+  post-import: same queries served after transfer              PASS
+
+  N      units    build_ms     lookup_ms(materialise) serve_ms/query
+  1      1        22.91        0.0063                 0.00014
+  8      8        185.83       0.0063                 0.00016
+  32     32       712.49       0.0063                 0.00013
+
+  capsule_payload_bytes=2583  composition=WITHHELD (planner does not chain disjoint tags)
+  contract replay = serialization fidelity, NOT generalisation
+  semantic_intent=WITHHELD  broad_intelligence=WITHHELD
+
+checks=12 failures=0
+KNOWLEDGE_ACCUMULATION_BENCH_PASS units=32 distinct=1 isolation=32/32 replay=8/8 cov_exact=8 pre_unservable=8/8 ood_refused=96 json=logs/knowledge_accumulation_bench.json

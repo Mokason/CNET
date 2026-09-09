@@ -1,0 +1,147 @@
+{
+  "schema_version": 1,
+  "kind": "native_fixture_gates",
+  "source_commit": "29a4091b9a2d52bd06f109f7a588adf11a470a2c",
+  "execution": {
+    "sequence": [
+      "knowledge_accumulation_bench",
+      "knowledge_composition_bench",
+      "knowledge_capsule",
+      "coverage_abstain"
+    ],
+    "make_jobs": 4,
+    "timeout_seconds_per_gate": 1200,
+    "gpu_execution": false,
+    "provider_calls": 0
+  },
+  "gates": [
+    {
+      "target": "knowledge_accumulation_bench",
+      "checks": 12,
+      "failures": 0,
+      "exit_status": 0,
+      "build_and_gate_elapsed_seconds": 8.17,
+      "user_seconds": 7.64,
+      "system_seconds": 0.52,
+      "max_rss_kib": 93392,
+      "binary_sha256": "1bc705cdf6887133d1c92fd10a3e09783bb48c8f0b021dcaa0a35849bf0a46d5",
+      "pass_marker": "KNOWLEDGE_ACCUMULATION_BENCH_PASS units=32 distinct=1 isolation=32/32 replay=8/8 cov_exact=8 pre_unservable=8/8 ood_refused=96 json=logs/knowledge_accumulation_bench.json",
+      "metrics": {
+        "isolated_units_correct": 32,
+        "isolated_units_total": 32,
+        "interference_probes": 8,
+        "interference_answer_drift": 0,
+        "contract_replay_match": 8,
+        "contract_replay_units": 8,
+        "ood_refused": 96,
+        "covered_admitted": 160,
+        "pre_import_unservable": 8,
+        "pre_import_total": 8,
+        "post_import_served": 8,
+        "coverage_roundtrip_bit_identical": 8,
+        "capsule_payload_bytes": 2583,
+        "scales": [
+          {
+            "units": 1,
+            "build_ms": 24.59,
+            "lookup_ms_per_unit": 0.007,
+            "forward_ms_per_query": 0.00013
+          },
+          {
+            "units": 8,
+            "build_ms": 180.33,
+            "lookup_ms_per_unit": 0.0062,
+            "forward_ms_per_query": 0.00013
+          },
+          {
+            "units": 32,
+            "build_ms": 724.37,
+            "lookup_ms_per_unit": 0.0064,
+            "forward_ms_per_query": 0.00013
+          }
+        ]
+      }
+    },
+    {
+      "target": "knowledge_composition_bench",
+      "checks": 74,
+      "failures": 0,
+      "exit_status": 0,
+      "build_and_gate_elapsed_seconds": 8.53,
+      "user_seconds": 8,
+      "system_seconds": 0.52,
+      "max_rss_kib": 91924,
+      "binary_sha256": "edc9ee30d8774eb5f743b76e051b7694b15f93adc1fd92a72ce57e300e03f1d3",
+      "pass_marker": "KNOWLEDGE_COMPOSITION_BENCH_PASS members=3 hops_guarded=every refusals=root+intermediate",
+      "metrics": {
+        "certified_members": 3,
+        "covered_compositions_correct": 14,
+        "covered_compositions_total": 14,
+        "guarded_hops": "every",
+        "refusals": [
+          "root",
+          "intermediate"
+        ]
+      }
+    },
+    {
+      "target": "knowledge_capsule",
+      "checks": 94,
+      "failures": 0,
+      "exit_status": 0,
+      "build_and_gate_elapsed_seconds": 7.53,
+      "user_seconds": 7.02,
+      "system_seconds": 0.51,
+      "max_rss_kib": 92136,
+      "binary_sha256": "245c5925387ead805ea221c4d52d5e66fa807cc987a9e7f69f627653db2201ee",
+      "pass_marker": "KNOWLEDGE_CAPSULE_PASS checks=94 coverage_rows=5",
+      "metrics": {
+        "coverage_rows": 5,
+        "contract_exemplars_replayed": 8,
+        "foreign_version_refused": true
+      }
+    },
+    {
+      "target": "coverage_abstain",
+      "checks": 55,
+      "failures": 0,
+      "exit_status": 0,
+      "build_and_gate_elapsed_seconds": 7.13,
+      "user_seconds": 6.62,
+      "system_seconds": 0.5,
+      "max_rss_kib": 92372,
+      "binary_sha256": "b16a57280fdf8d95c0305f9c0f02e90296442377ad1b6736dd52782eee701e7c",
+      "pass_marker": "COVERAGE_ABSTAIN_PASS checks=55 heldout_correct=4/4 was=0/4",
+      "metrics": {
+        "fixture_domain_rows": 16,
+        "certified_rows": 12,
+        "heldout_rows": 4,
+        "heldout_correct_with_gate": 4,
+        "heldout_correct_gate_disabled": 0,
+        "external_teacher_calls": 0
+      }
+    }
+  ],
+  "compiler_warnings_in_four_gate_runs": 0,
+  "expected_runtime_diagnostics": "Coverage negative controls deliberately disable the guard, remove coverage, attempt unsupported RAW mining, and saturate coverage storage.",
+  "prerequisites": {
+    "source_commit": "5041f00e39bbaf903eca83f86c296b40cf084f79",
+    "build_elapsed_seconds": 16.73,
+    "exit_status": 0,
+    "log": "prerequisites-build.log",
+    "log_sha256": "bb56947a9409f8988f3dbce5c7384b028df8596e2001b75f195f66ab29060160",
+    "warnings": [
+      "Existing _GNU_SOURCE redefinition warnings",
+      "Existing cnet_capsule_table.c:148 stringop-overflow warning"
+    ]
+  },
+  "caveats": [
+    "Native fixture success does not establish language acceptance; the first candidate failed the separate unchanged quality floors.",
+    "Elapsed seconds include compilation and fixture execution, not pure request latency.",
+    "Accumulation lookup includes materialization and CNU1 verification; forward timing covers btn_forward only, averaged over 200 repetitions in one run without variance estimates.",
+    "Forward timings use the more precise human log (0.00013 ms); the original JSON rounds to 0.0001 ms.",
+    "Portable replay measures serialization fidelity on certified exemplars, not generalization.",
+    "Accumulation's incompatible_rejected field describes truncated-payload integrity refusal; the capsule gate separately verifies an incompatible version.",
+    "Coverage heldouts are four public synthetic native fixture rows using a local addmod callback, separate from the language confirmation corpus."
+  ]
+}

@@ -1,0 +1,83 @@
+{
+  "schema": 1,
+  "admitted_as_confirmation": true,
+  "admitted_at_utc": "2026-09-09 12:23:54 UTC",
+  "frozen_at_utc": "2026-09-09 12:21:22 UTC",
+  "corpus_path": "/tmp/cnet-herdr-three-heads-PK7L3c/evaluator/confirmation-frozen.json",
+  "corpus_sha256": "f47c14e717f414984fcbb1f472ddbf39460b5ef301a805f902af91bb74b59a57",
+  "bytes": 23746,
+  "file_mode": "0444",
+  "cases": 128,
+  "status_counts": {
+    "ready": 80,
+    "clarify": 24,
+    "abstain": 24
+  },
+  "ready_operation_counts": {
+    "upper": 40,
+    "lower": 40
+  },
+  "raw_family_count": 43,
+  "normalized_family_count": 23,
+  "structural_checks_passed": true,
+  "independent_label_review_complete": true,
+  "independently_reviewed_final_rows": 128,
+  "independent_label_mismatch_ids": [],
+  "unreviewed_final_ids": [],
+  "review_cycles": 2,
+  "review_findings_counts": [
+    18,
+    7
+  ],
+  "unresolved_substantive_findings": 0,
+  "review_stop_condition": "Only contract misreads and already-considered reporting or benchmark limitations remain; every final label has independent derivation.",
+  "custodian_contract_review": {
+    "rows_checked": 128,
+    "original_input_keys_checked": 80,
+    "unresolved_label_findings": 0,
+    "source_or_candidate_outputs_inspected": false
+  },
+  "prior_overlap": {
+    "collections": 12,
+    "unique_texts": 1536,
+    "exact_overlap_ids": []
+  },
+  "original_draft_preserved_sha256": "720e1d8bdd6c6e0e7f5175cbd689c67fdb565f06aacc7f6d2a3baaabcc3b358d",
+  "original_floors": {
+    "wrong_ready_max": 0,
+    "ready_exact_min": 72,
+    "ready_denominator": 80,
+    "upper_exact_min": 34,
+    "upper_denominator": 40,
+    "lower_exact_min": 34,
+    "lower_denominator": 40,
+    "clarify_exact_min": 22,
+    "clarify_denominator": 24,
+    "abstain_exact_min": 23,
+    "abstain_denominator": 24,
+    "nonready_executable_fields_max": 0,
+    "declared_families_min": 8
+  },
+  "cnet_scoring_runs": 0,
+  "candidate_freeze_required_before_scoring": true,
+  "confirmation_scoring_limit": 1,
+  "all_scored_rows_must_be_retained": true,
+  "synthetic": true,
+  "training_eligible": false,
+  "limitations": [
+    "Not IID, third-party human evaluation or proof of real-user quality.",
+    "Four original batches share author/model and repeated operation/input pairs.",
+    "Raw family aliases are normalized for reporting; 43 raw names do not imply 43 mechanisms.",
+    "Surrogate, overlength, merely-quoted-instruction and named-only character guessing boundaries are not directly exercised.",
+    "All original eleven scored confirmation failures remain; draft rejection/repair is not a CNET quality score."
+  ],
+  "evidence_files": [
+    "protocol.md",
+    "origin.json",
+    "structural-checks.json",
+    "label-checks.json",
+    "family-counts.json",
+    "review-reconciliation.md",
+    "review-cycle-2-dispositions.json"
+  ]
+}

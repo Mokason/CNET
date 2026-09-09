@@ -1,0 +1,65 @@
+personal_ai: WARNING CNET_COVERAGE_ABSTAIN=0 — mined units may answer outside their certified domain
+personal_ai: ERROR coverage does not bind 1 of 1 mined unit(s) — refusing to serve them until a re-mine restores the guard (fail-closed)
+hybrid: refusing to mine port family 0 (tag='raw_mine_in') — coverage cannot be enforced for it
+hybrid: coverage table full (64 shapes) — refusing to mine an ungated unit
+== coverage-gated abstention: refuse outside the certified domain ==
+  no coverage record => default-allow (existing units untouched) PASS
+  no rows recorded yet                                           PASS
+  capture 12/16, mine, replay (gate ON)                          PASS
+  coverage recorded = the 12 rows the contract certified         PASS
+  captured input is inside certified coverage                    PASS
+  unseen input is outside certified coverage                     PASS
+  no held-out input answered from own weights                    PASS
+  all 4 held-out inputs hit the coverage abstain                 PASS
+  teacher answered every declined request (not dropped)          PASS
+  held-out answers are CORRECT (was 0/4 before S6)               PASS
+  in-coverage traffic still served locally                       PASS
+  totals record the coverage refusals                            PASS
+  same run with CNET_COVERAGE_ABSTAIN=0                          PASS
+  gate disabled => no coverage abstains                          PASS
+  gate disabled => unit answers all held-out itself              PASS
+  gate disabled => every held-out answer is WRONG again          PASS
+      ^ this is the S3/E2 regression reproduced on demand:
+        without the gate the unit displaces a correct teacher
+        answer with a confident wrong one.
+  S8: capture 12/16, mine — product seals+checkpoints          PASS
+  S7: gate holds in the original process                         PASS
+  S7: coverage persisted beside the base                         PASS
+  S7: sidecar carries the current versioned header               PASS
+  S7: reopen base without re-mining                              PASS
+  S8: mined unit itself restored from the CNB (no hand-seal)     PASS
+  S7: 12 certified rows restored from disk                       PASS
+  S7: still no held-out input answered from own weights          PASS
+  S7: coverage abstains survive the restart                      PASS
+  S7: teacher still answers the declined requests                PASS
+  S7: held-out still CORRECT 4/4 after restart                   PASS
+  S7: in-coverage traffic still served locally after restart     PASS
+  S7: second reopen                                              PASS
+  S7: restored rows match bit-exactly (%.17g round-trip)         PASS
+  A2: remove sidecar only                                        PASS
+  A2: reopen with mined unit but no coverage file                PASS
+  A2: mined unit refused, not default-allowed                    PASS
+  A2: refusals recorded as coverage abstains                     PASS
+  A2: teacher answers every request instead                      PASS
+  A2: answers still CORRECT (was 0/4 before fail-closed)         PASS
+  A2: even in-coverage traffic refused while the guard is lost   PASS
+  A3: open                                                       PASS
+  A3: RAW traffic traced                                         PASS
+  A3: RAW mine REFUSED (ungateable family)                       PASS
+  A3: no RAW unit sealed                                         PASS
+  atomic: record one shape                                       PASS
+  atomic: save succeeds                                          PASS
+  atomic: no .tmp left behind (renamed, not truncated)           PASS
+  atomic: unwritable path reports failure                        PASS
+  atomic: previous good file still intact                        PASS
+  full: open                                                     PASS
+  full: coverage table saturated                                 PASS
+  full: mine REFUSED rather than admit an ungated unit           PASS
+  full: no ungated unit was sealed                               PASS
+  moe: capture 12/16 and mine                                    PASS
+  moe: in-coverage still served by the expert                    PASS
+  moe: out-of-coverage refused at the hard-expert door           PASS
+  coverage can be recorded for a RAW port                        PASS
+  RAW inputs stay ungated — exact match is meaningless there   PASS
+checks=55 failures=0
+COVERAGE_ABSTAIN_PASS checks=55 heldout_correct=4/4 was=0/4

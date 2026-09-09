@@ -1,0 +1,91 @@
+{
+  "schema": 1,
+  "experiment": "cnet_herdr_three_heads_20260909",
+  "continuation": 4,
+  "status": "blocked",
+  "recorded_at_utc": "2026-09-09 14:10:37 UTC",
+  "admitted_as_confirmation": false,
+  "blocker_code": "required_author_batch_exhausted_single_transport_retry",
+  "reason": "Batch 4's initial request and its one permitted identical-prompt retry both exited 124 at the unchanged 180-second outer timeout, with empty corpus responses. A complete 128-row population cannot be obtained under the exhausted batch bound.",
+  "missing_batch": 4,
+  "missing_rows": 32,
+  "available_rows": 96,
+  "available_complete_batches": 3,
+  "required_rows": 128,
+  "available_material_is_unadmitted": true,
+  "author_invocations": 7,
+  "successful_author_invocations": 3,
+  "timed_out_author_invocations": 4,
+  "allowed_transport_retries_per_failed_batch": 1,
+  "actual_transport_retries_by_batch": {
+    "batch1": 1,
+    "batch3": 1,
+    "batch4": 1
+  },
+  "author_backend": {
+    "model": "grok-4.6",
+    "provider": "xai-oauth",
+    "safe_mode": true,
+    "toolsets": [
+      "clarify"
+    ],
+    "max_turns": 1,
+    "run_budget_seconds": 150,
+    "outer_timeout_seconds": 180,
+    "stream_guard_seconds": 120,
+    "api_guard_seconds": 150,
+    "kill_grace_seconds": 10
+  },
+  "claude_review_invocations": 0,
+  "independent_label_review_complete": false,
+  "full_population_structural_and_overlap_checks_complete": false,
+  "corpus_frozen": false,
+  "admission_receipt_created": false,
+  "partial_population_admitted": false,
+  "original_quotas": {
+    "ready": 80,
+    "upper": 40,
+    "lower": 40,
+    "clarify": 24,
+    "abstain": 24
+  },
+  "original_floors": {
+    "maximum_wrong_ready": 0,
+    "minimum_exact_ready": 72,
+    "ready_denominator": 80,
+    "minimum_exact_upper": 34,
+    "upper_denominator": 40,
+    "minimum_exact_lower": 34,
+    "lower_denominator": 40,
+    "minimum_exact_clarify": 22,
+    "clarify_denominator": 24,
+    "minimum_exact_abstain": 23,
+    "abstain_denominator": 24,
+    "minimum_named_families": 8,
+    "nonready_executable_fields_allowed": false
+  },
+  "expected_prior_overlap_collections": 15,
+  "expected_prior_texts": 1920,
+  "no_claim_of_prior_overlap_pass": true,
+  "private_root": "/tmp/cnet-herdr-three-heads-PK7L3c/continuation4/private",
+  "evidence": [
+    {
+      "path": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/result/cnet_herdr_three_heads_20260909/corpus-continuation4/protocol.md",
+      "sha256": "dd2f64b6866eaf318fcc59ce3a77b95c708d7cdef318b1d8c3feb00d5e5f9798"
+    },
+    {
+      "path": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/result/cnet_herdr_three_heads_20260909/corpus-continuation4/origin.json",
+      "sha256": "ab1f61a60d96d4e6ec8adb3e1443a44d67886fd38e66708ba5a27aacbfef5353"
+    }
+  ],
+  "all_raw_attempts_and_failures_retained": true,
+  "candidate_source_or_outputs_inspected": false,
+  "cnet_score_runs_by_custodian": 0,
+  "native_executions_by_custodian": 0,
+  "credential_configuration_provider_or_tool_scope_changes": false,
+  "prior_evidence_unchanged": true,
+  "training_eligible": false,
+  "cost_disclaimer": "No verified actual-spend claim. Hermes completion metadata reports unknown cost for successes and lacks billing metadata for timeouts; absent completion counters do not prove no provider request or charge.",
+  "required_next_direction": "No additional author invocation is authorized within the exhausted batch bound. Coordinator/user must provide new direction or external-state change before any further authoring attempt; do not silently replace, reuse, or score this incomplete population.",
+  "integrity_note": "Metadata receipt and evidence are SHA-256 bound and set read-only; no filesystem-immutability claim."
+}

@@ -1,0 +1,251 @@
+{
+  "schema": 1,
+  "raw_family_count": 38,
+  "normalized_family_count": 22,
+  "raw_counts": [
+    {
+      "family": "ambiguous_dir",
+      "count": 1
+    },
+    {
+      "family": "bare_letter",
+      "count": 18
+    },
+    {
+      "family": "bare_number",
+      "count": 2
+    },
+    {
+      "family": "bare_numeral",
+      "count": 1
+    },
+    {
+      "family": "bare_numeric",
+      "count": 1
+    },
+    {
+      "family": "bare_punct",
+      "count": 3
+    },
+    {
+      "family": "broken_quote",
+      "count": 4
+    },
+    {
+      "family": "compound",
+      "count": 4
+    },
+    {
+      "family": "control_cp",
+      "count": 1
+    },
+    {
+      "family": "control_enc",
+      "count": 1
+    },
+    {
+      "family": "control_hex",
+      "count": 2
+    },
+    {
+      "family": "dec_codepoint",
+      "count": 2
+    },
+    {
+      "family": "decimal_codepoint",
+      "count": 2
+    },
+    {
+      "family": "decimal_cp",
+      "count": 5
+    },
+    {
+      "family": "either_or",
+      "count": 1
+    },
+    {
+      "family": "full_string",
+      "count": 2
+    },
+    {
+      "family": "hex_0x",
+      "count": 10
+    },
+    {
+      "family": "hex_u_plus",
+      "count": 3
+    },
+    {
+      "family": "locale",
+      "count": 2
+    },
+    {
+      "family": "locale_case",
+      "count": 1
+    },
+    {
+      "family": "missing_dir",
+      "count": 1
+    },
+    {
+      "family": "missing_input",
+      "count": 4
+    },
+    {
+      "family": "multi_operand",
+      "count": 4
+    },
+    {
+      "family": "negated",
+      "count": 4
+    },
+    {
+      "family": "non_latin1",
+      "count": 1
+    },
+    {
+      "family": "quoted",
+      "count": 1
+    },
+    {
+      "family": "quoted_char",
+      "count": 2
+    },
+    {
+      "family": "quoted_digit",
+      "count": 8
+    },
+    {
+      "family": "quoted_instr",
+      "count": 1
+    },
+    {
+      "family": "quoted_instruction",
+      "count": 1
+    },
+    {
+      "family": "quoted_letter",
+      "count": 6
+    },
+    {
+      "family": "quoted_punct",
+      "count": 8
+    },
+    {
+      "family": "quoted_space",
+      "count": 6
+    },
+    {
+      "family": "spoken",
+      "count": 2
+    },
+    {
+      "family": "u_plus",
+      "count": 7
+    },
+    {
+      "family": "undirected",
+      "count": 2
+    },
+    {
+      "family": "unrelated",
+      "count": 2
+    },
+    {
+      "family": "wordspan",
+      "count": 2
+    }
+  ],
+  "normalized_counts": [
+    {
+      "family": "bare_letter",
+      "count": 20
+    },
+    {
+      "family": "bare_number",
+      "count": 4
+    },
+    {
+      "family": "bare_punct",
+      "count": 3
+    },
+    {
+      "family": "broken_quote",
+      "count": 4
+    },
+    {
+      "family": "compound",
+      "count": 4
+    },
+    {
+      "family": "decimal_codepoint",
+      "count": 9
+    },
+    {
+      "family": "encoded_control",
+      "count": 4
+    },
+    {
+      "family": "full_string",
+      "count": 4
+    },
+    {
+      "family": "hex_0x",
+      "count": 10
+    },
+    {
+      "family": "hex_u_plus",
+      "count": 10
+    },
+    {
+      "family": "locale",
+      "count": 3
+    },
+    {
+      "family": "missing_direction",
+      "count": 4
+    },
+    {
+      "family": "missing_input",
+      "count": 4
+    },
+    {
+      "family": "multi_operand",
+      "count": 5
+    },
+    {
+      "family": "negated",
+      "count": 4
+    },
+    {
+      "family": "non_latin1",
+      "count": 1
+    },
+    {
+      "family": "quoted_digit",
+      "count": 8
+    },
+    {
+      "family": "quoted_instruction",
+      "count": 2
+    },
+    {
+      "family": "quoted_letter",
+      "count": 9
+    },
+    {
+      "family": "quoted_punct",
+      "count": 8
+    },
+    {
+      "family": "quoted_space",
+      "count": 6
+    },
+    {
+      "family": "unrelated",
+      "count": 2
+    }
+  ],
+  "distinct_ready_operation_input_pairs": 58,
+  "interpretation": "Metadata alias normalization only; raw corpus unchanged. Family counts do not establish independent mechanisms, template independence or exhaustive coverage."
+}

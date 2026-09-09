@@ -1,14 +1,53 @@
 # Current CNET work plan
 
-## Active: close fresh task-language acceptance
+## Current: parser checkpoint publication; language acceptance withheld
+
+The user has now explicitly requested publication to `origin/master`. Publish
+the isolated Herdr source, tests and reviewed evidence only; leave the primary
+dirty worktree and live services untouched. This supersedes the earlier
+no-automatic-push constraint for this checkpoint, not the deployment limits.
+
+The verb-composition fix now includes gerunds, explicit two-clause ownership,
+missing clarification constructions and refusal of a leading transformation
+followed by another conversion. The 72-test verb suite passed independently.
+The full push-time regression result is recorded in the dated evidence bundle.
+
+Fresh acceptance remains WITHHELD: the third scored confirmation failed at
+68/80 ready, 20/24 clarify, 24/24 abstain, zero wrong ready. The fourth draft
+stopped at its retry bound with only 96/128 unadmitted rows; no score exists.
+Further model calls require new direction. A learned intent proposer remains
+separate work; these grammar changes are not learned language understanding.
+
+## Historical: cross-model Herdr vocabulary continuation
+
+The constituent slice is committed locally as `29a4091`, with 2,210 passing
+regressions, 34 evaluator integrity tests and four native capsule gates. Its
+single admitted Hermes confirmation failed: 61/80 ready, 16/24 clarify,
+23/24 abstain and zero wrong ready. That complete population is now exposed.
+The twelfth first-blind quality failure is retained, not overwritten by repairs.
+
+The next distinct test-first component slice extends shared case verbs, explicit
+input descriptions and unresolved roles. An isolated custodian is preparing
+another contract-only population with Grok authoring and blind Claude review;
+the implementer cannot read it before candidate freeze. Benchmarks of each
+candidate remain separate; every original acceptance floor remains unchanged.
+
+The user approved Hermes/Grok 4.6 + Claude Code + GPT-6-Astra. Follow
+[the bounded three-seat plan](../plans/cnet_herdr_three_heads_20260909.md).
+The nested sandbox is unchanged; outer-workspace patch/test execution recovered
+the earlier blocked implementation. Original acceptance remains open.
+No new learning source, GPU fitting, live mutation or automatic push is authorized.
+Only bounded authoring/review work is running alongside local qualification.
+
+## Remaining: close fresh task-language acceptance
 
 Follow [the acceptance follow-up](../plans/cnet_paraphrase_acceptance_followup_20260909.md):
 test-first shared grammar repair, independently authored new confirmation,
-native replay and pinned candidate freeze. The shared input-binding parser now
-passes 1,861 regressions, but round11 still failed: 52/80 ready and 16/24 clarify,
-with 24/24 abstain and zero wrong ready. All twelve existing collections are
+native replay and pinned candidate freeze. The pre-Herdr input-binding parser
+passed 1,861 regressions, but round11 failed: 52/80 ready and 16/24 clarify,
+with 24/24 abstain and zero wrong ready. Those twelve collections are
 exposed. Component reuse did not establish fresh-language coverage; no reliable
-completion ETA follows from the eleven failed confirmations. Further work must
+completion ETA follows from repeated failed confirmations. Further work must
 demonstrate useful unseen-request generalization under a newly frozen set.
 Continue until the original floors
 are met without treating exposed data as fresh evidence. Retain every failed

@@ -1,5 +1,40 @@
 # Current CNET checklist
 
+## Active: Herdr three-seat improvement
+
+- [x] Outer-workspace RED/green constituent parsing and policy-boundary test
+- [x] First candidate full regressions, bounded independent review and benchmarks
+
+- [x] Verify bounded Astra, Claude and Hermes/Grok runs and actual outputs
+- [x] Reconcile independent architecture findings into one falsifiable slice
+- [x] Validate and independently review the first contract-only sealed confirmation
+- [x] Execute first RED/green implementation and regressions; independently review
+- [x] Freeze first candidate and score once under every unchanged acceptance floor
+- [x] Qualify the next vocabulary/explicit-input component slice
+- [x] Freeze and score the independently authored second confirmation once
+- [x] Qualify the explicit-input/clarification slot extension
+- [x] Freeze and score a third independently authored confirmation once (failed)
+- [x] Repair verb composition and leading-transformation refusal; 72 verb tests pass
+- [x] Retain fourth draft's exhausted-retry blocker; no partial admission or score
+- [ ] Demonstrate acceptance on a new admitted population under unchanged floors
+- [x] Retain first-pass outputs and failures without automatic push
+
+Authority, ownership and limits: [three-seat plan](../plans/cnet_herdr_three_heads_20260909.md).
+The outer workspace recovered the initial nested sandbox/build blocker.
+First constituent candidate `29a4091`: 2,210 regressions, 34 evaluator tests and
+four native gates passed. Its admitted single confirmation failed: 61/80 ready,
+16/24 clarify, 23/24 abstain, zero wrong ready (100/128 exact). All rows and
+earlier draft rejection/review history remain retained. Vocabulary candidate
+`61d92cf` passed 2,263 regressions, 34 evaluator tests, a clean second boundary
+review and final benchmarks. Its one confirmation passed ready, per-operation,
+abstention and zero-wrong-ready gates but failed clarification (19/24, floor22).
+That population is exposed. Slot candidate `8cefc80` passes 2,314 regressions,
+34 evaluator tests and final scoped review. Its third independent population
+failed: 68/80 ready, 20/24 clarify, 24/24 abstain, zero wrong ready. All 128 rows
+are now exposed. Fourth-draft authoring exhausted its retry bound at 96/128
+unadmitted rows. Acceptance remains WITHHELD. The user subsequently authorized
+publishing the parser checkpoint to origin/master, not deployment or training.
+
 ## Active: fresh language acceptance follow-up
 
 - [x] Shared two-clause input binding and request parsing, with cross-product/mutation tests

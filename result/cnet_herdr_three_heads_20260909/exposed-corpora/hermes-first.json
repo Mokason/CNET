@@ -1,0 +1,1030 @@
+{
+  "schema": 1,
+  "name": "confirmation",
+  "cases": [
+    {
+      "id": "h1_01",
+      "family": "bare_letter",
+      "text": "Could you make q uppercase?",
+      "status": "ready",
+      "operation": "upper",
+      "key": 113
+    },
+    {
+      "id": "h1_02",
+      "family": "quoted_digit",
+      "text": "I want the digit '4' converted to uppercase.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 52
+    },
+    {
+      "id": "h1_03",
+      "family": "quoted_punct",
+      "text": "Convert the hyphen '-' to uppercase.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 45
+    },
+    {
+      "id": "h1_04",
+      "family": "u_plus",
+      "text": "Please apply uppercase to U+00E4.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 228
+    },
+    {
+      "id": "h1_05",
+      "family": "decimal_cp",
+      "text": "Take decimal codepoint 250 and put it in uppercase.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 250
+    },
+    {
+      "id": "h1_06",
+      "family": "hex_0x",
+      "text": "Make 0x7E uppercase.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 126
+    },
+    {
+      "id": "h1_07",
+      "family": "quoted_space",
+      "text": "Map ' ' to uppercase.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 32
+    },
+    {
+      "id": "h1_08",
+      "family": "paraphrase",
+      "text": "I need the capital letter corresponding to v.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 118
+    },
+    {
+      "id": "h1_09",
+      "family": "synonym",
+      "text": "Capitalize the letter j.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 106
+    },
+    {
+      "id": "h1_10",
+      "family": "quoted_char",
+      "text": "Put 'H' into uppercase.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 72
+    },
+    {
+      "id": "h1_11",
+      "family": "bare_letter",
+      "text": "Switch W into lowercase.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 87
+    },
+    {
+      "id": "h1_12",
+      "family": "quoted_digit",
+      "text": "Give me a lowercase version of '0'.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 48
+    },
+    {
+      "id": "h1_13",
+      "family": "quoted_punct",
+      "text": "Change '*' to lowercase.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 42
+    },
+    {
+      "id": "h1_14",
+      "family": "u_plus",
+      "text": "Apply lowercase to U+00D1.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 209
+    },
+    {
+      "id": "h1_15",
+      "family": "decimal_cp",
+      "text": "Lowercase decimal codepoint 214.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 214
+    },
+    {
+      "id": "h1_16",
+      "family": "hex_0x",
+      "text": "Make 0x5A lowercase.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 90
+    },
+    {
+      "id": "h1_17",
+      "family": "quoted_space",
+      "text": "Convert the quoted space ' ' to lowercase.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 32
+    },
+    {
+      "id": "h1_18",
+      "family": "paraphrase",
+      "text": "I need a small-letter version of T.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 84
+    },
+    {
+      "id": "h1_19",
+      "family": "synonym",
+      "text": "Downcase F please.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 70
+    },
+    {
+      "id": "h1_20",
+      "family": "quoted_char",
+      "text": "Turn 'P' into lowercase.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 80
+    },
+    {
+      "id": "h1_21",
+      "family": "missing_dir",
+      "text": "Please change the case of k.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h1_22",
+      "family": "missing_input",
+      "text": "Go ahead and lowercase it.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h1_23",
+      "family": "multi_char",
+      "text": "Convert to uppercase whichever single letter is intended, c or d.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h1_24",
+      "family": "bare_num",
+      "text": "Lowercase 122.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h1_25",
+      "family": "bad_quote",
+      "text": "Uppercase the character 'Q.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h1_26",
+      "family": "bare_punct",
+      "text": "Make # uppercase.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h1_27",
+      "family": "unrelated",
+      "text": "How many ounces are in a cup?",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h1_28",
+      "family": "negated",
+      "text": "Never lowercase the letter M.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h1_29",
+      "family": "compound",
+      "text": "Uppercase b, then lowercase C.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h1_30",
+      "family": "full_string",
+      "text": "Lowercase the word 'Street'.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h1_31",
+      "family": "ood_codepoint",
+      "text": "Please uppercase the character specified as U+0218.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h1_32",
+      "family": "control_cp",
+      "text": "Uppercase U+000A.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h2_01",
+      "family": "bare_letter",
+      "text": "Please uppercase the letter m.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 109
+    },
+    {
+      "id": "h2_02",
+      "family": "quoted_letter",
+      "text": "Convert 'q' into uppercase.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 113
+    },
+    {
+      "id": "h2_03",
+      "family": "hex_u_plus",
+      "text": "Make U+00E1 an uppercase character.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 225
+    },
+    {
+      "id": "h2_04",
+      "family": "decimal_codepoint",
+      "text": "Uppercase the decimal codepoint 246.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 246
+    },
+    {
+      "id": "h2_05",
+      "family": "hex_0x",
+      "text": "Put 0xE7 into upper case.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 231
+    },
+    {
+      "id": "h2_06",
+      "family": "quoted_digit",
+      "text": "Change the character \"8\" to upper case.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 56
+    },
+    {
+      "id": "h2_07",
+      "family": "natural_request",
+      "text": "I want the uppercase version of w.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 119
+    },
+    {
+      "id": "h2_08",
+      "family": "quoted_punct",
+      "text": "Apply uppercase mapping to ','.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 44
+    },
+    {
+      "id": "h2_09",
+      "family": "latin1_letter",
+      "text": "Turn ÿ into its uppercase form.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 255
+    },
+    {
+      "id": "h2_10",
+      "family": "quoted_space",
+      "text": "Give me the uppercase of the character \" \".",
+      "status": "ready",
+      "operation": "upper",
+      "key": 32
+    },
+    {
+      "id": "h2_11",
+      "family": "polite_request",
+      "text": "Could you lowercase B for me?",
+      "status": "ready",
+      "operation": "lower",
+      "key": 66
+    },
+    {
+      "id": "h2_12",
+      "family": "quoted_letter",
+      "text": "Take 'S' down to lowercase, please.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 83
+    },
+    {
+      "id": "h2_13",
+      "family": "hex_u_plus",
+      "text": "Fold U+00C9 to lower case.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 201
+    },
+    {
+      "id": "h2_14",
+      "family": "decimal_codepoint",
+      "text": "Apply lowercase to decimal codepoint 209.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 209
+    },
+    {
+      "id": "h2_15",
+      "family": "hex_0x",
+      "text": "Transform 0xDC into a lowercase character.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 220
+    },
+    {
+      "id": "h2_16",
+      "family": "quoted_digit",
+      "text": "Produce the lowercase form of \"0\".",
+      "status": "ready",
+      "operation": "lower",
+      "key": 48
+    },
+    {
+      "id": "h2_17",
+      "family": "imperative",
+      "text": "Lowercase the letter H.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 72
+    },
+    {
+      "id": "h2_18",
+      "family": "quoted_punct",
+      "text": "Map the punctuation \".\" to lowercase.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 46
+    },
+    {
+      "id": "h2_19",
+      "family": "latin1_letter",
+      "text": "Give Æ its lowercase counterpart.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 198
+    },
+    {
+      "id": "h2_20",
+      "family": "quoted_punct",
+      "text": "Switch \"-\" into lower case.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 45
+    },
+    {
+      "id": "h2_21",
+      "family": "missing_direction",
+      "text": "Please change the case of the letter r.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h2_22",
+      "family": "missing_operand",
+      "text": "Convert that to uppercase.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h2_23",
+      "family": "multi_char",
+      "text": "Uppercase the letters f and g.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h2_24",
+      "family": "bare_number",
+      "text": "Make 122 lowercase.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h2_25",
+      "family": "bare_punct",
+      "text": "Could you produce a lowercase form of *",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h2_26",
+      "family": "unmatched_quote",
+      "text": "Lowercase the character 'Q.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h2_27",
+      "family": "negated",
+      "text": "Do not uppercase the letter a.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h2_28",
+      "family": "compound",
+      "text": "Uppercase e, then summarize this article.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h2_29",
+      "family": "full_string",
+      "text": "Uppercase the word hello.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h2_30",
+      "family": "ood_codepoint",
+      "text": "Fold decimal codepoint 768 into lowercase.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h2_31",
+      "family": "encoded_control",
+      "text": "Please uppercase U+0007.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h2_32",
+      "family": "unrelated",
+      "text": "How do I bake sourdough bread?",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h3_01",
+      "family": "bare_letter",
+      "text": "Please uppercase the letter b",
+      "status": "ready",
+      "operation": "upper",
+      "key": 98
+    },
+    {
+      "id": "h3_02",
+      "family": "hex_codepoint",
+      "text": "Convert U+00E9 into uppercase",
+      "status": "ready",
+      "operation": "upper",
+      "key": 233
+    },
+    {
+      "id": "h3_03",
+      "family": "decimal_codepoint",
+      "text": "Make decimal codepoint 97 uppercase",
+      "status": "ready",
+      "operation": "upper",
+      "key": 97
+    },
+    {
+      "id": "h3_04",
+      "family": "quoted_letter",
+      "text": "Uppercase the character 'm'",
+      "status": "ready",
+      "operation": "upper",
+      "key": 109
+    },
+    {
+      "id": "h3_05",
+      "family": "natural_request",
+      "text": "Could you put z in caps for me?",
+      "status": "ready",
+      "operation": "upper",
+      "key": 122
+    },
+    {
+      "id": "h3_06",
+      "family": "accented_letter",
+      "text": "Capitalize the letter ñ",
+      "status": "ready",
+      "operation": "upper",
+      "key": 241
+    },
+    {
+      "id": "h3_07",
+      "family": "synonym_command",
+      "text": "Turn w into its uppercase form",
+      "status": "ready",
+      "operation": "upper",
+      "key": 119
+    },
+    {
+      "id": "h3_08",
+      "family": "quoted_digit",
+      "text": "Apply uppercase mapping to the quoted digit '7'",
+      "status": "ready",
+      "operation": "upper",
+      "key": 55
+    },
+    {
+      "id": "h3_09",
+      "family": "accented_letter",
+      "text": "I need the uppercase version of à",
+      "status": "ready",
+      "operation": "upper",
+      "key": 224
+    },
+    {
+      "id": "h3_10",
+      "family": "natural_request",
+      "text": "Rewrite the letter k so that it is uppercase.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 107
+    },
+    {
+      "id": "h3_11",
+      "family": "bare_letter",
+      "text": "Would you mind lowercasing Q?",
+      "status": "ready",
+      "operation": "lower",
+      "key": 81
+    },
+    {
+      "id": "h3_12",
+      "family": "hex_codepoint",
+      "text": "Convert U+00C4 to lowercase",
+      "status": "ready",
+      "operation": "lower",
+      "key": 196
+    },
+    {
+      "id": "h3_13",
+      "family": "decimal_codepoint",
+      "text": "Please lowercase decimal codepoint 90",
+      "status": "ready",
+      "operation": "lower",
+      "key": 90
+    },
+    {
+      "id": "h3_14",
+      "family": "quoted_letter",
+      "text": "Downcase the character 'H'",
+      "status": "ready",
+      "operation": "lower",
+      "key": 72
+    },
+    {
+      "id": "h3_15",
+      "family": "natural_request",
+      "text": "Could you write G as a small letter?",
+      "status": "ready",
+      "operation": "lower",
+      "key": 71
+    },
+    {
+      "id": "h3_16",
+      "family": "synonym_command",
+      "text": "Change R to its lowercase form",
+      "status": "ready",
+      "operation": "lower",
+      "key": 82
+    },
+    {
+      "id": "h3_17",
+      "family": "quoted_punct",
+      "text": "Apply lowercase to the quoted punctuation '!'",
+      "status": "ready",
+      "operation": "lower",
+      "key": 33
+    },
+    {
+      "id": "h3_18",
+      "family": "accented_letter",
+      "text": "Give me the lowercase of Ù",
+      "status": "ready",
+      "operation": "lower",
+      "key": 217
+    },
+    {
+      "id": "h3_19",
+      "family": "natural_request",
+      "text": "Switch letter T to lower case",
+      "status": "ready",
+      "operation": "lower",
+      "key": 84
+    },
+    {
+      "id": "h3_20",
+      "family": "quoted_letter",
+      "text": "Make the letter 'Ö' lowercase",
+      "status": "ready",
+      "operation": "lower",
+      "key": 214
+    },
+    {
+      "id": "h3_21",
+      "family": "missing_operand",
+      "text": "Please convert this to uppercase",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h3_22",
+      "family": "bare_number",
+      "text": "Make 65 lowercase for me",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h3_23",
+      "family": "multi_char",
+      "text": "Lowercase the letters a and b",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h3_24",
+      "family": "malformed_quote",
+      "text": "Uppercase the character 'x",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h3_25",
+      "family": "ambiguous_direction",
+      "text": "The letter c should undergo case conversion.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h3_26",
+      "family": "bare_punct",
+      "text": "I want you to lowercase ?",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h3_27",
+      "family": "negated",
+      "text": "Keep the letter a from being converted into uppercase.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h3_28",
+      "family": "full_string",
+      "text": "Make the entire string hello consist of capital letters.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h3_29",
+      "family": "unrelated",
+      "text": "What's the weather like in Paris today?",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h3_30",
+      "family": "locale_specific",
+      "text": "Lowercase the letter I using Turkish locale rules",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h3_31",
+      "family": "out_of_range",
+      "text": "Uppercase U+1F600",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h3_32",
+      "family": "encoded_control",
+      "text": "Lowercase the character U+0007",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h4_01",
+      "family": "bare_letter",
+      "text": "Could you uppercase the letter g?",
+      "status": "ready",
+      "operation": "upper",
+      "key": 103
+    },
+    {
+      "id": "h4_02",
+      "family": "quoted_digit",
+      "text": "Please convert '4' to uppercase.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 52
+    },
+    {
+      "id": "h4_03",
+      "family": "quoted_punct",
+      "text": "Put '?' in uppercase.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 63
+    },
+    {
+      "id": "h4_04",
+      "family": "hex_u_plus",
+      "text": "Uppercase codepoint U+00F1.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 241
+    },
+    {
+      "id": "h4_05",
+      "family": "decimal_cp",
+      "text": "Apply uppercase to decimal codepoint 233.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 233
+    },
+    {
+      "id": "h4_06",
+      "family": "hex_0x",
+      "text": "Make 0x7A uppercase.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 122
+    },
+    {
+      "id": "h4_07",
+      "family": "quoted_space",
+      "text": "Change the character \" \" to uppercase.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 32
+    },
+    {
+      "id": "h4_08",
+      "family": "synonym",
+      "text": "I need the uppercase version of v.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 118
+    },
+    {
+      "id": "h4_09",
+      "family": "quoted_punct",
+      "text": "The asterisk '*' should be uppercased.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 42
+    },
+    {
+      "id": "h4_10",
+      "family": "latin1_letter",
+      "text": "Convert ü to capital letters.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 252
+    },
+    {
+      "id": "h4_11",
+      "family": "bare_letter",
+      "text": "Would you recast the letter H so it appears in lowercase?",
+      "status": "ready",
+      "operation": "lower",
+      "key": 72
+    },
+    {
+      "id": "h4_12",
+      "family": "quoted_digit",
+      "text": "Please downcase the digit '0'.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 48
+    },
+    {
+      "id": "h4_13",
+      "family": "hex_u_plus",
+      "text": "Lowercase U+00C4.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 196
+    },
+    {
+      "id": "h4_14",
+      "family": "decimal_cp",
+      "text": "Convert decimal codepoint 89 to lowercase.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 89
+    },
+    {
+      "id": "h4_15",
+      "family": "hex_0x",
+      "text": "Apply lowercase to 0xD1.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 209
+    },
+    {
+      "id": "h4_16",
+      "family": "quoted_punct",
+      "text": "Give me a lowercase plus sign '+'.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 43
+    },
+    {
+      "id": "h4_17",
+      "family": "synonym",
+      "text": "Render R in lowercase.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 82
+    },
+    {
+      "id": "h4_18",
+      "family": "quoted_space",
+      "text": "Convert the space ' ' to lowercase.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 32
+    },
+    {
+      "id": "h4_19",
+      "family": "latin1_letter",
+      "text": "Turn Ç into lowercase.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 199
+    },
+    {
+      "id": "h4_20",
+      "family": "quoted_punct",
+      "text": "Downcase the semicolon ';'.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 59
+    },
+    {
+      "id": "h4_21",
+      "family": "missing_dir",
+      "text": "I am requesting a case change for the letter p.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h4_22",
+      "family": "missing_input",
+      "text": "I still need uppercase applied, yet no letter has been given.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h4_23",
+      "family": "bare_digits",
+      "text": "Please perform an uppercase conversion on 88.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h4_24",
+      "family": "bare_punct",
+      "text": "lowercase !",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h4_25",
+      "family": "multi_char",
+      "text": "Uppercase A or B.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h4_26",
+      "family": "bad_quote",
+      "text": "Make uppercase the digit 8'",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h4_27",
+      "family": "negated",
+      "text": "Don't uppercase the letter s.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h4_28",
+      "family": "compound",
+      "text": "Uppercase a and then lowercase B.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h4_29",
+      "family": "full_string",
+      "text": "Convert the word Hello to uppercase.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h4_30",
+      "family": "ood",
+      "text": "Lowercase the character Ω.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h4_31",
+      "family": "encoded_control",
+      "text": "Apply uppercase to U+0007.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "h4_32",
+      "family": "unrelated",
+      "text": "Set a reminder for groceries at six.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    }
+  ]
+}
