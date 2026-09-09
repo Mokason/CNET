@@ -132,6 +132,13 @@ internal static class LearningCaseRequestSyntax
             if (direction is not null && target < end && tokens[target].Is(":")
                 && cursor == operandStart + 1 && IsAny(tokens[operandStart], "this", "that", "it"))
                 return ConstrainedOperand(tokens, target + 1, end, direction, raise ? "upper" : null);
+            if (direction is not null && target < end && tokens[target].Is(":")
+                && IsSpacePlaceholder(tokens, operandStart, cursor))
+            {
+                var proposal = Operand(tokens, target + 1, end, direction, requiredName: "space");
+                return raise && direction != "upper" && proposal.Status != "abstain"
+                    ? LearningTaskParser.Clarify() : proposal;
+            }
             if (direction is not null && target == end)
             {
                 // A later conversion clause is not this grammar's operand.
@@ -178,7 +185,16 @@ internal static class LearningCaseRequestSyntax
         if (start < end && tokens[start].Is(",")) start++;
     }
 
-    private static LearningTaskProposal Operand(List<Token> tokens, int start, int end, string operation, bool bareCapital = false)
+    private static bool IsSpacePlaceholder(List<Token> tokens, int start, int end)
+    {
+        if (start < end && IsAny(tokens[start], "this", "that", "the")) start++;
+        if (start < end && IsAny(tokens[start], "quoted", "literal")) start++;
+        if (start == end || !tokens[start++].Is("space")) return false;
+        if (start < end && tokens[start].Is("character")) start++;
+        return start == end;
+    }
+
+    private static LearningTaskProposal Operand(List<Token> tokens, int start, int end, string operation, bool bareCapital = false, string? requiredName = null)
     {
         var cursor = start;
         var declaredScalar = false;
@@ -204,7 +220,8 @@ internal static class LearningCaseRequestSyntax
         var operand = builder.ToString();
         if (start < end && tokens[start].Literal && (tokens[start].Length < 2 || tokens[start].Value[^1] != tokens[start].Value[0]))
             return LearningTaskParser.Clarify();
-        var proposal = LearningTaskParser.ProposeOperand(operation, operand, declaredScalar: declaredScalar);
+        var proposal = LearningTaskParser.ProposeOperand(operation,
+            requiredName is null ? operand : requiredName + " " + operand, declaredScalar: declaredScalar);
         // Unqualified "capital of France" does not establish a casing task.
         // Explicit case phrases with named characters still need clarification.
         if (proposal.Status == "clarify" && bareCapital && !declaredScalar && end - start == 1 && !tokens[start].Literal

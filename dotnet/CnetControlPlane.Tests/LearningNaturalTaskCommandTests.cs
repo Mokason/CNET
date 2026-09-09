@@ -24,8 +24,10 @@ public sealed class LearningNaturalTaskCommandTests : IClassFixture<LearningComm
     private static string Id(char value) => new(value, 32);
     private static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
 
-    [Fact]
-    public async Task ApprovedMicroSignCorrectionEnablesDifferentPhrasingWithoutLosingLowercase()
+    [Theory]
+    [InlineData("What's the uppercase of µ?")]
+    [InlineData("Kindly recode the glyph 'µ' toward capitals.")]
+    public async Task ApprovedMicroSignCorrectionEnablesDifferentPhrasingWithoutLosingLowercase(string initialRequest)
     {
         var repository = LearningTestRepository.RequireBuilt(LearningCommandInstallation.NativeNames);
         var corpus = Path.Combine(repository, "data/unicode17");
@@ -78,7 +80,7 @@ public sealed class LearningNaturalTaskCommandTests : IClassFixture<LearningComm
         using var empty = Receipt(await deployment.Command("inbox", "0", "100"));
         Assert.Equal(0, empty.RootElement.GetProperty("experiences").GetArrayLength());
         await deployment.StartDaemon(); // Teacher and self-answer disabled by the private fixture.
-        using var initial = Receipt(await deployment.Command("task", "synthetic", Id('c'), "What's the uppercase of µ?"));
+        using var initial = Receipt(await deployment.Command("task", "synthetic", Id('c'), initialRequest));
         Assert.Equal("awaiting_evidence", initial.RootElement.GetProperty("experience").GetProperty("State").GetString());
         using var idle = Receipt(await deployment.Command("tick"));
         Assert.Equal("idle", idle.RootElement.GetProperty("action").GetString());
@@ -138,7 +140,9 @@ public sealed class LearningNaturalTaskCommandTests : IClassFixture<LearningComm
             ("00000000000000000000000000000023", "With the supplied Unicode scalar U+00B5 as input, could you show its uppercase counterpart?", 924),
             ("00000000000000000000000000000024", "Given the single quoted character 'A' as input, may I have its lowercase counterpart?", 97),
             ("00000000000000000000000000000025", "Which capital letter is the uppercase form of 'µ'?", 924),
-            ("00000000000000000000000000000026", "My input character for this task is 'A'; could you produce its lowercase version?", 97) })
+            ("00000000000000000000000000000026", "My input character for this task is 'A'; could you produce its lowercase version?", 97),
+            ("00000000000000000000000000000027", "Kindly recode the glyph 'µ' toward capitals.", 924),
+            ("00000000000000000000000000000028", "Kindly recode the glyph 'A' toward small letters.", 97) })
         {
             using var expanded = Receipt(await deployment.Command("task", "synthetic", request, text));
             Assert.Equal("ready", expanded.RootElement.GetProperty("proposal").GetProperty("Status").GetString());
@@ -149,6 +153,10 @@ public sealed class LearningNaturalTaskCommandTests : IClassFixture<LearningComm
         }
         using var uncovered = Receipt(await deployment.Command("task", "synthetic", Id('1'), "uppercase ß"));
         Assert.Equal("abstain", uncovered.RootElement.GetProperty("experience").GetProperty("State").GetString());
+        using var learnedUncovered = Receipt(await deployment.Command("task", "synthetic",
+            "00000000000000000000000000000029", "Kindly recode the glyph 'ß' toward capitals."));
+        Assert.Equal("ready", learnedUncovered.RootElement.GetProperty("proposal").GetProperty("Status").GetString());
+        Assert.Equal("abstain", learnedUncovered.RootElement.GetProperty("experience").GetProperty("State").GetString());
         foreach (var dataset in new[] { "unicode17_upper_latin1", "unicode17_lower_latin1" })
         {
             using var verified = Receipt(await deployment.Command("verify", dataset));

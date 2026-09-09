@@ -16,6 +16,7 @@ public sealed class LearningTaskExecutionTests : IClassFixture<LearningCommandIn
     [InlineData("Map the hyphen '-' to uppercase.", 45)]
     [InlineData("Go ahead and upcase 'µ'.", 181)]
     [InlineData("Would you mind putting 'µ' in uppercase?", 181)]
+    [InlineData("Kindly recode the glyph 'µ' toward capitals.", 181)]
     [InlineData("Change this to uppercase: U+00B5", 181)]
     public async Task ConstituentProposalStillRequiresPolicyAndExternalEvidence(string request, byte originalByte)
     {
