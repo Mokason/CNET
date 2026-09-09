@@ -1,0 +1,107 @@
+{
+  "confirmation_sha256": "c17d36329aca0b880b4fe470df4becb36110f11b2b1a4a5c6ca17aba3af26130",
+  "schema": 1,
+  "corpus": "confirmation.json",
+  "frozen_at_utc": "2026-09-09T07:59:03Z",
+  "immutable_after_freeze": true,
+  "counts": {
+    "cases": 128,
+    "unique_ids": 128,
+    "unique_texts": 128,
+    "families": 28,
+    "ready": 80,
+    "ready_upper": 40,
+    "ready_lower": 40,
+    "clarify": 24,
+    "abstain": 24,
+    "verified_original_byte_keys": 80
+  },
+  "independence": {
+    "synthetic": true,
+    "training_eligible": false,
+    "author_agent": "/root/acceptance_v4_author",
+    "custodian_agent": "/root/acceptance_v4_custodian",
+    "author_model": "gpt-6-astra",
+    "custodian_model": "gpt-6-astra",
+    "separate_agent_contexts": true,
+    "same_model_review": true,
+    "cross_model_review": false,
+    "external_independence_claim": false,
+    "iid_claim": false,
+    "author_attestation_received": true,
+    "author_implementation_reads": false,
+    "author_test_reads": false,
+    "author_graft_or_graph_reads": false,
+    "author_result_reads": false,
+    "author_prior_corpus_reads": false,
+    "author_cnet_execution": false,
+    "author_subagents_or_other_providers": false,
+    "custodian_implementation_reads": false,
+    "custodian_test_reads": false,
+    "custodian_graft_or_graph_reads": false,
+    "custodian_result_reads": false,
+    "custodian_cnet_execution": false,
+    "custodian_subagents_or_other_providers": false,
+    "custodian_prior_text_access": "Programmatic exact-string equality only; no prior case texts or labels displayed or used for design.",
+    "selection_basis": "Supplied contract and private semantic review; no selection based on parser results.",
+    "root_unopened_attestation": {
+      "received_before_freeze": true,
+      "confirmation_sha256": "c17d36329aca0b880b4fe470df4becb36110f11b2b1a4a5c6ca17aba3af26130",
+      "case_contents_read": false,
+      "case_labels_read": false,
+      "family_names_read": false,
+      "case_details_disclosed": false,
+      "round4_outcomes_read": false,
+      "round4_evaluation_or_probe_execution": false,
+      "disclosure": "Hashes and count metadata only."
+    }
+  },
+  "review": {
+    "private_author_custodian_cross_review": true,
+    "cycles": 2,
+    "status_labels_reviewed": 128,
+    "ready_operations_independently_rederived": 80,
+    "ready_original_byte_keys_independently_rederived": 80,
+    "ready_keys_are_original_inputs": true,
+    "native_coverage_or_certification_inferred": false,
+    "semantic_label_corrections": 0,
+    "exact_overlap_replacements": 3,
+    "unresolved_findings": 0,
+    "schema_and_counts_verified": true,
+    "nonready_operation_and_key_null_verified": true,
+    "corpus_changed_after_final_review": false,
+    "cnet_execution_used_for_review": false
+  },
+  "overlap": {
+    "comparison": "Exact equality of parsed text strings; no normalization or semantic similarity claim.",
+    "prior_total_cases": 512,
+    "prior_unique_texts": 512,
+    "final_exact_text_overlaps": 0,
+    "prior_files": [
+      {
+        "path": "benchmarks/task_paraphrases_20260909/qualification.json",
+        "sha256": "9f0ae2c6a2c57edc00d7f3759c1fefc5830ffc033ee3838a33015a5edf74cd05",
+        "cases": 128,
+        "exact_text_overlaps": 0
+      },
+      {
+        "path": "benchmarks/task_paraphrases_20260909/confirmation.json",
+        "sha256": "1f37ea2cb4073cbdb1be4ded22ded6375076447d7b75356798c5d209f8e377cb",
+        "cases": 128,
+        "exact_text_overlaps": 0
+      },
+      {
+        "path": "benchmarks/task_paraphrases_followup_20260909/confirmation.json",
+        "sha256": "612e4007398666202abd5f0a104c0ebadd6e75121ebf67471dcfb9e498f14cd3",
+        "cases": 128,
+        "exact_text_overlaps": 0
+      },
+      {
+        "path": "benchmarks/task_paraphrases_round3_20260909/confirmation.json",
+        "sha256": "4e0a31349ce0b2fc73a9d2727388a33ee6a08ba56f23cebf9bba818a361ebf46",
+        "cases": 128,
+        "exact_text_overlaps": 0
+      }
+    ]
+  }
+}
