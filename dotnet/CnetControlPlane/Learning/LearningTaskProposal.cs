@@ -66,7 +66,7 @@ internal static class LearningTaskParser
     private static readonly Regex AlternativeSeparator = new(@" *, *(?:(?:and|or) +)?| +(?:(?:and|or) +)?", Options);
     private static readonly Regex HasConjunction = new(@"\b(?:and|or)\b", Options);
     private static readonly Regex QuotedString = new(@"\A(?:'[^']*'|""[^""]*"")\z", Options);
-    private static readonly Regex UnsupportedOperand = new(@"(?:\b(?:using|locale|rules|string|word|sentence|paragraph|text|phrase|sequence|pair|control)\b|\bboth letters\b|\baccording to\b|\bspecific\b|;)", Options);
+    private static readonly Regex UnsupportedOperand = new(@"(?:\b(?:using|locale|rules|string|word|name|sentence|paragraph|text|phrase|sequence|pair|control)\b|\bboth letters\b|\baccording to\b|\bspecific\b|;)", Options);
     private static readonly Regex FieldSeparator = new(@"[;.,] (?:and |with )?| and ", Options);
     private const string Reference = @"(?:it|this(?: one)? character|that(?: character)?)";
     private static readonly Regex ReferenceUse = new(@"\b(?:" + Reference + @"|its)\b", Options);
@@ -290,11 +290,16 @@ internal static class LearningTaskParser
         }
         return (radix.Success ? "hexadecimal code point " : numeric.Success ? numeric.Value + " " : "") + input;
     }
-    private static LearningTaskProposal Clarify() => new("clarify", "specify_case_input", Prompt:
+    internal static LearningTaskProposal Clarify() => new("clarify", "specify_case_input", Prompt:
         "Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5).");
     private static LearningTaskProposal Abstain(string code) => new("abstain", code);
     private static bool IsLowerOperation(string operation) => operation.StartsWith("lower", StringComparison.OrdinalIgnoreCase)
         || operation.StartsWith("small", StringComparison.OrdinalIgnoreCase);
+    internal static bool HasOperationNounAt(string text, int position)
+    {
+        var match = OperationLexeme.Match(text, position);
+        return match.Success && match.Index == position && match.Groups["noun"].Success;
+    }
     private static LearningTaskProposal Ready(string operation, byte key) => char.IsControl((char)key) ? Abstain("input_domain") : new("ready", "typed_case_change",
         IsLowerOperation(operation) ? "unicode17_lower_latin1" : "unicode17_upper_latin1", key);
 
@@ -315,6 +320,7 @@ internal static class LearningTaskParser
             return byte.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var key)
                 && key.ToString(CultureInfo.InvariantCulture) == value ? Ready(exact.Groups["op"].Value, key) : Abstain("input_domain");
         }
+        if (binding is null && LearningCaseRequestSyntax.Propose(text) is { } constituent) return constituent;
         if (text.EndsWith('?') || text.EndsWith('.')) text = text[..^1].TrimEnd();
         text = ContextPrefix.Replace(text, "", 1);
         foreach (var prefix in PolitePrefixes)
@@ -502,7 +508,7 @@ internal static class LearningTaskParser
         return IsOperationField(text) ? Clarify() : null;
     }
 
-    private static LearningTaskProposal ProposeOperand(string operation, string token, bool allowAlternatives = true)
+    internal static LearningTaskProposal ProposeOperand(string operation, string token, bool allowAlternatives = true)
     {
         // Strip only the bounded operand description, never normalize the scalar.
         var description = InputDescription.Match(token);

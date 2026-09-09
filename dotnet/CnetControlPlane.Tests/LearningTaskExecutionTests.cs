@@ -12,6 +12,29 @@ public sealed class LearningTaskExecutionTests : IClassFixture<LearningCommandIn
     public LearningTaskExecutionTests(LearningCommandInstallation installation) => this.installation = installation;
 
     [Fact]
+    public async Task ConstituentProposalStillRequiresPolicyAndExternalEvidence()
+    {
+        const string request = "Could you kindly write 'µ' in caps!";
+        Assert.True(LearningTaskParser.Propose(request).Status == "ready", "TASK_CONSTITUENT_RED execution route not recognized");
+        using var deployment = installation.Deploy();
+        var policyBytes = Encoding.UTF8.GetBytes(LearningPolicyTests.Valid.Replace("calibration", "unicode17_upper_latin1"));
+        deployment.Put("policy.json", policyBytes);
+        Assert.Equal(0, (await deployment.Command("initialize")).Code);
+        var policy = LearningPolicy.Parse(policyBytes);
+        using var ledger = LearningLedger.Open(Path.Combine(deployment.Root, "work"), policy, new LearningClock());
+        using var native = LearningRuntime.Load(Path.Combine(deployment.Root, "native"), File.ReadAllBytes(Path.Combine(deployment.Root, "runtime.json")));
+        int Execute(char id, string text) => LearningTaskCommand.Execute(ledger, native, policy,
+            deployment.Root, "synthetic", new string(id, 32), text, new string('0', 32));
+        Assert.Equal(0, Execute('a', "Could you kindly write 'É' in lowercase!"));
+        Assert.Empty(ledger.Experiences(0, 100));
+        await deployment.StartDaemon();
+        Assert.Equal(0, Execute('b', request));
+        Assert.Equal("awaiting_evidence", Assert.Single(ledger.Experiences(0, 100)).State);
+        Assert.Equal((0L, 0L), ledger.Demand("unicode17_upper_latin1", 181));
+        Assert.Equal(0, ledger.JobCount);
+    }
+
+    [Fact]
     public async Task InProcessExecutorPreservesPolicyDeduplicationAndUnknownTransportBoundaries()
     {
         using var deployment = installation.Deploy();
