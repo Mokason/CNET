@@ -181,3 +181,12 @@ shared request/declaration roles, exact codepoint descriptions and vocabulary
 such as `all caps`, with explicit mixed-radix/output-format refusal tests.
 The next isolated author/custodian pair retains the reused-context limitation
 and checks zero overlaps against all 896 exposed texts; original floors remain.
+
+Round7's 63 new request tests ran RED (57 failed), then all 474 focused cases
+passed. Boundary review nevertheless found two actionable issues: a decimal
+declaration lost its qualifier, and a general hexadecimal suffix could consume
+an output-format request. Six further tests ran RED (four failed). OperandText
+now preserves the actual numeric qualifier and accepts the hexadecimal suffix
+only in explicit non-decimal numeric declarations; generic operands refuse it.
+All 480 focused tests pass after correction. Add native refusal/positive checks,
+review the bounded correction, then freeze a fresh build before the blind score.

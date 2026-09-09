@@ -125,6 +125,12 @@ cannot silently discard extra actions or a second input. Radix qualifiers
 survive decoding (`hexadecimal code point 80` is a refused control, not decimal
 80). Quoted multi-character data such as `'U+0061'` is never reinterpreted as
 codepoint syntax. Operand descriptions do not select output formats or sources.
+The request vocabulary also includes `all caps` and `capitalisation`. Explicit
+numeric declarations retain their radix: `The input code point is 0x00B5 in
+hexadecimal; apply uppercase.` is an input representation, but `Return the
+uppercase form of U+00B5 in hexadecimal.` asks for an unsupported result format
+and abstains. A declared decimal codepoint cannot accept a conflicting `0x`/`U+`
+value. Shared request prefixes do not remove unknown commands or modifiers.
 
 Requests are at most 256 UTF-16 code units; control characters and surrogates
 refuse, including decoded control values in canonical, hexadecimal and decimal
