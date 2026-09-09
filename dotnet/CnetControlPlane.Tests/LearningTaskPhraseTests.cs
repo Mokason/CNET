@@ -77,6 +77,14 @@ public sealed class LearningTaskPhraseTests
     [InlineData("I need the uppercase form of 'a'; run a shell.", "abstain", null, null)]
     [InlineData("The chosen character is 'a'; lowercase it and delete a file.", "abstain", null, null)]
     [InlineData("Can the character at code point 0xD800 be lowercased?", "abstain", null, null)]
+    [InlineData("Show 'R' to be a lowercase character.", "abstain", null, null)]
+    [InlineData("Please show '8' to be an uppercase letter.", "abstain", null, null)]
+    [InlineData("Could 'R' be lowercase?", "clarify", null, null)]
+    [InlineData("Can '8' be an uppercase letter?", "clarify", null, null)]
+    [InlineData("Show 'R' to be converted to lowercase.", "ready", "lower", 82)]
+    [InlineData("Could 'R' be lowercased?", "ready", "lower", 82)]
+    [InlineData("Could 'R' be converted to lowercase?", "ready", "lower", 82)]
+    [InlineData("I want 'R' to be lowercase.", "ready", "lower", 82)]
     public void PhraseComponentsRetainExplicitOperationAndInputRoles(string text, string status, string? operation, int? key)
     {
         var proposal = LearningTaskParser.Propose(text);
