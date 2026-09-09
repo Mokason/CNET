@@ -206,7 +206,7 @@ class RunnerIntegrity(unittest.TestCase):
         self.frozen = json.dumps({"qualification_sha256": evaluator.digest(self.corpus)}).encode()
         self.response = {"schema": 1, "assembly_sha256": evaluator.digest(b"assembly"),
                          "proposals": perfect(load(fixture()))}
-        self.args = SimpleNamespace(collection="qualification", assembly="/fixture/assembly.dll",
+        self.args = SimpleNamespace(suite="original", collection="qualification", assembly="/fixture/assembly.dll",
                                     assembly_sha256=evaluator.digest(b"assembly"), parser_sha256=evaluator.digest(b"source"))
 
     def read(self, path, limit=None):
@@ -232,6 +232,17 @@ class RunnerIntegrity(unittest.TestCase):
         self.assertFalse(result["training_eligible"])
         self.assertEqual(result["probe_sha256"], evaluator.digest(b"probe"))
         self.assertEqual(len(result["cases"]), 128)
+
+    def test_reports_identify_the_selected_suite(self):
+        result = self.invoke()
+        self.assertIn("suite", result, "PARAPHRASE_SUITE_RED missing population identity")
+        self.assertEqual(result["suite"], "original")
+
+    def test_unknown_suites_and_unavailable_collections_refuse(self):
+        for suite in ("../escape", "followup"):
+            self.args.suite = suite
+            with self.subTest(suite=suite), self.assertRaises(ValueError, msg="PARAPHRASE_SUITE_RED silently selected original data"):
+                self.invoke()  # Follow-up has confirmation only, no qualification.
 
     def test_changed_artifacts_cannot_issue_a_successful_score(self):
         for name in ("freeze.json", "LearningTaskProposal.cs", "assembly.dll", "qualification.json"):
