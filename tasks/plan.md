@@ -1,13 +1,17 @@
 # Current CNET work plan
 
-## Active: frozen task-proposal evaluation
+## Evaluated: bounded task language; fresh acceptance WITHHELD
 
 Follow [the September 9 evaluation protocol](../plans/cnet_paraphrase_evaluation_20260909.md):
 independently authored synthetic qualification and confirmation, immutable
 corpus/source identities, exact typed-action scoring and unchanged safety
-floors. Confirmation remains unopened until candidate code is frozen. Parser
-repairs may use exposed development evidence, never that sealed confirmation.
-No deployment, real capture or frozen-soak changes are part of this slice.
+floors. [The measured handoff](../result/cnet_paraphrase_evaluation_20260909.md)
+records the original 55/128, repaired development 128/128 and first confirmation
+112/128 with zero wrong ready proposals. Confirmation ready coverage (68/80)
+and clarification (21/24) failed their floors. It is now exposed, not reusable
+as fresh evidence. Next: test-first repair and a newly authored blind
+confirmation population. No deployment, real capture or frozen-soak changes
+occurred; source improvements do not qualify a live rollout.
 
 ## Source complete: useful bounded composition reuse
 
@@ -16,8 +20,8 @@ exports only the existing capsules selected by a verified request, with staged
 identity/replay checks before publication. [The operator guide](../docs/COMPOSITION_REUSE.md)
 and [measured handoff](../result/cnet_composition_reuse_20260909.md) cover two-hop
 numeric reuse, unchanged coverage and retained source freshness. Live services
-and the frozen soak remain untouched. Next source milestone: independently
-frozen paraphrase/OOD evaluation; richer task inputs and dependency-aware source
+and the frozen soak remain untouched. Paraphrase/OOD evaluation is recorded
+above with acceptance withheld; richer task inputs and dependency-aware source
 replacement remain open before targeted, evidence-gated AMD experiments.
 
 ## Source complete: captured task linkage and recurring gaps
@@ -38,8 +42,8 @@ See [measured results](../result/cnet_verified_task_core_20260908.md): 956 manag
 and 127 capture/bridge tests. Source lives on `feature/verified-task-core-20260908`;
 it is not a migration or deployment of the existing live installations.
 
-Next: independently frozen
-paraphrase evaluation, richer composition inputs, dependency-aware
+Next: close the failed fresh paraphrase floors with new confirmation,
+richer composition inputs, dependency-aware
 freshness, then measured AMD task-selection candidates. Measured learning costs,
 real origin review and a separate captured-task rollout remain open. The concrete gate
 sequence is in the task-core plan. ECC TDD/verification and Graft discovery were

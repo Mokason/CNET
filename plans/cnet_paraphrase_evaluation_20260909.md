@@ -69,3 +69,12 @@ runs as fresh evidence. Selection and confirmation are not pooled.
    scoring and a private native replay/coverage check; report every gate honestly.
 5. Run regressions/coverage, refresh Graft, record ECC/review evidence and update
    documentation/current queue. Commit locally without push or deployment.
+
+## Recorded outcome (protocol and floors above unchanged)
+
+The sequence was executed. See [the measured handoff](../result/cnet_paraphrase_evaluation_20260909.md):
+the repaired candidate passed exposed development, but its first confirmation
+failed ready coverage and clarification (68/80 and 21/24). OOD abstention was
+23/24 and wrong ready proposals were zero. Acceptance is WITHHELD. The parser
+was not adapted after opening confirmation; future repairs require a new
+independently authored confirmation population. No live rollout occurred.

@@ -1,12 +1,16 @@
 # Current CNET checklist
 
-## Active: independent synthetic paraphrase/OOD evaluation
+## Executed: independent synthetic paraphrase/OOD evaluation
 
-- [ ] Freeze contract-based qualification and separate sealed confirmation
-- [ ] Test hash/schema/score integrity and record the unmodified parser baseline
-- [ ] Repair measured development gaps without weakening safety or certification
-- [ ] Freeze candidate before confirmation and retain any failed gates
-- [ ] Private native checks, regression/coverage, review and measured handoff
+- [x] Freeze contract-based qualification and separate sealed confirmation
+- [x] Test hash/schema/score integrity and record the unmodified parser baseline
+- [x] Repair measured development gaps without weakening safety or certification
+- [x] Freeze candidate before confirmation and retain any failed gates
+- [x] Private native checks, regression/coverage, review and measured handoff
+- [ ] Pass fresh ready/clarification floors: first confirmation was 68/80 and
+      21/24, with zero wrong ready; acceptance remains WITHHELD
+- [ ] Repair exposed misses and use a new blind population, not a repeat of
+      now-exposed confirmation (see [results](../result/cnet_paraphrase_evaluation_20260909.md))
 
 ## Completed source: bounded useful composition reuse
 
