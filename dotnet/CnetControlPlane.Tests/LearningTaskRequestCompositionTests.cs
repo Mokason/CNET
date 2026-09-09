@@ -7,6 +7,12 @@ namespace CnetControlPlane.Tests;
 public sealed class LearningTaskRequestCompositionTests
 {
     [Theory]
+    [InlineData("The decimal code point I am supplying is 0x52. Lowercase its character.", "abstain", null, null)]
+    [InlineData("The decimal code point I am supplying is U+0071. Uppercase its character.", "abstain", null, null)]
+    [InlineData("Show the lowercase result of U+0052 in hexadecimal.", "abstain", null, null)]
+    [InlineData("Return the uppercase form of U+0071 in hexadecimal.", "abstain", null, null)]
+    [InlineData("The input code point is 0x0052 in hexadecimal; apply lowercase.", "ready", "lower", 82)]
+    [InlineData("The decimal code point I am supplying is 113. Uppercase its character.", "ready", "upper", 113)]
     [InlineData("Input code point is decimal 65 in hexadecimal; apply uppercase.", "abstain", null, null)]
     [InlineData("The hexadecimal input code point is 80. Lowercase its character.", "abstain", null, null)]
     [InlineData("My input is the literal 'U+0041'; make it lowercase.", "abstain", null, null)]
