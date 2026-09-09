@@ -137,6 +137,12 @@ refuses independently of whether its surrounding request frame is supported;
 contractions and quoted quote characters are not mistaken for full strings.
 `My uppercase input is 'P'.` only describes an input and clarifies; `My uppercase
 operation input is 'µ'.` explicitly names a conversion and can propose it.
+Explicit change predicates such as `Show what 'µ' becomes under uppercase
+conversion.` use the same typed boundary. `The input character has decimal code
+point 65; convert it to lowercase.` preserves its declared radix. A result sent
+`to 'Q'` does not name an input: only an explicit `counterpart to` relation or
+`applied to` request binds an operand there. `quoted space ' '` names the exact
+ASCII space; an unrelated quoted character is never silently substituted.
 
 Requests are at most 256 UTF-16 code units; control characters and surrogates
 refuse, including decoded control values in canonical, hexadecimal and decimal

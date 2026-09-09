@@ -21,6 +21,7 @@ proposals may not contain a dataset/key. No floor, label or denominator changed.
 | [Round 5](task_paraphrases_round5_20260909/confirmation-1.json) | 13/80 | 8/40, 5/40 | 10/24 | 21/24 | 0 | FAIL |
 | [Round 6](task_paraphrases_round6_20260909/confirmation-1.json) | 33/80 | 15/40, 18/40 | 16/24 | 22/24 | 0 | FAIL |
 | [Round 7](task_paraphrases_round7_20260909/confirmation-1.json) | 32/80 | 14/40, 18/40 | 15/24 | 21/24 | 0 | FAIL |
+| [Round 8](task_paraphrases_round8_20260909/confirmation-1.json) | 50/80 | 23/40, 27/40 | 14/24 | 24/24 | 0 | FAIL |
 
 All rows and failed gates remain in the linked reports. Round3 also has a
 separate [infrastructure record](task_paraphrases_round3_20260909/infrastructure-attempt-1.json):
@@ -102,7 +103,12 @@ depending on the surrounding frame. The first review caught source-case
 descriptions being interpreted as operations; five new tests ran RED (three
 failed). An explicit operation/conversion noun is now required in that frame.
 All 551 focused tests pass, with native refusal/positive replay added. Final
-candidate regression and blind confirmation are pending.
+candidate regression passed 1,473 tests with zero failures/skips, 99.73% parser
+line and 93.26% branch coverage. All 12 independent correction-review probes
+passed. Source `0945dc4` was freshly built and pinned in `fbc57dd` before the
+first blind score. Round8 failed ready and clarification floors; all rows
+remain. Round9 is separately authored with the original floors and zero exact
+overlaps against 1,152 exposed texts, retaining the reused-context limitation.
 
 The evaluator's 31 integrity tests pass; tracing covers 97% of 204 executable
 lines. The unchanged capture/bridge surface passed 148 tests earlier this turn.

@@ -210,3 +210,21 @@ operation/conversion noun before proposing a ready request. All 551 focused
 tests pass. Native replay adds both ambiguity refusals and explicit-operation
 positives. The round8 corpus remains unopened pending bounded correction review,
 fresh committed build, regressions and source/binary pin freeze.
+
+Round8's first blind score failed: 50/80 ready (23 upper, 27 lower), 14/24
+clarify, 24/24 abstain, zero wrong ready. The frozen source passed 1,473
+managed/native tests, 99.73% parser line and 93.26% branch coverage, and 12
+independent correction probes. Preserve all rows and continue. Round9 binds
+shared output relations, change predicates and typed declarations; all 40
+exposed misses plus 10 boundaries ran RED (42 failed). Design review rejected
+bare `to` as an unconditional operand relation because it can name a recipient.
+Four more tests ran RED (two new failures); require the explicit `counterpart`
+noun for that relation, while `applied to` retains its operation meaning.
+Independent round9 authorship/custody remains blind against 1,152 prior texts.
+
+Round9 focused verification passes 607 task-filter tests (605 parser tests plus
+two existing task tests), and every exposed collection scores 128/128. The
+separate implementation review passes all 34 independently authored boundary
+probes without further findings. The native fixture adds recipient and mixed
+radix refusals plus counterpart and decimal-declaration offline replays. The
+new runner-selection test executed RED before adding round9's immutable pins.

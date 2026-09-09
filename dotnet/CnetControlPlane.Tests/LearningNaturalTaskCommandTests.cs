@@ -59,7 +59,9 @@ public sealed class LearningNaturalTaskCommandTests : IClassFixture<LearningComm
             "Let 'P' be the input; show it to be a lowercase character.",
             "The decimal code point I am supplying is 0x52. Lowercase its character.",
             "Show the lowercase result of U+0052 in hexadecimal.",
-            "I require the uppercase corresponding to 'ab'." })
+            "I require the uppercase corresponding to 'ab'.",
+            "Show the uppercase result to 'Q'.",
+            "The input character has decimal code point 0x61; convert it to uppercase." })
         {
             using var denied = Receipt(await deployment.Command("task", "synthetic", Id('2'), refused));
             Assert.Equal("abstain", denied.RootElement.GetProperty("proposal").GetProperty("Status").GetString());
@@ -120,7 +122,9 @@ public sealed class LearningNaturalTaskCommandTests : IClassFixture<LearningComm
             ("00000000000000000000000000000015", "Input: hexadecimal code point 41; operation: lowercase.", 97),
             ("00000000000000000000000000000016", "The input code point is 0x00B5 in hexadecimal; apply uppercase.", 924),
             ("00000000000000000000000000000017", "My uppercase operation input is 'µ'.", 924),
-            ("00000000000000000000000000000018", "My lowercase-conversion input is 'A'.", 97) })
+            ("00000000000000000000000000000018", "My lowercase-conversion input is 'A'.", 97),
+            ("00000000000000000000000000000019", "Please present the uppercase counterpart to 'µ'.", 924),
+            ("00000000000000000000000000000020", "The input character has decimal code point 65; convert it to lowercase.", 97) })
         {
             using var expanded = Receipt(await deployment.Command("task", "synthetic", request, text));
             Assert.Equal("ready", expanded.RootElement.GetProperty("proposal").GetProperty("Status").GetString());
