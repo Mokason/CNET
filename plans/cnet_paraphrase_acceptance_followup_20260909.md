@@ -312,3 +312,13 @@ zero failures/skips, 99.80% parser line and 93.09% branch coverage. All 1,408
 exposed development requests pass on the freshly built candidate. Freeze source,
 runner, probe, binary and corpus identities before first blind scoring; no
 further shared-artifact rebuild or holdout read has occurred.
+
+Round11 first-blind score after pins commit `9a7a9dd` failed: 52/80 ready
+(26 per operation), 16/24 clarify, 24/24 abstain and zero wrong ready. Preserve
+all 128 rows. The 1,861 passing regressions and real shared-binding improvement
+do not establish unseen-language coverage. The user asked how much longer;
+there is no reliable completion ETA after eleven failed confirmations. Report
+that directly, without calling exposed-data perfection acceptance or promising
+that one more template-repair cycle will finish. All 1,536 current corpus texts
+are now exposed. Further acceptance requires a new independently frozen set;
+the original floors and all native/evidence authority remain unchanged.

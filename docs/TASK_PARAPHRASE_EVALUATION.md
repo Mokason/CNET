@@ -34,9 +34,10 @@ failed its quality gates and is now exposed. `round4` also failed ready and
 clarification floors; it is exposed too. `round5` failed ready, clarification
 and abstention floors. `round6` and `round7` failed those floors too. `round8`
 passed abstention but failed ready and clarification, as did `round9` and
-`round10`. `round11` adds a blind
-128-case confirmation with the same quotas/floors and no exact overlaps with
-all eleven exposed collections (1,408 prior texts). Because fresh-agent capacity
+`round10` and `round11`. Round11's 128 cases had the same quotas/floors and no
+exact overlaps with the eleven previously exposed collections (1,408 texts).
+All twelve collections are now exposed (1,536 unique texts); no current suite
+is an untouched holdout. Because fresh-agent capacity
 was exhausted, rounds 5–11 use two isolated
 author/custodian contexts that were reused. They knew their own prior
 authored sets but had no implementation, test, graph, result or CNET execution
@@ -97,10 +98,10 @@ original` is the backward-compatible default and supports `qualification` and
 `confirmation`; both are development-only now. `--suite followup`,
 `--suite round3` through `--suite round11` support
 only `confirmation` and cannot silently select another population. Follow-up
-and rounds 3–10 are development-only
+and rounds 3–11 are development-only
 after their failed runs. Round3's separately pinned nested manifest layout is
 validated explicitly; other suites retain their flat corpus-hash fields.
-After candidate source/binary pins are committed and review is complete:
+To reproduce the now-exposed round11 result using the recorded candidate pins:
 
 ```sh
 python3 tools/task_paraphrase_eval/evaluate.py confirmation --suite round11 \

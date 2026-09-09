@@ -1,0 +1,324 @@
+{
+  "assembly_sha256": "50c7dd24adec1024437320a6670f1e4e4ca2ca58f5f27fc7cef05338ff7a2568",
+  "by_family": {
+    "bare_letter": {
+      "exact": 8,
+      "total": 10
+    },
+    "bare_number": {
+      "exact": 4,
+      "total": 4
+    },
+    "bare_punctuation": {
+      "exact": 4,
+      "total": 4
+    },
+    "case_plus_action": {
+      "exact": 3,
+      "total": 3
+    },
+    "case_synonym": {
+      "exact": 2,
+      "total": 2
+    },
+    "control_point": {
+      "exact": 1,
+      "total": 1
+    },
+    "conversion_question": {
+      "exact": 2,
+      "total": 6
+    },
+    "decimal_scalar": {
+      "exact": 6,
+      "total": 6
+    },
+    "direct_case": {
+      "exact": 4,
+      "total": 8
+    },
+    "direction_alternative": {
+      "exact": 0,
+      "total": 2
+    },
+    "direction_missing": {
+      "exact": 0,
+      "total": 4
+    },
+    "foreign_scalar": {
+      "exact": 2,
+      "total": 2
+    },
+    "hex_scalar": {
+      "exact": 4,
+      "total": 4
+    },
+    "input_alternative": {
+      "exact": 1,
+      "total": 2
+    },
+    "input_declaration": {
+      "exact": 2,
+      "total": 8
+    },
+    "input_missing": {
+      "exact": 3,
+      "total": 4
+    },
+    "instruction_quoted": {
+      "exact": 4,
+      "total": 4
+    },
+    "locale_case": {
+      "exact": 2,
+      "total": 2
+    },
+    "many_case_actions": {
+      "exact": 1,
+      "total": 1
+    },
+    "mixed_quotes": {
+      "exact": 2,
+      "total": 2
+    },
+    "negative_case": {
+      "exact": 4,
+      "total": 4
+    },
+    "normalization": {
+      "exact": 1,
+      "total": 1
+    },
+    "operation_description": {
+      "exact": 0,
+      "total": 2
+    },
+    "polite_action": {
+      "exact": 4,
+      "total": 6
+    },
+    "quoted_digit": {
+      "exact": 4,
+      "total": 4
+    },
+    "quoted_punctuation": {
+      "exact": 4,
+      "total": 4
+    },
+    "quoted_space": {
+      "exact": 0,
+      "total": 2
+    },
+    "quoted_symbol": {
+      "exact": 2,
+      "total": 2
+    },
+    "result_preference": {
+      "exact": 4,
+      "total": 6
+    },
+    "structured_fields": {
+      "exact": 0,
+      "total": 2
+    },
+    "surrogate_point": {
+      "exact": 1,
+      "total": 1
+    },
+    "text_input": {
+      "exact": 4,
+      "total": 4
+    },
+    "too_long": {
+      "exact": 1,
+      "total": 1
+    },
+    "unchanged_input_case": {
+      "exact": 2,
+      "total": 2
+    },
+    "unclosed_quotes": {
+      "exact": 2,
+      "total": 2
+    },
+    "unicode_scalar": {
+      "exact": 4,
+      "total": 6
+    }
+  },
+  "by_operation": {
+    "lower": {
+      "exact": 26,
+      "total": 40
+    },
+    "upper": {
+      "exact": 26,
+      "total": 40
+    }
+  },
+  "by_status": {
+    "abstain": {
+      "exact": 24,
+      "total": 24
+    },
+    "clarify": {
+      "exact": 16,
+      "total": 24
+    },
+    "ready": {
+      "exact": 52,
+      "total": 80
+    }
+  },
+  "collection": "confirmation",
+  "corpus_sha256": "2f3d137b379e41160871ac817d87c579ea4d421b6406edc73cc6c1a73906a946",
+  "exact": 92,
+  "freeze_sha256": "98da93e7c582ee8b5cb5fb8f539f572de6d7a1cb0d2a3668057e2873f954618a",
+  "gates": {
+    "abstain_95_percent": true,
+    "clarify_90_percent": false,
+    "lower_85_percent": false,
+    "ready_90_percent": false,
+    "upper_85_percent": false,
+    "zero_wrong_ready": true
+  },
+  "origin": "synthetic",
+  "parser_source_sha256": "c29de314e42acde2ae34861dda72fd8493ad29a84609f3ff90d8ceddb88fbd45",
+  "passed": false,
+  "probe_sha256": "cd6181ab1b28260064ed6e8c5f5d329478102cda6154076c9ace481492d4e4ae",
+  "schema": 1,
+  "suite": "round11",
+  "total": 128,
+  "training_eligible": false,
+  "wrong_ready": 0,
+  "cases": [
+    {"exact":true,"expected_status":"ready","family":"conversion_question","id":"r11u01","key":115,"operation":"upper","proposal":{"Code":"typed_case_change","Dataset":"unicode17_upper_latin1","Key":115,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"result_preference","id":"r11u02","key":114,"operation":"upper","proposal":{"Code":"typed_case_change","Dataset":"unicode17_upper_latin1","Key":114,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"polite_action","id":"r11u03","key":109,"operation":"upper","proposal":{"Code":"typed_case_change","Dataset":"unicode17_upper_latin1","Key":109,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":false,"expected_status":"ready","family":"direct_case","id":"r11u04","key":119,"operation":"upper","proposal":{"Code":"specify_case_input","Dataset":null,"Key":null,"Prompt":"Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5).","Status":"clarify"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"direct_case","id":"r11u05","key":106,"operation":"upper","proposal":{"Code":"typed_case_change","Dataset":"unicode17_upper_latin1","Key":106,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":false,"expected_status":"ready","family":"result_preference","id":"r11u06","key":107,"operation":"upper","proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":false,"expected_status":"ready","family":"operation_description","id":"r11u07","key":116,"operation":"upper","proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":false,"expected_status":"ready","family":"polite_action","id":"r11u08","key":118,"operation":"upper","proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":false,"expected_status":"ready","family":"conversion_question","id":"r11u09","key":228,"operation":"upper","proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"polite_action","id":"r11u10","key":242,"operation":"upper","proposal":{"Code":"typed_case_change","Dataset":"unicode17_upper_latin1","Key":242,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":false,"expected_status":"ready","family":"conversion_question","id":"r11u11","key":234,"operation":"upper","proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"direct_case","id":"r11u12","key":244,"operation":"upper","proposal":{"Code":"typed_case_change","Dataset":"unicode17_upper_latin1","Key":244,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"result_preference","id":"r11u13","key":241,"operation":"upper","proposal":{"Code":"typed_case_change","Dataset":"unicode17_upper_latin1","Key":241,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":false,"expected_status":"ready","family":"direct_case","id":"r11u14","key":230,"operation":"upper","proposal":{"Code":"specify_case_input","Dataset":null,"Key":null,"Prompt":"Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5).","Status":"clarify"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"case_synonym","id":"r11u15","key":252,"operation":"upper","proposal":{"Code":"typed_case_change","Dataset":"unicode17_upper_latin1","Key":252,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":false,"expected_status":"ready","family":"input_declaration","id":"r11u16","key":255,"operation":"upper","proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":false,"expected_status":"ready","family":"input_declaration","id":"r11u17","key":223,"operation":"upper","proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":false,"expected_status":"ready","family":"input_declaration","id":"r11u18","key":181,"operation":"upper","proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":false,"expected_status":"ready","family":"structured_fields","id":"r11u19","key":225,"operation":"upper","proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"input_declaration","id":"r11u20","key":240,"operation":"upper","proposal":{"Code":"typed_case_change","Dataset":"unicode17_upper_latin1","Key":240,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"bare_letter","id":"r11u21","key":101,"operation":"upper","proposal":{"Code":"typed_case_change","Dataset":"unicode17_upper_latin1","Key":101,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":false,"expected_status":"ready","family":"bare_letter","id":"r11u22","key":113,"operation":"upper","proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"bare_letter","id":"r11u23","key":231,"operation":"upper","proposal":{"Code":"typed_case_change","Dataset":"unicode17_upper_latin1","Key":231,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"bare_letter","id":"r11u24","key":229,"operation":"upper","proposal":{"Code":"typed_case_change","Dataset":"unicode17_upper_latin1","Key":229,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"bare_letter","id":"r11u25","key":238,"operation":"upper","proposal":{"Code":"typed_case_change","Dataset":"unicode17_upper_latin1","Key":238,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"unicode_scalar","id":"r11u26","key":243,"operation":"upper","proposal":{"Code":"typed_case_change","Dataset":"unicode17_upper_latin1","Key":243,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"unicode_scalar","id":"r11u27","key":224,"operation":"upper","proposal":{"Code":"typed_case_change","Dataset":"unicode17_upper_latin1","Key":224,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":false,"expected_status":"ready","family":"unicode_scalar","id":"r11u28","key":248,"operation":"upper","proposal":{"Code":"specify_case_input","Dataset":null,"Key":null,"Prompt":"Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5).","Status":"clarify"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"hex_scalar","id":"r11u29","key":235,"operation":"upper","proposal":{"Code":"typed_case_change","Dataset":"unicode17_upper_latin1","Key":235,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"hex_scalar","id":"r11u30","key":102,"operation":"upper","proposal":{"Code":"typed_case_change","Dataset":"unicode17_upper_latin1","Key":102,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"decimal_scalar","id":"r11u31","key":227,"operation":"upper","proposal":{"Code":"typed_case_change","Dataset":"unicode17_upper_latin1","Key":227,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"decimal_scalar","id":"r11u32","key":239,"operation":"upper","proposal":{"Code":"typed_case_change","Dataset":"unicode17_upper_latin1","Key":239,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"decimal_scalar","id":"r11u33","key":254,"operation":"upper","proposal":{"Code":"typed_case_change","Dataset":"unicode17_upper_latin1","Key":254,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"quoted_digit","id":"r11u34","key":57,"operation":"upper","proposal":{"Code":"typed_case_change","Dataset":"unicode17_upper_latin1","Key":57,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"quoted_digit","id":"r11u35","key":53,"operation":"upper","proposal":{"Code":"typed_case_change","Dataset":"unicode17_upper_latin1","Key":53,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"quoted_punctuation","id":"r11u36","key":45,"operation":"upper","proposal":{"Code":"typed_case_change","Dataset":"unicode17_upper_latin1","Key":45,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"quoted_punctuation","id":"r11u37","key":94,"operation":"upper","proposal":{"Code":"typed_case_change","Dataset":"unicode17_upper_latin1","Key":94,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":false,"expected_status":"ready","family":"quoted_space","id":"r11u38","key":32,"operation":"upper","proposal":{"Code":"specify_case_input","Dataset":null,"Key":null,"Prompt":"Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5).","Status":"clarify"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"quoted_symbol","id":"r11u39","key":247,"operation":"upper","proposal":{"Code":"typed_case_change","Dataset":"unicode17_upper_latin1","Key":247,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"unchanged_input_case","id":"r11u40","key":82,"operation":"upper","proposal":{"Code":"typed_case_change","Dataset":"unicode17_upper_latin1","Key":82,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"conversion_question","id":"r11l01","key":83,"operation":"lower","proposal":{"Code":"typed_case_change","Dataset":"unicode17_lower_latin1","Key":83,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"result_preference","id":"r11l02","key":82,"operation":"lower","proposal":{"Code":"typed_case_change","Dataset":"unicode17_lower_latin1","Key":82,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"polite_action","id":"r11l03","key":77,"operation":"lower","proposal":{"Code":"typed_case_change","Dataset":"unicode17_lower_latin1","Key":77,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":false,"expected_status":"ready","family":"direct_case","id":"r11l04","key":87,"operation":"lower","proposal":{"Code":"specify_case_input","Dataset":null,"Key":null,"Prompt":"Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5).","Status":"clarify"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"direct_case","id":"r11l05","key":74,"operation":"lower","proposal":{"Code":"typed_case_change","Dataset":"unicode17_lower_latin1","Key":74,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":false,"expected_status":"ready","family":"result_preference","id":"r11l06","key":75,"operation":"lower","proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":false,"expected_status":"ready","family":"operation_description","id":"r11l07","key":84,"operation":"lower","proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":false,"expected_status":"ready","family":"polite_action","id":"r11l08","key":86,"operation":"lower","proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":false,"expected_status":"ready","family":"conversion_question","id":"r11l09","key":196,"operation":"lower","proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"polite_action","id":"r11l10","key":210,"operation":"lower","proposal":{"Code":"typed_case_change","Dataset":"unicode17_lower_latin1","Key":210,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":false,"expected_status":"ready","family":"conversion_question","id":"r11l11","key":202,"operation":"lower","proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"direct_case","id":"r11l12","key":212,"operation":"lower","proposal":{"Code":"typed_case_change","Dataset":"unicode17_lower_latin1","Key":212,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"result_preference","id":"r11l13","key":209,"operation":"lower","proposal":{"Code":"typed_case_change","Dataset":"unicode17_lower_latin1","Key":209,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":false,"expected_status":"ready","family":"direct_case","id":"r11l14","key":198,"operation":"lower","proposal":{"Code":"specify_case_input","Dataset":null,"Key":null,"Prompt":"Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5).","Status":"clarify"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"case_synonym","id":"r11l15","key":220,"operation":"lower","proposal":{"Code":"typed_case_change","Dataset":"unicode17_lower_latin1","Key":220,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":false,"expected_status":"ready","family":"input_declaration","id":"r11l16","key":221,"operation":"lower","proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":false,"expected_status":"ready","family":"input_declaration","id":"r11l17","key":223,"operation":"lower","proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":false,"expected_status":"ready","family":"input_declaration","id":"r11l18","key":208,"operation":"lower","proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":false,"expected_status":"ready","family":"structured_fields","id":"r11l19","key":193,"operation":"lower","proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"input_declaration","id":"r11l20","key":206,"operation":"lower","proposal":{"Code":"typed_case_change","Dataset":"unicode17_lower_latin1","Key":206,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"bare_letter","id":"r11l21","key":69,"operation":"lower","proposal":{"Code":"typed_case_change","Dataset":"unicode17_lower_latin1","Key":69,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":false,"expected_status":"ready","family":"bare_letter","id":"r11l22","key":81,"operation":"lower","proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"bare_letter","id":"r11l23","key":199,"operation":"lower","proposal":{"Code":"typed_case_change","Dataset":"unicode17_lower_latin1","Key":199,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"bare_letter","id":"r11l24","key":197,"operation":"lower","proposal":{"Code":"typed_case_change","Dataset":"unicode17_lower_latin1","Key":197,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"bare_letter","id":"r11l25","key":203,"operation":"lower","proposal":{"Code":"typed_case_change","Dataset":"unicode17_lower_latin1","Key":203,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"unicode_scalar","id":"r11l26","key":211,"operation":"lower","proposal":{"Code":"typed_case_change","Dataset":"unicode17_lower_latin1","Key":211,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"unicode_scalar","id":"r11l27","key":192,"operation":"lower","proposal":{"Code":"typed_case_change","Dataset":"unicode17_lower_latin1","Key":192,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":false,"expected_status":"ready","family":"unicode_scalar","id":"r11l28","key":216,"operation":"lower","proposal":{"Code":"specify_case_input","Dataset":null,"Key":null,"Prompt":"Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5).","Status":"clarify"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"hex_scalar","id":"r11l29","key":200,"operation":"lower","proposal":{"Code":"typed_case_change","Dataset":"unicode17_lower_latin1","Key":200,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"hex_scalar","id":"r11l30","key":70,"operation":"lower","proposal":{"Code":"typed_case_change","Dataset":"unicode17_lower_latin1","Key":70,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"decimal_scalar","id":"r11l31","key":195,"operation":"lower","proposal":{"Code":"typed_case_change","Dataset":"unicode17_lower_latin1","Key":195,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"decimal_scalar","id":"r11l32","key":207,"operation":"lower","proposal":{"Code":"typed_case_change","Dataset":"unicode17_lower_latin1","Key":207,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"decimal_scalar","id":"r11l33","key":222,"operation":"lower","proposal":{"Code":"typed_case_change","Dataset":"unicode17_lower_latin1","Key":222,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"quoted_digit","id":"r11l34","key":51,"operation":"lower","proposal":{"Code":"typed_case_change","Dataset":"unicode17_lower_latin1","Key":51,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"quoted_digit","id":"r11l35","key":56,"operation":"lower","proposal":{"Code":"typed_case_change","Dataset":"unicode17_lower_latin1","Key":56,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"quoted_punctuation","id":"r11l36","key":44,"operation":"lower","proposal":{"Code":"typed_case_change","Dataset":"unicode17_lower_latin1","Key":44,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"quoted_punctuation","id":"r11l37","key":58,"operation":"lower","proposal":{"Code":"typed_case_change","Dataset":"unicode17_lower_latin1","Key":58,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":false,"expected_status":"ready","family":"quoted_space","id":"r11l38","key":32,"operation":"lower","proposal":{"Code":"specify_case_input","Dataset":null,"Key":null,"Prompt":"Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5).","Status":"clarify"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"quoted_symbol","id":"r11l39","key":177,"operation":"lower","proposal":{"Code":"typed_case_change","Dataset":"unicode17_lower_latin1","Key":177,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":true,"expected_status":"ready","family":"unchanged_input_case","id":"r11l40","key":114,"operation":"lower","proposal":{"Code":"typed_case_change","Dataset":"unicode17_lower_latin1","Key":114,"Prompt":null,"Status":"ready"},"wrong_ready":false},
+    {"exact":true,"expected_status":"clarify","family":"input_missing","id":"r11c01","key":null,"operation":null,"proposal":{"Code":"specify_case_input","Dataset":null,"Key":null,"Prompt":"Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5).","Status":"clarify"},"wrong_ready":false},
+    {"exact":true,"expected_status":"clarify","family":"input_missing","id":"r11c02","key":null,"operation":null,"proposal":{"Code":"specify_case_input","Dataset":null,"Key":null,"Prompt":"Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5).","Status":"clarify"},"wrong_ready":false},
+    {"exact":false,"expected_status":"clarify","family":"input_missing","id":"r11c03","key":null,"operation":null,"proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":true,"expected_status":"clarify","family":"input_missing","id":"r11c04","key":null,"operation":null,"proposal":{"Code":"specify_case_input","Dataset":null,"Key":null,"Prompt":"Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5).","Status":"clarify"},"wrong_ready":false},
+    {"exact":false,"expected_status":"clarify","family":"direction_missing","id":"r11c05","key":null,"operation":null,"proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":false,"expected_status":"clarify","family":"direction_missing","id":"r11c06","key":null,"operation":null,"proposal":{"Code":"input_domain","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":false,"expected_status":"clarify","family":"direction_missing","id":"r11c07","key":null,"operation":null,"proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":false,"expected_status":"clarify","family":"direction_missing","id":"r11c08","key":null,"operation":null,"proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":false,"expected_status":"clarify","family":"input_alternative","id":"r11c09","key":null,"operation":null,"proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":true,"expected_status":"clarify","family":"input_alternative","id":"r11c10","key":null,"operation":null,"proposal":{"Code":"specify_case_input","Dataset":null,"Key":null,"Prompt":"Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5).","Status":"clarify"},"wrong_ready":false},
+    {"exact":false,"expected_status":"clarify","family":"direction_alternative","id":"r11c11","key":null,"operation":null,"proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":false,"expected_status":"clarify","family":"direction_alternative","id":"r11c12","key":null,"operation":null,"proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":true,"expected_status":"clarify","family":"bare_number","id":"r11c13","key":null,"operation":null,"proposal":{"Code":"specify_case_input","Dataset":null,"Key":null,"Prompt":"Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5).","Status":"clarify"},"wrong_ready":false},
+    {"exact":true,"expected_status":"clarify","family":"bare_number","id":"r11c14","key":null,"operation":null,"proposal":{"Code":"specify_case_input","Dataset":null,"Key":null,"Prompt":"Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5).","Status":"clarify"},"wrong_ready":false},
+    {"exact":true,"expected_status":"clarify","family":"bare_number","id":"r11c15","key":null,"operation":null,"proposal":{"Code":"specify_case_input","Dataset":null,"Key":null,"Prompt":"Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5).","Status":"clarify"},"wrong_ready":false},
+    {"exact":true,"expected_status":"clarify","family":"bare_number","id":"r11c16","key":null,"operation":null,"proposal":{"Code":"specify_case_input","Dataset":null,"Key":null,"Prompt":"Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5).","Status":"clarify"},"wrong_ready":false},
+    {"exact":true,"expected_status":"clarify","family":"bare_punctuation","id":"r11c17","key":null,"operation":null,"proposal":{"Code":"specify_case_input","Dataset":null,"Key":null,"Prompt":"Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5).","Status":"clarify"},"wrong_ready":false},
+    {"exact":true,"expected_status":"clarify","family":"bare_punctuation","id":"r11c18","key":null,"operation":null,"proposal":{"Code":"specify_case_input","Dataset":null,"Key":null,"Prompt":"Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5).","Status":"clarify"},"wrong_ready":false},
+    {"exact":true,"expected_status":"clarify","family":"bare_punctuation","id":"r11c19","key":null,"operation":null,"proposal":{"Code":"specify_case_input","Dataset":null,"Key":null,"Prompt":"Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5).","Status":"clarify"},"wrong_ready":false},
+    {"exact":true,"expected_status":"clarify","family":"bare_punctuation","id":"r11c20","key":null,"operation":null,"proposal":{"Code":"specify_case_input","Dataset":null,"Key":null,"Prompt":"Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5).","Status":"clarify"},"wrong_ready":false},
+    {"exact":true,"expected_status":"clarify","family":"unclosed_quotes","id":"r11c21","key":null,"operation":null,"proposal":{"Code":"specify_case_input","Dataset":null,"Key":null,"Prompt":"Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5).","Status":"clarify"},"wrong_ready":false},
+    {"exact":true,"expected_status":"clarify","family":"unclosed_quotes","id":"r11c22","key":null,"operation":null,"proposal":{"Code":"specify_case_input","Dataset":null,"Key":null,"Prompt":"Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5).","Status":"clarify"},"wrong_ready":false},
+    {"exact":true,"expected_status":"clarify","family":"mixed_quotes","id":"r11c23","key":null,"operation":null,"proposal":{"Code":"specify_case_input","Dataset":null,"Key":null,"Prompt":"Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5).","Status":"clarify"},"wrong_ready":false},
+    {"exact":true,"expected_status":"clarify","family":"mixed_quotes","id":"r11c24","key":null,"operation":null,"proposal":{"Code":"specify_case_input","Dataset":null,"Key":null,"Prompt":"Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5).","Status":"clarify"},"wrong_ready":false},
+    {"exact":true,"expected_status":"abstain","family":"many_case_actions","id":"r11a01","key":null,"operation":null,"proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":true,"expected_status":"abstain","family":"case_plus_action","id":"r11a02","key":null,"operation":null,"proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":true,"expected_status":"abstain","family":"case_plus_action","id":"r11a03","key":null,"operation":null,"proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":true,"expected_status":"abstain","family":"case_plus_action","id":"r11a04","key":null,"operation":null,"proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":true,"expected_status":"abstain","family":"negative_case","id":"r11a05","key":null,"operation":null,"proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":true,"expected_status":"abstain","family":"negative_case","id":"r11a06","key":null,"operation":null,"proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":true,"expected_status":"abstain","family":"negative_case","id":"r11a07","key":null,"operation":null,"proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":true,"expected_status":"abstain","family":"negative_case","id":"r11a08","key":null,"operation":null,"proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":true,"expected_status":"abstain","family":"instruction_quoted","id":"r11a09","key":null,"operation":null,"proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":true,"expected_status":"abstain","family":"instruction_quoted","id":"r11a10","key":null,"operation":null,"proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":true,"expected_status":"abstain","family":"instruction_quoted","id":"r11a11","key":null,"operation":null,"proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":true,"expected_status":"abstain","family":"instruction_quoted","id":"r11a12","key":null,"operation":null,"proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":true,"expected_status":"abstain","family":"text_input","id":"r11a13","key":null,"operation":null,"proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":true,"expected_status":"abstain","family":"text_input","id":"r11a14","key":null,"operation":null,"proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":true,"expected_status":"abstain","family":"text_input","id":"r11a15","key":null,"operation":null,"proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":true,"expected_status":"abstain","family":"text_input","id":"r11a16","key":null,"operation":null,"proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":true,"expected_status":"abstain","family":"locale_case","id":"r11a17","key":null,"operation":null,"proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":true,"expected_status":"abstain","family":"locale_case","id":"r11a18","key":null,"operation":null,"proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":true,"expected_status":"abstain","family":"foreign_scalar","id":"r11a19","key":null,"operation":null,"proposal":{"Code":"input_domain","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":true,"expected_status":"abstain","family":"foreign_scalar","id":"r11a20","key":null,"operation":null,"proposal":{"Code":"input_domain","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":true,"expected_status":"abstain","family":"normalization","id":"r11a21","key":null,"operation":null,"proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":true,"expected_status":"abstain","family":"control_point","id":"r11a22","key":null,"operation":null,"proposal":{"Code":"unsupported_intent","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":true,"expected_status":"abstain","family":"surrogate_point","id":"r11a23","key":null,"operation":null,"proposal":{"Code":"input_domain","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false},
+    {"exact":true,"expected_status":"abstain","family":"too_long","id":"r11a24","key":null,"operation":null,"proposal":{"Code":"input_bounds","Dataset":null,"Key":null,"Prompt":null,"Status":"abstain"},"wrong_ready":false}
+  ]
+}

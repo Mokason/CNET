@@ -1,7 +1,7 @@
 # Task-language acceptance follow-up — September 9, 2026
 
-Status: candidate evaluation in progress. Acceptance remains WITHHELD until a
-new blind confirmation passes every original gate. This is source-only work
+Status: eleven first-blind confirmations failed. Acceptance remains WITHHELD;
+the latest candidate is regression-green, not acceptance-complete. This is source-only work
 on `feature/verified-task-core-20260908`; no push, migration or live rollout.
 
 ## Original floors and all scored confirmations
@@ -24,6 +24,7 @@ proposals may not contain a dataset/key. No floor, label or denominator changed.
 | [Round 8](task_paraphrases_round8_20260909/confirmation-1.json) | 50/80 | 23/40, 27/40 | 14/24 | 24/24 | 0 | FAIL |
 | [Round 9](task_paraphrases_round9_20260909/confirmation-1.json) | 39/80 | 20/40, 19/40 | 16/24 | 24/24 | 0 | FAIL |
 | [Round 10](task_paraphrases_round10_20260909/confirmation-1.json) | 48/80 | 24/40, 24/40 | 16/24 | 24/24 | 0 | FAIL |
+| [Round 11](task_paraphrases_round11_20260909/confirmation-1.json) | 52/80 | 26/40, 26/40 | 16/24 | 24/24 | 0 | FAIL |
 
 All rows and failed gates remain in the linked reports. Round3 also has a
 separate [infrastructure record](task_paraphrases_round3_20260909/infrastructure-attempt-1.json):
@@ -97,7 +98,7 @@ and a valid hexadecimal-declaration replay. Final round7 evidence: 1,402 tests
 passed, zero failures/skips, 99.69% parser line and 94.26% branch coverage. Source
 `c76351d` was freshly built and pinned in `9b0558d` before first blind scoring.
 That confirmation failed; retain all rows. Round8 is separately authored and
-blind, with zero-overlap checks against 1,024 exposed texts and the same floors.
+was blind at candidate freeze, with zero-overlap checks against 1,024 exposed texts and the same floors.
 
 Round8 shares relationship phrases, literal descriptions and declaration labels.
 Its quote-domain check rejects explicit multi-character literals without
@@ -116,8 +117,8 @@ Round9 passed 1,527 managed/native tests, zero failures/skips, 99.75% parser
 line and 93.49% branch coverage. All 34 independent implementation probes
 passed. Source `d1d0e83` was freshly built and pinned in `3f04d74` before the
 first blind score; all nine exposed populations scored 128/128. Fresh round9
-nevertheless failed ready and clarification floors. Round10 remains separately
-authored and blind against 1,280 exposed texts under the same original floors.
+nevertheless failed ready and clarification floors. Round10 was separately
+authored and blind at freeze against 1,280 exposed texts under the same original floors.
 
 Round10 passed 1,595 managed/native tests, zero failures/skips, 99.77% parser
 line and 93.71% branch coverage. Source `d343de3` was freshly built and pinned
@@ -143,8 +144,8 @@ matrix contains 180 independent combinations and 31 boundary cases; another
 texts. Full structural and subsequent development reports are retained under
 `task_paraphrases_round11_20260909/`; neither is fresh acceptance. The structural
 correction review passed 24 probes; the separate component-inventory review
-passed 34 probes with no further issue. Full committed-candidate regression and
-the untouched round11 confirmation remain pending.
+passed 34 probes with no further issue. At that checkpoint full committed-candidate
+regression and the untouched round11 confirmation were still pending.
 
 The freshly built round11 source `dd860d9` passed 1,861 managed/native tests,
 zero failures/skips, with 99.80% parser line and 93.09% branch coverage. All
@@ -153,6 +154,17 @@ native fixture now also replays bound input/produce requests and agreeing alias
 questions after capsule activation; controls, literal references and result
 formats still refuse before daemon startup. Candidate identities are frozen in
 `task_paraphrases_round11_20260909/candidate.json` before the first blind score.
+
+Round11 was first scored after pins commit `9a7a9dd` and failed: 52/80 ready,
+26/40 per operation, 16/24 clarify, 24/24 abstain and zero wrong-ready proposals.
+The 36 misses span input descriptions, request/declaration relationships and
+missing/alternative input or direction. The new shared binding is genuinely
+tested component reuse, but did not close fresh-language acceptance. All 12
+collections (1,536 unique texts) are now exposed; none is a new holdout. No
+reliable completion ETA follows from these results, and another perfect score
+on repaired exposed cases would not change that. The remaining language-routing
+work must demonstrate generalization under unchanged floors before claiming
+completion. No new source, fitting, deployment or live mutation was performed.
 
 The evaluator's 34 integrity tests pass; tracing covers 97% of 213 executable
 lines. The unchanged capture/bridge surface passed 148 tests earlier this turn.
@@ -164,7 +176,11 @@ still abstains and both 256-key table verifications remain intact.
 
 ECC's TDD and verification workflows required executed RED cases and separate
 regression/coverage evidence. Graft supplied worktree source discovery when the
-MCP graph had no index for this worktree. Final Graft freshness check is pending.
+MCP graph had no index for this worktree. The current-checkpoint Graft refresh
+parsed 2,011 files (12 reparsed, 1,999 cached) into 24,233 nodes, 24,517 edges
+and 1,983 cards. Its check reports graph OK, zero changed and zero stale files.
+Deep context remains missing; no provider, token-savings or model-quality claim
+is made. This freshness check does not turn the failed acceptance gate green.
 
 ## Evidence limits and unchanged product scope
 

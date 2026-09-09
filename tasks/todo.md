@@ -2,13 +2,18 @@
 
 ## Active: fresh language acceptance follow-up
 
-- [ ] Shared two-clause input binding and request parsing, with cross-product/mutation tests
+- [x] Shared two-clause input binding and request parsing, with cross-product/mutation tests
 - [ ] Reproduce and repair exposed shared grammar/clarification/compound gaps
 - [ ] Independently author, review and freeze a new blind confirmation set
 - [ ] Extend pinned evaluation selection without changing original floors
 - [ ] Regression/coverage, native replay and separate boundary review
 - [ ] Freeze candidate and achieve every original floor on fresh confirmation
 - [ ] Retain all attempts and publish the measured source-only handoff
+
+Latest checkpoint: 1,861 regression tests pass. Round11 first-blind confirmation
+failed with 52/80 ready, 16/24 clarify, 24/24 abstain and zero wrong ready. All
+12 existing collections are exposed; acceptance and completion ETA remain
+WITHHELD. See [the retained attempts](../result/cnet_paraphrase_acceptance_followup_20260909.md).
 
 ## Executed: independent synthetic paraphrase/OOD evaluation
 
