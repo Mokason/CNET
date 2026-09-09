@@ -55,3 +55,26 @@ fallback where the MCP graph has no worktree index. Dated results retain every
 attempt, source/binary pins, review findings and exact remaining limits.
 Auxiliary skill reference checklists are unavailable locally; use the fully
 read skill-body checks and this repository's gates, not invented references.
+
+## Follow-up confirmation failed; continue with a new blind population
+
+The reviewed candidate `e476dd6`, pinned in `9eca653` before opening the new
+population, scored 54/80 ready (27/40 per operation), 23/24 clarify, 22/24
+abstain and zero wrong ready. All 128 rows are retained in
+`result/task_paraphrases_followup_20260909/confirmation-1.json`. Original floors
+remain unchanged. This follow-up population is now development-only too.
+
+The 29 misses expose shared input-first/declarative and polite frames,
+separated `code point` spelling/descriptions, a missing-direction verb and
+whole-sentence refusal. The next bounded repair decomposes those concerns:
+whole-request frame selection, scalar description/decoding, and non-executable
+operand classification. Retain the third-review nonready status findings;
+sentence punctuation and missing-direction paths need the same refusal checks.
+No substring instruction execution or output labels enter the parser.
+
+A new fresh-context author and custodian receive only the original behavior
+contract. `round3` uses the same quotas/floors and zero exact overlaps with all
+three exposed collections, checked before freeze without parser execution.
+The implementer remains blind until a new candidate checkpoint is committed.
+After test-first fixes, evaluate all exposed sets as development, conduct a
+bounded review of the new frame/operand changes, then freeze and score round3.
