@@ -31,10 +31,11 @@ and floors and no exact request overlap with either original collection. That
 follow-up also failed ready/OOD floors and is now exposed. `round3` provides
 another separately authored, reviewed and pinned 128-case confirmation. It too
 failed its quality gates and is now exposed. `round4` also failed ready and
-clarification floors; it is exposed too. `round5` adds a blind 128-case
-confirmation with the same quotas/floors and no exact overlaps with all five
-exposed collections (640 prior texts). Because fresh-agent capacity was exhausted,
-its two isolated author/custodian contexts were reused. They knew their own prior
+clarification floors; it is exposed too. `round5` failed ready, clarification
+and abstention floors. `round6` adds a blind 128-case confirmation with the same
+quotas/floors and no exact overlaps with all six exposed collections (768 prior
+texts). Because fresh-agent capacity was exhausted, rounds5/6 use two isolated
+author/custodian contexts that were reused. They knew their own prior
 authored sets but had no implementation, test, graph, result or CNET execution
 access. Its manifest explicitly records this limitation; do not claim fresh-context
 authorship or IID confidence. Earlier attempts remain in their dated
@@ -91,18 +92,19 @@ The runner accepts only pinned suite/collection pairs and verifies the manifest
 and requested corpus hashes. It never reads another collection. `--suite
 original` is the backward-compatible default and supports `qualification` and
 `confirmation`; both are development-only now. `--suite followup`,
-`--suite round3`, `--suite round4`, and `--suite round5` support only `confirmation`
-and cannot silently select another population. Follow-up, round3 and round4 are development-only
+`--suite round3`, `--suite round4`, `--suite round5`, and `--suite round6` support
+only `confirmation` and cannot silently select another population. Follow-up
+and rounds3/4/5 are development-only
 after their failed runs. Round3's separately pinned nested manifest layout is
 validated explicitly; other suites retain their flat corpus-hash fields.
 After candidate source/binary pins are committed and review is complete:
 
 ```sh
-python3 tools/task_paraphrase_eval/evaluate.py confirmation --suite round5 \
+python3 tools/task_paraphrase_eval/evaluate.py confirmation --suite round6 \
   --assembly "$PARAPHRASE_ASSEMBLY_PATH" \
   --assembly-sha256 "$PARAPHRASE_ASSEMBLY_SHA256" \
   --parser-sha256 "$PARAPHRASE_PARSER_SHA256" \
-  --output "$PARAPHRASE_REPORT_DIR/round5-confirmation.json"
+  --output "$PARAPHRASE_REPORT_DIR/round6-confirmation.json"
 ```
 
 Record the first result even if it fails; never relabel, omit cases, lower
@@ -138,7 +140,7 @@ tables, learns through the existing capsule machinery, then checks alternative
 observations. This is representative native replay, not execution of all 128
 confirmation texts through a learned runtime.
 
-The [dated handoff](../result/cnet_paraphrase_evaluation_20260909.md) records the
+The [dated handoff](../result/cnet_paraphrase_acceptance_followup_20260909.md) records the
 actual scores, source pins, review findings, regression counts and remaining
 scope. Existing live services, capture policy and the frozen soak are not
 changed by this evaluation.

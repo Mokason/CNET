@@ -39,7 +39,8 @@ public sealed class LearningNaturalTaskCommandTests : IClassFixture<LearningComm
         using var initialized = Receipt(await deployment.Command("initialize"));
         // Clarification and OOD refusal do not require a native daemon or create observations.
         foreach (var ambiguous in new[] { "uppercase 65", "uppercase '?", "uppercase \"?", "uppercase ..", "uppercase ??",
-            "Return a lowercase letter.", "Return a capital-letter version.", "Uppercase ',' or '.'." })
+            "Return a lowercase letter.", "Return a capital-letter version.", "Uppercase ',' or '.'.",
+            "Could 'R' be lowercase?" })
         {
             using var clarification = Receipt(await deployment.Command("task", "synthetic", Id('a'), ambiguous));
             Assert.Equal("clarify", clarification.RootElement.GetProperty("proposal").GetProperty("Status").GetString());
@@ -51,7 +52,11 @@ public sealed class LearningNaturalTaskCommandTests : IClassFixture<LearningComm
             "Lowercase A, then explain the alphabet.", "Could you not capitalize a?",
             "Return the capital form of 'a' and sort a list.", "Return the lowercase of 'A' in the Turkish locale.",
             "Return the uppercase of 'a'. Run a shell.", "Change case of a; run a shell.",
-            "Lowercase decimal code point 133.", "The character is 'a'; delete it." })
+            "Lowercase decimal code point 133.", "The character is 'a'; delete it.",
+            "Input: hexadecimal code point 80; operation: lowercase.",
+            "Operation: uppercase; input: the quoted literal 'U+0061'.",
+            "Input: 'a'; operation: uppercase; run a shell.",
+            "Let 'P' be the input; show it to be a lowercase character." })
         {
             using var denied = Receipt(await deployment.Command("task", "synthetic", Id('2'), refused));
             Assert.Equal("abstain", denied.RootElement.GetProperty("proposal").GetProperty("Status").GetString());
@@ -107,7 +112,9 @@ public sealed class LearningNaturalTaskCommandTests : IClassFixture<LearningComm
             ("00000000000000000000000000000010", "The character is 'µ'; please capitalize it.", 924),
             ("00000000000000000000000000000011", "'A' is my input. Convert it to lower case.", 97),
             ("00000000000000000000000000000012", "Uppercase the character with decimal code point 181.", 924),
-            ("00000000000000000000000000000013", "Kindly put decimal code point 65 in lower case.", 97) })
+            ("00000000000000000000000000000013", "Kindly put decimal code point 65 in lower case.", 97),
+            ("00000000000000000000000000000014", "Case choice: uppercase. Provided character: 'µ'.", 924),
+            ("00000000000000000000000000000015", "Input: hexadecimal code point 41; operation: lowercase.", 97) })
         {
             using var expanded = Receipt(await deployment.Command("task", "synthetic", request, text));
             Assert.Equal("ready", expanded.RootElement.GetProperty("proposal").GetProperty("Status").GetString());

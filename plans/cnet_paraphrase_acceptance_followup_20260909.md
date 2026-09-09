@@ -162,3 +162,13 @@ and keeps scalar descriptions and unsupported output/action modifiers distinct.
 Add every exposed miss as RED development regression. Freeze an independently
 reviewed new set with the same original floors and zero overlaps against 768
 prior texts, retaining the reused-context limitation. No live changes.
+
+The field design review identified two actionable boundaries: preserve explicit
+radix, and never reinterpret quoted codepoint-looking strings as scalar syntax.
+Six boundary cases joined all 84 exposed misses; the combined 90 tests executed
+RED (86 failed). Field parsing now tries bounded separator positions and requires
+one complete operation field and one complete input field, in either order.
+Separate small regexes avoid Cartesian growth; the 1000-node bound remains
+unchanged. All 411 focused tests and six exposed populations (128/128 each)
+pass on development source. Extend the private native fixture with field-order,
+radix, quote and extra-action checks before freezing the final candidate.

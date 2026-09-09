@@ -118,6 +118,13 @@ Property statements are not transformations: `Show 'R' to be a lowercase
 character.` abstains; `Could 'R' be lowercase?` clarifies. Explicit `Could 'R'
 be converted to lowercase?` and `Could 'R' be lowercased?` can propose the
 transformation. Verb/adjective evidence survives the internal direction marker.
+Explicit input and operation fields can occur in either order, for example
+`Case choice: uppercase. Provided character: 'µ'.` and `Input: hexadecimal code
+point 41; operation: lowercase.` Both complete fields must match; delimiters
+cannot silently discard extra actions or a second input. Radix qualifiers
+survive decoding (`hexadecimal code point 80` is a refused control, not decimal
+80). Quoted multi-character data such as `'U+0061'` is never reinterpreted as
+codepoint syntax. Operand descriptions do not select output formats or sources.
 
 Requests are at most 256 UTF-16 code units; control characters and surrogates
 refuse, including decoded control values in canonical, hexadecimal and decimal
