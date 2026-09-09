@@ -39,12 +39,14 @@ internal static class LearningCaseRequestSyntax
         Polite(tokens, ref start, end);
         if (start == end) return null;
         if (tokens.Any(token => IsAny(token, "not", "never", "then", "also"))) return Refuse();
-        if (!IsAny(tokens[start], "uppercase", "lowercase", "capitalize", "capitalise", "upcase", "downcase", "uppercasing", "lowercasing"))
+        if (!IsAny(tokens[start], "uppercase", "lowercase", "capitalize", "capitalise", "upcase", "downcase",
+                "uppercasing", "lowercasing", "uncapitalize", "uncapitalise", "uncapitalizing", "uncapitalising"))
             return Request(tokens, start, end);
         var descriptionNoun = start + 1 < end && IsAny(tokens[start + 1], "character", "letter");
         var nominalRelation = start + 2 < end && IsAny(tokens[start + 2], "of", "for", "from", "to", "on", "is", "when", "should");
         if (LearningTaskParser.HasOperationNounAt(text, tokens[start].Start) && (!descriptionNoun || nominalRelation)) return null;
-        var operation = IsAny(tokens[start++], "lowercase", "lowercasing", "downcase") ? "lower" : "upper";
+        var operation = IsAny(tokens[start++], "lowercase", "lowercasing", "downcase",
+            "uncapitalize", "uncapitalise", "uncapitalizing", "uncapitalising") ? "lower" : "upper";
         // These start nominal, relational or declaration constructions, not
         // the unary command owned here. The existing grammar owns their roles.
         if (start < end && IsAny(tokens[start], "is", "for", "on", "when", "should", "as", "with")) return null;
@@ -58,11 +60,11 @@ internal static class LearningCaseRequestSyntax
         var question = tokens[cursor].Is("what's") || tokens[cursor].Is("what’s");
         if (question) cursor++;
         else if (cursor + 1 < end && tokens[cursor].Is("what") && tokens[cursor + 1].Is("is")) { cursor += 2; question = true; }
-        var output = !question && IsAny(tokens[cursor], "write", "render", "return", "show", "display", "supply", "provide", "produce", "present", "express", "give", "put", "putting", "make");
-        var conversion = !question && IsAny(tokens[cursor], "convert", "change", "turn", "switch", "transform", "map", "fold", "rewrite", "recast", "take", "raise");
-        var take = conversion && tokens[cursor].Is("take");
-        var raise = conversion && tokens[cursor].Is("raise");
-        var make = output && tokens[cursor].Is("make");
+        var output = !question && IsOutputVerb(tokens[cursor]);
+        var conversion = !question && IsConversionVerb(tokens[cursor]);
+        var take = conversion && IsTakeOrBring(tokens[cursor]);
+        var raise = conversion && IsRaiseVerb(tokens[cursor]);
+        var make = output && IsAny(tokens[cursor], "make", "making");
         if (!question && !output && !conversion) return null;
         if (!question) cursor++;
         if (output && cursor < end && tokens[cursor].Is("me")) cursor++;
@@ -104,11 +106,25 @@ internal static class LearningCaseRequestSyntax
                 if (complement < end && tokens[complement].Is("is")) complement++;
                 else if (complement + 1 < end && tokens[complement].Is("appears") && tokens[complement + 1].Is("in")) complement += 2;
                 else continue;
+                if (complement < end && tokens[complement].Is("written"))
+                {
+                    complement++;
+                    if (complement < end && tokens[complement].Is("in")) complement++;
+                }
                 var caseChoice = Direction(tokens, ref complement, end);
                 if (caseChoice is not null && complement == end)
                     return ConstrainedOperand(tokens, operandStart, cursor, caseChoice, raise ? "upper" : null);
             }
-            if (!IsAny(tokens[cursor], conversion ? ["to", "into"] : ["in", "as", "into", "using"])) continue;
+            if (IsAny(tokens[cursor], "after", "before"))
+            {
+                // Show … after converting … is an output request. A second
+                // transformation (Raise … after converting …) is unsupported.
+                if (!output) return Refuse();
+                var sequential = SequentialConversion(tokens, operandStart, cursor, end);
+                if (sequential is not null) return sequential;
+                continue;
+            }
+            if (!IsAny(tokens[cursor], conversion ? ["to", "into", "onto", "using"] : ["in", "as", "into", "using"])) continue;
             var target = cursor + 1;
             var direction = Direction(tokens, ref target, end);
             // An explicit trailing input slot can resolve this/that/it, but
@@ -118,6 +134,8 @@ internal static class LearningCaseRequestSyntax
                 return ConstrainedOperand(tokens, target + 1, end, direction, raise ? "upper" : null);
             if (direction is not null && target == end)
             {
+                // A later conversion clause is not this grammar's operand.
+                if (ForeignClause(tokens, operandStart, cursor)) return null;
                 var operandEnd = cursor;
                 string? modifier = null;
                 if (take && operandEnd > operandStart && IsAny(tokens[operandEnd - 1], "up", "down"))
@@ -193,6 +211,50 @@ internal static class LearningCaseRequestSyntax
             && tokens[start].Value.Length > 1 && tokens[start].Value.All(char.IsLetter)
             && !IsAny(tokens[start], "codepoint", "character", "letter", "scalar", "input")) return Refuse();
         return proposal;
+    }
+
+    private static bool IsOutputVerb(Token token) => IsAny(token,
+        "write", "writing", "render", "rendering", "return", "returning", "show", "showing",
+        "display", "displaying", "supply", "supplying", "provide", "providing", "produce", "producing",
+        "present", "presenting", "express", "expressing", "give", "giving", "put", "putting", "make", "making");
+
+    private static bool IsConversionVerb(Token token) => IsAny(token,
+        "convert", "converting", "converted", "change", "changing", "changed", "turn", "turning", "turned",
+        "switch", "switching", "switched", "transform", "transforming", "transformed",
+        "map", "mapping", "mapped", "fold", "folding", "folded", "rewrite", "rewriting", "rewritten",
+        "recast", "recasting", "take", "taking", "taken", "raise", "raising", "raised",
+        "bring", "bringing", "brought");
+
+    private static bool IsRaiseVerb(Token token) => IsAny(token, "raise", "raising", "raised");
+
+    private static bool IsTakeOrBring(Token token) =>
+        IsAny(token, "take", "taking", "taken", "bring", "bringing", "brought");
+
+    // "Take 0xC9 and switch it …" belongs to the bound-request grammar.
+    private static bool ForeignClause(List<Token> tokens, int start, int end)
+    {
+        for (var index = start; index < end; index++)
+        {
+            if (!IsAny(tokens[index], "and", "after", "before")) continue;
+            for (var next = index + 1; next < end; next++)
+                if (IsConversionVerb(tokens[next]) || IsOutputVerb(tokens[next])) return true;
+        }
+        return false;
+    }
+
+    private static LearningTaskProposal? SequentialConversion(List<Token> tokens, int operandStart, int marker, int end)
+    {
+        var cursor = marker + 1;
+        if (cursor >= end || !IsConversionVerb(tokens[cursor])) return null;
+        var verb = tokens[cursor++];
+        if (cursor >= end || !tokens[cursor].Is("it")) return Refuse();
+        cursor++;
+        if (cursor >= end || !IsAny(tokens[cursor], "to", "into", "onto", "using")) return null;
+        cursor++;
+        var direction = Direction(tokens, ref cursor, end);
+        if (direction is null) return null;
+        if (cursor != end || tokens[marker].Is("before")) return Refuse();
+        return ConstrainedOperand(tokens, operandStart, marker, direction, IsRaiseVerb(verb) ? "upper" : null);
     }
 
     private static bool IsAny(Token token, params string[] words) => words.Any(token.Is);

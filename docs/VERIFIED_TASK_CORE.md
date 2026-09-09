@@ -175,6 +175,17 @@ These source additions do not change policy, source approval, native coverage,
 training eligibility or deployment. See the [Herdr experiment record](../plans/cnet_herdr_three_heads_20260909.md)
 for the separately measured synthetic acceptance and benchmark limits.
 
+The single-clause token grammar also recognizes verb inflections such as
+`changing`, `converting` and `giving`, plus `bring` and `uncapitalize`. Input
+binding owns `Take 0xC9 and switch it to lower case.`; its second clause is not
+treated as one operand. Bounded output requests such as `Show 'a' after
+converting it to lowercase.` are supported, but `Raise 'a' after converting it
+to lowercase.` refuses the additional transformation. Missing direction and
+unresolved choices clarify. These are grammar rules, not learned semantics.
+Verb alternatives remain in the token grammar where possible: expanding the
+shared regex output-verb expression exceeded the non-backtracking engine's
+1,000-node limit during development. The limit was not raised.
+
 Explicit trailing input slots can resolve a pronoun, as in `Change this to
 uppercase: U+00B5`. They cannot replace a preceding scalar: `Change A to uppercase:
 'b'` abstains. Unresolved choices such as `lowercase a or b, whichever you prefer`

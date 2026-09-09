@@ -15,7 +15,7 @@ internal static class LearningTaskParser
     // Recognize direction once, then compose small whole-request frames without
     // multiplying their automata by the operation vocabulary at every site.
     private const string Case = @"\x1F";
-    private static readonly Regex OperationLexeme = new(@"\b(?<op>upper(?:[ -]?cas(?:e|ing|ed))?|lower(?:[ -]?cas(?:e|ing|ed))?|(?:up|down)cas(?:e|ing|ed)|capital(?:[ -]letter)?s?|capitali[sz](?:e(?:d)?|ation)|small[ -]letters?|all caps)\b", Options);
+    private static readonly Regex OperationLexeme = new(@"\b(?<op>upper(?:[ -]?cas(?:e|ing|ed))?|lower(?:[ -]?cas(?:e|ing|ed))?|(?:up|down)cas(?:e|ing|ed)|capital(?:[ -]letter)?s?|capitali[sz](?:e(?:d)?|ation)|uncapitali[sz](?:e(?:d)?|ing)|small[ -]letters?|all caps)\b", Options);
     // Separate automata avoid the operation × noun state-space product.
     private static readonly Regex OperationNoun = new(@"(?<noun>[ -](?:form|version|equivalent|lettering|letter|character|case conversion|conversion|casing|rendition|result|operation|transformation|counterpart|mapping))", Options);
     private const string OutputVerb = @"(?:make|put|write|render|return|show(?: me)?|display|supply|provide|produce|present|express|give(?: me)?)";
@@ -30,7 +30,7 @@ internal static class LearningTaskParser
     private static readonly Regex Canonical = new(@"\Aunicode (?<op>upper|lower) (?<input>[0-9]{1,3})\z", Options);
     private static readonly Regex ContextPrefix = new(@"\Afor (?:this|the) (?:request|task|conversion), ", Options);
     private static readonly Regex[] PolitePrefixes = [
-        new(@"\A(?:(?:can|could|would|will) you (?:be able to )?(?:please )?|how (?:would|do) you )", Options),
+        new(@"\A(?:(?:can|could|would|will) you (?:mind )?(?:be able to )?(?:please )?|how (?:would|do) you )", Options),
         new(@"\A(?:(?:i would|i'd|i’d) like (?:you to |to (?:see )?)|i (?:need|want) you to |i want to (?:see )?)", Options),
         new(@"\A(?:(?:my request|the task) is to |the result i need is |this request concerns |for me, (?:please )?|please |kindly )", Options)
     ];
@@ -194,6 +194,8 @@ internal static class LearningTaskParser
         new(@"\A(?:for|in) (?:an? )?" + Case + @", (?:(?:please )?(?:use|convert)|what is) " + Input + @"\z", Options),
         new(@"\Afor " + Input + @", what would " + Case + @" be\z", Options),
         new(@"\A(?:which|what) " + Case + @" (?:goes with|results from|is associated with) " + Input + @"\z", Options),
+        new(@"\A(?<which>which) should i " + Case + @", " + Input + @"\z", Options),
+        new(@"\A" + Desire + @" " + Input + @" mapped to " + Case + @"\z", Options),
         new(@"\A(?:use|take) " + Input + @" as (?:the )?(?:input|argument) (?:for|of|to) (?:the |an? )?" + Case + @"\z", Options),
         new(@"\A(?:an? )?" + Case + @" with " + Input + @" as input\z", Options),
         new(@"\Ai have selected " + Input + @" for conversion (?:to|into) " + Case + @"\z", Options),
@@ -211,7 +213,7 @@ internal static class LearningTaskParser
         new(@"\Amake the supplied character " + Case + @": " + Input + @"\z", Options),
         new(@"\Awhat would (?:the )?" + Case + @" of " + Input + @" be\z", Options),
         new(@"\A" + Case + @"(?: " + Input + @")?\z", Options),
-        new(@"\A(?:convert|change|turn|transform|take|switch) (?:" + Input + @" )?(?:to|into) (?:an? |its |the corresponding )?" + Case + @"\z", Options),
+        new(@"\A(?:convert|change|turn|transform|take|switch|rewrite|recast|map|fold|bring) (?:" + Input + @" )?(?:to|into|onto|using) (?:an? |its |the corresponding )?" + Case + @"\z", Options),
         new(@"\Aset (?:the )?case of " + Input + @" to " + Case + @"\z", Options),
         new(@"\A(?<output>" + OutputVerb + @") (?:" + Input + @" " + Manner + @")?" + Case + @"\z", Options),
         new(@"\A(?:give(?: me)?|show(?: me)?|tell me|return|display|use|provide|supply|select|choose|find) (?:the |an? )?" + Case + @"(?: (?:of|for|corresponding to|associated with) " + Input + @")?\z", Options),
@@ -250,6 +252,9 @@ internal static class LearningTaskParser
         new(@"\A" + NumericDeclaration + @"[;.:] (?:please )?(?:apply|perform|use) " + Case + @"\z", Options)
     ];
     private static readonly Regex[] DirectionlessForms = [
+        new(@"\Ado a case (?:change|conversion) on " + Input + @"\z", Options),
+        new(@"\A(?:convert|change|turn|switch) (?<input>it) to (?:the )?other case\z", Options),
+        new(@"\A(?:take|use) " + Input + @" and (?:convert|change|turn|switch) it to (?:the )?other case\z", Options),
         MissingDirection,
         new(@"\A" + Input + @" should undergo case (?:conversion|change)\z", Options),
         new(@"\A" + Desire + @" a case (?:change|conversion) (?:for|applied to|on|of) " + Input + @"\z", Options),
@@ -307,7 +312,8 @@ internal static class LearningTaskParser
     private static LearningTaskProposal Abstain(string code) => new("abstain", code);
     private static bool IsLowerOperation(string operation) => operation.StartsWith("lower", StringComparison.OrdinalIgnoreCase)
         || operation.StartsWith("down", StringComparison.OrdinalIgnoreCase)
-        || operation.StartsWith("small", StringComparison.OrdinalIgnoreCase);
+        || operation.StartsWith("small", StringComparison.OrdinalIgnoreCase)
+        || operation.StartsWith("uncapital", StringComparison.OrdinalIgnoreCase);
     internal static bool HasOperationNounAt(string text, int position)
     {
         var match = OperationLexeme.Match(text, position);
@@ -420,7 +426,7 @@ internal static class LearningTaskParser
                         return Abstain("unsupported_intent");
                     if (match.Groups["modal"].Success) return Clarify();
                 }
-                return (ambiguity.Success || match.Groups["unresolved"].Success) && proposal.Status == "ready" ? Clarify() : proposal;
+                return (ambiguity.Success || match.Groups["unresolved"].Success || match.Groups["which"].Success) && proposal.Status == "ready" ? Clarify() : proposal;
             }
         }
         // Reuse operand refusal even when direction is absent. A hypothetical
