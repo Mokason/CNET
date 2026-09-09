@@ -11,20 +11,24 @@ internal sealed record LearningTaskProposal(string Status, string Code, string? 
 internal static class LearningTaskParser
 {
     private const RegexOptions Options = RegexOptions.CultureInvariant | RegexOptions.IgnoreCase | RegexOptions.NonBacktracking;
-    private const string Case = @"(?<op>upper[ -]?case|lower[ -]?case|capitals?|small[ -]letter)(?: form| version| equivalent| letter)?";
+    private const string Case = @"(?<op>upper[ -]?case|lower[ -]?case|capital(?:[ -]letter)?s?|capitali[sz]ed|small[ -]letter)(?: form| version| equivalent| letter)?";
     private const string Input = @"(?<input>.+?)";
     private static readonly Regex Canonical = new(@"\Aunicode (?<op>upper|lower) (?<input>[0-9]{1,3})\z", Options);
     private static readonly Regex PolitePrefix = new(@"\A(?:(?:can|could|would|will) you (?:please )?|please )", Options);
-    private static readonly Regex PoliteSuffix = new(@",? please\z", Options);
-    private static readonly Regex InputDescription = new(@"\A(?:the )?(?:character|letter) ", Options);
-    private static readonly Regex MissingDirection = new(@"\A(?:change (?:the )?case(?: of .+)?|case-convert .+|(?:convert|change) .+ to (?:the )?(?:requested )?case|apply (?:a )?case conversion(?: to .+)?)\z", Options);
-    private static readonly Regex UnsupportedOperand = new(@"(?:\busing\b|\baccording to\b|\band then\b|, then\b|;|\band (?:upper[ -]?case|lower[ -]?case|capitali[sz]e)\b|\A(?:the )?(?:(?:whole|entire) )?(?:string|word)\b)", Options);
+    private static readonly Regex PoliteSuffix = new(@"(?: for me(?:,? please)?|,? please)\z", Options);
+    private static readonly Regex InputDescription = new(@"\A(?:the )?(?:single )?(?:character|letter) ", Options);
+    private static readonly Regex MissingDirection = new(@"\A(?:(?:change|adjust|set) (?:the )?(?:letter )?case(?: of .+)?|case-convert .+|(?:convert|change) .+ to (?:the )?(?:requested )?case|apply (?:a )?case (?:conversion|operation)(?: to .+)?)\z", Options);
+    // These words cannot be a single literal operand. Do not reject "a and b":
+    // alternatives need clarification, while an additional action must abstain.
+    private static readonly Regex CompoundOrNegated = new(@"\b(?:not|then|also)\b|\band (?:upper[ -]?case|lower[ -]?case|capitali[sz]e|run|execute|add|subtract|multiply|divide|explain|write|send|delete|open|print|translate|convert|change|make|summari[sz]e|reverse|tell|do)\b", Options);
+    private static readonly Regex UnsupportedOperand = new(@"(?:\busing\b|\baccording to\b|;|\A(?:the )?(?:(?:whole|entire) )?(?:string|word)\b)", Options);
     private static readonly Regex[] Forms = [
         new(@"\A" + Case + @"(?: " + Input + @")?\z", Options),
         new(@"\A(?<op>capitali[sz]e)(?: " + Input + @")?\z", Options),
-        new(@"\A(?:convert|change|turn) " + Input + @" (?:to|into) (?:an? |its )?" + Case + @"\z", Options),
-        new(@"\A(?:make|put|write|render) " + Input + @" (?:(?:in|as|into) )?(?:an? |its )?" + Case + @"\z", Options),
-        new(@"\A(?:give(?: me)?|show(?: me)?|what is|what's|what’s|i would like|i want) (?:the )?" + Case + @"(?: of " + Input + @")?\z", Options),
+        new(@"\A(?:convert|change|turn) (?:" + Input + @" )?(?:to|into) (?:an? |its )?" + Case + @"\z", Options),
+        new(@"\Aset (?:the )?case of " + Input + @" to " + Case + @"\z", Options),
+        new(@"\A(?:make|put|write|render|return) (?:" + Input + @" (?:(?:in|as|into|using) )?(?:an? |its )?)?" + Case + @"\z", Options),
+        new(@"\A(?:give(?: me)?|show(?: me)?|return|display|what is|what's|what’s|i would like|i want|(?:may|can|could) i (?:have|get)) (?:the )?" + Case + @"(?: of " + Input + @")?\z", Options),
         new(@"\A(?:i need|i want|i would like) " + Input + @" (?:in|as) (?:an? )?" + Case + @"\z", Options),
         new(@"\Athe " + Case + @" of " + Input + @"\z", Options),
         new(@"\Afor " + Input + @", (?:give|show)(?: me)? (?:its |the )?" + Case + @"\z", Options)
@@ -50,6 +54,7 @@ internal static class LearningTaskParser
         if (text.EndsWith('?') || text.EndsWith('.')) text = text[..^1];
         text = PolitePrefix.Replace(text, "", 1);
         text = PoliteSuffix.Replace(text, "", 1);
+        if (CompoundOrNegated.IsMatch(text)) return Abstain("unsupported_intent");
         foreach (var form in Forms)
         {
             var match = form.Match(text);
