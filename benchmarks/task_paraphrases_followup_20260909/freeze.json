@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "suite": "followup",
+  "confirmation_sha256": "612e4007398666202abd5f0a104c0ebadd6e75121ebf67471dcfb9e498f14cd3",
+  "total": 128,
+  "ready": 80,
+  "upper": 40,
+  "lower": 40,
+  "clarify": 24,
+  "abstain": 24,
+  "families": 24,
+  "origin": "synthetic",
+  "training_eligible": false,
+  "authoring": "Fresh-context Astra from behavior contract only; no parser, regression, previous corpus or result access.",
+  "review": "Separate Astra custodian reviewed every label before freeze, zero label changes, one exact-overlap replacement coordinated with author.",
+  "prior_exact_overlaps": 0,
+  "unresolved_labels": 0,
+  "confirmation_opened_by_implementer_at_freeze": false,
+  "floors": {
+    "wrong_ready": 0,
+    "ready_percent": 90,
+    "per_operation_percent": 85,
+    "clarify_percent": 90,
+    "abstain_percent": 95
+  },
+  "prior_confirmation": "benchmarks/task_paraphrases_20260909/confirmation.json",
+  "prior_result": "result/task_paraphrases_20260909/confirmation-1.json"
+}

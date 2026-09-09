@@ -14,7 +14,7 @@ MAX_BYTES = 131072
 STATUSES = {"ready", "clarify", "abstain"}
 ATOM = re.compile(r"[a-zA-Z0-9_-]{1,48}\Z")
 FREEZE_SHA256 = "1bf769fa77a416237a8a1e2534fbe949346a8e22fba630f1c0a4551e0c7be0fe"
-FOLLOWUP_FREEZE_SHA256 = None  # Fail closed until independent label review and freeze.
+FOLLOWUP_FREEZE_SHA256 = "69ab525fef0e91a6d64398a0d5829f3b314b04cd7ced2a7ea4e3c6a605f31a49"
 
 
 def _object(pairs):
