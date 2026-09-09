@@ -21,7 +21,7 @@ internal static class LearningTaskParser
     private static LearningTaskProposal Clarify() => new("clarify", "specify_case_input", Prompt:
         "Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5).");
     private static LearningTaskProposal Abstain(string code) => new("abstain", code);
-    private static LearningTaskProposal Ready(string operation, byte key) => new("ready", "typed_case_change",
+    private static LearningTaskProposal Ready(string operation, byte key) => char.IsControl((char)key) ? Abstain("input_domain") : new("ready", "typed_case_change",
         operation.StartsWith("upper", StringComparison.OrdinalIgnoreCase) ? "unicode17_upper_latin1" : "unicode17_lower_latin1", key);
 
     internal static LearningTaskProposal Propose(string text)
