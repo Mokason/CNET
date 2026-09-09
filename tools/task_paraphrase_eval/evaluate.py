@@ -153,6 +153,13 @@ def run(args):
     if digest(frozen_bytes) != freeze_sha:
         raise ValueError("freeze_metadata_changed")
     frozen = decode(frozen_bytes)
+    # The separately pinned third manifest records corpus identity in a nested
+    # object. Select that exact layout, not a permissive fallback or file path.
+    identity = frozen.get("corpus") if args.suite == "round3" and isinstance(frozen, dict) else frozen
+    field = "sha256" if args.suite == "round3" else args.collection + "_sha256"
+    corpus_sha = identity.get(field) if isinstance(identity, dict) else None
+    if not isinstance(corpus_sha, str) or not re.fullmatch(r"[a-f0-9]{64}", corpus_sha):
+        raise ValueError("freeze_corpus_identity")
     parser = repository / "dotnet/CnetControlPlane/Learning/LearningTaskProposal.cs"
     if digest(read_bounded(parser)) != args.parser_sha256:
         raise ValueError("parser_source_pin_mismatch")
@@ -164,7 +171,6 @@ def run(args):
     probe = repository / ".artifacts/task-verified/bin/TaskParaphraseProbe/debug/cnet-task-paraphrase-probe.dll"
     probe_sha = digest(read_bounded(probe, 32 * 1024 * 1024))
     corpus_bytes = read_bounded(corpus_root / (args.collection + ".json"))
-    corpus_sha = frozen[args.collection + "_sha256"]
     cases = load_corpus(corpus_bytes, corpus_sha, args.collection)
     dotnet = shutil.which("dotnet")
     if not dotnet:

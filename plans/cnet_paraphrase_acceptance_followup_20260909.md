@@ -78,3 +78,13 @@ three exposed collections, checked before freeze without parser execution.
 The implementer remains blind until a new candidate checkpoint is committed.
 After test-first fixes, evaluate all exposed sets as development, conduct a
 bounded review of the new frame/operand changes, then freeze and score round3.
+
+Round3 candidate `0b07a9a` was pinned in `26e2efb` before evaluation. Its first
+infrastructure invocation failed on a manifest-layout mismatch before decoding
+the corpus or invoking the parser; no cases were scored. The runner had read
+corpus bytes, but the implementer saw no text, labels or model outcomes. Retain
+the zero-byte reservation and explicit infrastructure record. Correct only the
+runner's exact pinned-manifest selection, test malformed metadata refusal before
+corpus access, review that correction, and commit a supplemental runner identity
+before the first parser invocation. Keep corpus, parser and binaries unchanged;
+the infrastructure failure is not a failed or successful quality gate.
