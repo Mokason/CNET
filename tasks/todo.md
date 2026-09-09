@@ -1,5 +1,14 @@
 # Current CNET checklist
 
+## Active: fresh language acceptance follow-up
+
+- [ ] Reproduce and repair exposed shared grammar/clarification/compound gaps
+- [ ] Independently author, review and freeze a new blind confirmation set
+- [ ] Extend pinned evaluation selection without changing original floors
+- [ ] Regression/coverage, native replay and separate boundary review
+- [ ] Freeze candidate and achieve every original floor on fresh confirmation
+- [ ] Retain all attempts and publish the measured source-only handoff
+
 ## Executed: independent synthetic paraphrase/OOD evaluation
 
 - [x] Freeze contract-based qualification and separate sealed confirmation

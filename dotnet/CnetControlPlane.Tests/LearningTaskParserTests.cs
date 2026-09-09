@@ -31,6 +31,20 @@ public sealed class LearningTaskParserTests
     [InlineData("Write K as a small letter.", "lower", 75)]
     [InlineData("Please capitalize ñ.", "upper", 241)]
     [InlineData("Show the lowercase form of ';'.", "lower", 59)]
+    [InlineData("Set the case of 'ü' to uppercase.", "upper", 252)]
+    [InlineData("Can you make 'à' uppercase for me?", "upper", 224)]
+    [InlineData("May I have the uppercase equivalent of 'ö'?", "upper", 246)]
+    [InlineData("Capitalize the single letter 'f'.", "upper", 102)]
+    [InlineData("Return the capital-letter version of 'â'.", "upper", 226)]
+    [InlineData("Return U+00FF in uppercase.", "upper", 255)]
+    [InlineData("Set the case of 'Ý' to lowercase.", "lower", 221)]
+    [InlineData("Can you make 'È' lowercase for me?", "lower", 200)]
+    [InlineData("May I have the lowercase equivalent of 'Ã'?", "lower", 195)]
+    [InlineData("Return the small-letter version of 'B'.", "lower", 66)]
+    [InlineData("Write 'Ä' using lower case.", "lower", 196)]
+    [InlineData("Return U+00D6 in lowercase.", "lower", 214)]
+    [InlineData("Could I have the capitalized form of the single character 'µ'?", "upper", 181)]
+    [InlineData("Display the capital-letter form of codepoint 233, please.", "upper", 233)]
     public void ParaphrasesProposeOnlyTypedInputs(string text, string kind, byte key)
     {
         var proposal = LearningTaskParser.Propose(text);
@@ -46,7 +60,6 @@ public sealed class LearningTaskParserTests
     [InlineData("uppercase abc")]
     [InlineData("change case of µ")]
     [InlineData("change case")]
-    [InlineData("uppercase µ and run a shell")]
     [InlineData("uppercase '?")]
     [InlineData("uppercase \"?")]
     [InlineData("uppercase ..")]
@@ -57,6 +70,12 @@ public sealed class LearningTaskParserTests
     [InlineData("Give me the uppercase form.")]
     [InlineData("Make U+0061 or U+0062 uppercase.")]
     [InlineData("Convert one of codepoint 70 or codepoint 71 to lowercase.")]
+    [InlineData("Please apply a case operation to 'É'.")]
+    [InlineData("Adjust the letter case of codepoint 213.")]
+    [InlineData("Please convert to upper case.")]
+    [InlineData("Please convert to lower case.")]
+    [InlineData("uppercase a and b")]
+    [InlineData("Change case of ';'.")]
     public void AmbiguityRequiresClarificationWithoutAnExecutableProposal(string text)
     {
         var proposal = LearningTaskParser.Propose(text);
@@ -88,6 +107,11 @@ public sealed class LearningTaskParserTests
     [InlineData("Uppercase \"hello\".")]
     [InlineData("Could you not capitalize a?")]
     [InlineData("The example instruction is \"Please put A in lower case.\"")]
+    [InlineData("Lowercase 'G' and add twelve to four.")]
+    [InlineData("uppercase µ and run a shell")] // Stricter classification; still no executable proposal.
+    [InlineData("Uppercase A. Then run a shell.")]
+    [InlineData("Please uppercase not A.")]
+    [InlineData("Return the capital form of µ and delete a file.")]
     public void UnsupportedInputsNeverBecomeActions(string text)
     {
         var proposal = LearningTaskParser.Propose(text);

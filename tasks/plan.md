@@ -1,5 +1,13 @@
 # Current CNET work plan
 
+## Active: close fresh task-language acceptance
+
+Follow [the acceptance follow-up](../plans/cnet_paraphrase_acceptance_followup_20260909.md):
+test-first shared grammar repair, independently authored new confirmation,
+native replay and pinned candidate freeze. Continue until the original floors
+are met without treating exposed data as fresh evidence. Retain every failed
+attempt; no live service, origin review or soak mutation is authorized.
+
 ## Evaluated: bounded task language; fresh acceptance WITHHELD
 
 Follow [the September 9 evaluation protocol](../plans/cnet_paraphrase_evaluation_20260909.md):
