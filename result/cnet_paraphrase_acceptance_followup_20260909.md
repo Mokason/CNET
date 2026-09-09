@@ -146,6 +146,14 @@ correction review passed 24 probes; the separate component-inventory review
 passed 34 probes with no further issue. Full committed-candidate regression and
 the untouched round11 confirmation remain pending.
 
+The freshly built round11 source `dd860d9` passed 1,861 managed/native tests,
+zero failures/skips, with 99.80% parser line and 93.09% branch coverage. All
+11 exposed collections again score 128/128 on that committed build. The private
+native fixture now also replays bound input/produce requests and agreeing alias
+questions after capsule activation; controls, literal references and result
+formats still refuse before daemon startup. Candidate identities are frozen in
+`task_paraphrases_round11_20260909/candidate.json` before the first blind score.
+
 The evaluator's 34 integrity tests pass; tracing covers 97% of 213 executable
 lines. The unchanged capture/bridge surface passed 148 tests earlier this turn.
 Existing test-project CA1416 platform warnings remain; none were suppressed.

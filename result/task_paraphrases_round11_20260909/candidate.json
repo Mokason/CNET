@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "suite": "round11",
+  "source_commit": "dd860d9f9f484775a4e2d45799fe3899376750d0",
+  "parser_source_sha256": "c29de314e42acde2ae34861dda72fd8493ad29a84609f3ff90d8ceddb88fbd45",
+  "runner_source_sha256": "30893a95fc08329db530d9be3804dc8b60c4df5f8dfcd4b11f362a2fb6ba7a28",
+  "probe_source_sha256": "2612534d59fee24d4455bc0bdd0761c3a25366f054b2584177e9d79c1ce43cdc",
+  "probe_project_sha256": "5129bfd10e1c88bbc786a509b9fac10f1cff54f71d3afc44e812f76f4ed83142",
+  "assembly_sha256": "50c7dd24adec1024437320a6670f1e4e4ca2ca58f5f27fc7cef05338ff7a2568",
+  "probe_sha256": "cd6181ab1b28260064ed6e8c5f5d329478102cda6154076c9ace481492d4e4ae",
+  "freeze_sha256": "98da93e7c582ee8b5cb5fb8f539f572de6d7a1cb0d2a3668057e2873f954618a",
+  "corpus_sha256": "2f3d137b379e41160871ac817d87c579ea4d421b6406edc73cc6c1a73906a946",
+  "build": "dotnet build tools/task_paraphrase_eval/TaskParaphraseProbe.csproj --artifacts-path .artifacts/task-verified --nologo",
+  "sdk_version": "10.0.203",
+  "target_framework": "net8.0",
+  "confirmation_opened_by_implementer_at_freeze": false,
+  "confirmation_executed_before_freeze": false,
+  "boundary_review": "Separate same-Astra structural review identified input-aside boundary and reference/verb composition misses; four RED reproductions corrected shared binding and input-field handling. All 24 correction probes passed. Subsequent component-inventory review passed all 34 probes, including alias agreement, numeric qualifiers, bound references, output-format and recipient refusal. No restricted corpus/results access by reviewer.",
+  "regressions": {
+    "focused_parser": 939,
+    "task_filter_including_two_existing_task_tests": 941,
+    "full_managed_native": 1861,
+    "evaluator": 34,
+    "capture_bridge_earlier_this_turn": 148
+  },
+  "development_populations": "All eleven exposed collections scored 128/128 on the freshly built committed candidate (1,408 unique texts); all prior reports retained as development-only evidence.",
+  "authoring_limit": "Reused isolated author and custodian contexts; own prior authored sets known, no implementation/results access. Not fresh-context authorship or IID/external validation.",
+  "evaluation_origin": "synthetic",
+  "training_eligible": false,
+  "live_rollout_authorized": false
+}

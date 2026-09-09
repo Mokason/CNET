@@ -306,3 +306,9 @@ review passed all 34 probes on DLL `7d20016b8afcfe7688abe281145b989c66b5b95ac670
 with no additional finding or restricted-data access. Extend private native
 replays for shared input/produce labels and alias questions, then commit source,
 build fresh, run full regressions and pin before the untouched confirmation.
+
+Round11 committed source `dd860d9` passed all 1,861 managed/native tests with
+zero failures/skips, 99.80% parser line and 93.09% branch coverage. All 1,408
+exposed development requests pass on the freshly built candidate. Freeze source,
+runner, probe, binary and corpus identities before first blind scoring; no
+further shared-artifact rebuild or holdout read has occurred.
