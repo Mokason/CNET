@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "purpose": "Preserve exact previous uncommitted candidate source before separately authorized partial-intent changes",
+  "old_candidate_dll_retained": ".artifacts/learned-intent-freeze/bin/CnetControlPlane/debug/cnet-control.dll",
+  "artifacts": [
+    {
+      "source": "dotnet/CnetControlPlane/Learning/LearningTaskProposal.cs",
+      "destination": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/result/cnet_learned_intent_proposer_20260910/confirmation-v1/candidate-source/dotnet/CnetControlPlane/Learning/LearningTaskProposal.cs",
+      "sha256": "84b14bf8dcd30bfe55a56849958fe6f155cb75fba9117ee18a90c093a48cf004"
+    },
+    {
+      "source": "dotnet/CnetControlPlane/Learning/LearningCaseRequestSyntax.cs",
+      "destination": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/result/cnet_learned_intent_proposer_20260910/confirmation-v1/candidate-source/dotnet/CnetControlPlane/Learning/LearningCaseRequestSyntax.cs",
+      "sha256": "42a4e34f0c6aace63ee7f027d14dd79f296ef8ea50dcbb29a9a12c6e5dd1cd29"
+    },
+    {
+      "source": "dotnet/CnetControlPlane/Learning/LearningIntentProposer.cs",
+      "destination": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/result/cnet_learned_intent_proposer_20260910/confirmation-v1/candidate-source/dotnet/CnetControlPlane/Learning/LearningIntentProposer.cs",
+      "sha256": "341840982a34e10d5a8bb051b5d115533012bbf6ae367ecb4dc6d264cadabea7"
+    },
+    {
+      "source": "dotnet/CnetControlPlane/Learning/LearningIntentModel.cs",
+      "destination": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/result/cnet_learned_intent_proposer_20260910/confirmation-v1/candidate-source/dotnet/CnetControlPlane/Learning/LearningIntentModel.cs",
+      "sha256": "f958af6aec9c9c13c8366d29eb935ff0b8850e08ad46abf153f0dafc07dba5cf"
+    },
+    {
+      "source": "dotnet/CnetControlPlane/Learning/LearningIntentSpec.cs",
+      "destination": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/result/cnet_learned_intent_proposer_20260910/confirmation-v1/candidate-source/dotnet/CnetControlPlane/Learning/LearningIntentSpec.cs",
+      "sha256": "11a49f1ce447b397bd61a0554a1cfaa65a0d8ca73138cce9460e4bf55704b4f8"
+    },
+    {
+      "source": "dotnet/CnetControlPlane.Tests/LearningIntentProposerTests.cs",
+      "destination": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/result/cnet_learned_intent_proposer_20260910/confirmation-v1/candidate-source/dotnet/CnetControlPlane.Tests/LearningIntentProposerTests.cs",
+      "sha256": "dce4e66ef1bf722385942acaa5df5eaef6e51aa30b5a3c21717e6c7c9207dc71"
+    }
+  ]
+}

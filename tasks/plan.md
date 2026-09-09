@@ -1,5 +1,137 @@
 # Current CNET work plan
 
+## Active: usable task path, ordered follow-through
+
+Local verification is complete: 2471/2471 full regressions, 1550/1550 focused,
+three native gates, five diagnostic tests, and final bounded learned review.
+Seven exposed misses and additional review counterexamples are fixed. The
+exposed hybrid reaches 128/128 but does not improve on grammar alone. Existing
+private exports have zero eligible training episodes. Broader product work and
+live activation remain explicit open gates; see the
+[dated checkpoint and evidence](../result/cnet_task_usability_20260910.md) and
+[rollout/product handoff](../plans/cnet_task_usability_20260910.md).
+
+The user approved proceeding through the five remaining areas in recommended
+priority order. Preserve confirmation-v2 as the passed historical checkpoint;
+no rescore is fresh and no floors may change. Work only in the isolated Herdr
+worktree. New source changes may supersede working-source pins, never archived
+candidate bytes, scores, receipts or corpus labels. Local reviewed commits are
+part of rollout preparation; external push and live activation are separate.
+
+1. Native end-to-end task path (existing deployment fixture plus focused tests):
+   exercise grammar and learned requests through policy, observation, approved
+   external evidence, capsule activation, offline answer and coverage refusal.
+   Require verified native values, no automatic demand on missing evidence,
+   no experience for non-executable requests, and preservation of the older
+   capability. Verify via retained TRX and freshly checked native prerequisites.
+2. Paired diagnostic ablation (offline harness only): compare existing hybrid
+   against grammar-only with learned fallback disabled, using the existing
+   private request parser when possible. Count exact typed outputs and wrong
+   ready on all exposed v2 rows and separately labeled development frames.
+   No tuning on outputs, no fresh claim, no production grammar-off switch.
+   Guard tests and an independent design/output review precede conclusions.
+3. Seven exposed language misses: RED first for shared structures and mutation
+   guards, then minimal canonical parser repairs. Require focused/full green
+   and no ready regressions on exposed cohorts; successor fresh qualification
+   remains distinct from development success. Do not retrain on casing answers.
+4. Rollout preparation: review source/tests, run scoped security/dependency and
+   native gates, preserve source/evidence in reviewed local commits, and provide
+   exact opt-in install/rollback requirements. Do not mutate live services.
+5. Broader product prerequisites: inspect genuine experience eligibility,
+   composition and source-dependency interfaces, and AMD experiment gates.
+   Implement the smallest evidence-backed missing slice without inventing
+   genuine origin, external-source approval, training truth or useful gain.
+   New authority or a material workflow choice is a checkpoint, not permission
+   to silently expand unattended learning.
+
+Verification checkpoint after each slice. Threat boundaries: request text is
+data, never shell/reflection selection; evidence requires existing source pins;
+diagnostic model outputs cannot bypass native coverage/policy. Existing sources,
+capsule format, runtime ownership and AMD-only restriction stay intact.
+
+The skill reference files definition-of-done/security-checklist/orchestration-
+patterns are not installed; repository contracts and explicit checks above
+provide the documented fallback, not a claim that missing references were read.
+
+## Completed: partial-intent repair and new confirmation
+
+The newly frozen candidate passed all original floors on its one admitted
+confirmation: 75/80 ready (upper 38/40, lower 37/40), 22/24 clarify, 24/24 abstain,
+zero wrong ready; 121/128 exact. Pre-freeze regressions passed 2426/2426.
+Independent saved-output audit and durable evidence verification passed.
+See [the current result](../result/cnet_learned_intent_proposer_20260910/confirmation-v2/result.md).
+Earlier failed checkpoints below remain historical. This is not grammar-off,
+incremental learned-model gain, live deployment or broader product acceptance.
+
+The user authorized the next repair after confirmation-v1 failed clarification.
+Preserve the previous uncommitted source in its candidate-source snapshot and
+leave its frozen DLL, corpus, score and receipts unchanged. The live checkout,
+soak, deployment, GPU workers and origin/master remain outside scope.
+
+1. RED: reproduce the five exposed clarification misses and cross-product tests
+   for operation/input roles, missing slots, domain refusals and extra actions.
+2. Extend existing whole-field composition and operand validation, without
+   changing the learned model or adding sentence-specific answers.
+3. Run focused and full regressions; independently review the new boundaries.
+4. Freeze the qualified NEW source/DLL, then independently author, blind-review
+   and admit a NEW 128-case confirmation with the original floors and one score.
+5. Retain the complete result and evidence, including any failed gate. A pass
+   applies only to this grammar-on hybrid; grammar-off and deployment stay withheld.
+
+Files: parser, dedicated partial-intent tests, dated evidence and task docs.
+Checkpoint: no new corpus authoring until candidate qualification/freeze; no
+post-score repair or reuse of either exposed confirmation as fresh evidence.
+
+## Completed sequence: frozen confirmation failed clarification
+
+The independent 128-case population was admitted and scored exactly once:
+80/80 ready (40/40 upper and lower), 19/24 clarify, 24/24 abstain, zero wrong
+ready, 123/128 exact. Clarification required 22/24; acceptance remains WITHHELD.
+All five misses were non-executable abstentions on incomplete/ambiguous requests.
+All seven candidate pins and 48 evaluation pins stayed unchanged. Full evidence:
+[confirmation result](../result/cnet_learned_intent_proposer_20260910/confirmation-v1/result.md).
+
+Next implementation scope is structural partial-intent clarification, followed
+by a NEW qualified candidate and NEW independent confirmation. This completed
+score is not reusable as fresh evidence. Grammar-off and deployment stay withheld.
+
+### Executed sequence and constraints
+
+The user authorized the next independent-author / custodian / single-score
+sequence. Preserve all seven pins in
+`result/cnet_learned_intent_proposer_20260910/candidate-freeze.json` and the
+uncommitted candidate. No parser changes, push, deployment, GPU fitting or live
+requests are part of this sequence.
+
+1. A fresh-context author receives only the existing behavioral contract.
+   An independent custodian checks all 128 rows, quotas, input keys and overlap;
+   a fresh-context reviewer labels opaque ID/text pairs without author labels.
+2. Before any candidate execution, retain and hash the full admitted corpus,
+   review evidence and unchanged scoring harness. No partial population counts.
+3. Consume one score against the frozen DLL, retain all misses and check the
+   original floors: zero wrong ready; 72/80 ready; 34/40 per operation;
+   22/24 clarify; 23/24 abstain; no executable fields on non-ready outputs.
+4. Verify pins after scoring and record the result without adapting the candidate.
+
+Checkpoint: admission precedes scoring; a failed score remains a failed fresh
+confirmation. A pass qualifies only this frozen grammar-on hybrid population,
+not grammar-off operation or deployment. All rows are synthetic and
+training-ineligible. Fresh-context separation is procedural, not OS isolation
+or a third-party human benchmark. Earlier failed/exhausted attempts remain intact.
+
+## Development checkpoint: offline learned proposer on unclaimed frames
+
+A learned intent proposer now recovers unclaimed constructions after the
+grammar returns `unsupported_intent`. Operand bind, domain refusal and
+policy are unchanged. Exposed development `recode the glyph` frames are ready
+without those strings existing in the grammar tables. The supplied frozen
+candidate receipt records a full 2403/2403 regression run. Fresh acceptance
+and grammar-off inference remain WITHHELD. Live
+services were not changed.
+
+See [the proposer plan](../plans/cnet_learned_intent_proposer_20260910.md)
+and [measured result](../result/cnet_learned_intent_proposer_20260910.md).
+
 ## Current: parser checkpoint publication; language acceptance withheld
 
 The user has now explicitly requested publication to `origin/master`. Publish

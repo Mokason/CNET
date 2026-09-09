@@ -1,0 +1,99 @@
+{
+  "schema": 1,
+  "verified_at_utc": "2026-09-09T20:50:41.010609+00:00",
+  "candidate_invoked_by_this_check": false,
+  "scorer_invoked_by_this_check": false,
+  "confirmation_journal_states": [
+    "started",
+    "complete"
+  ],
+  "passing_original_floors": true,
+  "total": 128,
+  "exact": 121,
+  "by_status": {
+    "abstain": {
+      "exact": 24,
+      "total": 24
+    },
+    "clarify": {
+      "exact": 22,
+      "total": 24
+    },
+    "ready": {
+      "exact": 75,
+      "total": 80
+    }
+  },
+  "by_operation": {
+    "lower": {
+      "exact": 37,
+      "total": 40
+    },
+    "upper": {
+      "exact": 38,
+      "total": 40
+    }
+  },
+  "wrong_ready": 0,
+  "regression_counters": {
+    "total": "2426",
+    "executed": "2426",
+    "passed": "2426",
+    "failed": "0",
+    "error": "0",
+    "timeout": "0",
+    "aborted": "0",
+    "inconclusive": "0",
+    "passedButRunAborted": "0",
+    "notRunnable": "0",
+    "notExecuted": "0",
+    "disconnected": "0",
+    "warning": "0",
+    "completed": "0",
+    "inProgress": "0",
+    "pending": "0"
+  },
+  "binding_pins_verified": 89,
+  "candidate_pins_verified": 8,
+  "candidate_source_snapshots_verified": 7,
+  "archive_entries_verified": 31,
+  "archive_bytes": 981626,
+  "previous_binary_corpus_journal_unchanged": true,
+  "independent_saved_output_audit": {
+    "reviewer": "/root/partial_intent_boundary_review",
+    "passed": true,
+    "original_scalar_labels_verified": 80,
+    "nonready_executable_field_leaks": 0,
+    "candidate_or_scorer_invoked": false,
+    "miss_ids": [
+      "u13",
+      "u21",
+      "l01",
+      "l13",
+      "l21",
+      "c04",
+      "c12"
+    ]
+  },
+  "artifact_sha256": {
+    "candidate-freeze.json": "628edfba966976fdd979a1486014d4b63954744c8169e627299c6aa88f142f92",
+    "score-binding.json": "452c0f2f0ecd44be9c96479cc2f6cbdc8f501f70295dc47eb6ef0ea59760a0f1",
+    "score-once.jsonl": "e61a4e73d03d6eefb98f2484e477e2071e2c147fb423ce8cc27f901797d63f4f",
+    "probe-response.json": "21c000c8bad841ddf848e861f250612303ba5bc19b159322becd4fb9cfd8e6ef",
+    "metadata/archive-mapping.json": "abbe1e070ad419d071f3f051d895cc7715769618de6d8381a851edeabd6e9d6f",
+    "result.md": "f370740c7c81285d2e8cf3361fc6ae275ea5f884ab273418b108f0670713187a",
+    "qualification.md": "c4ba398e83509d9e4b355d76e51da486c67a0786cee59fa43e2560f0adfae217"
+  },
+  "synthetic": true,
+  "training_eligible": false,
+  "grammar_off": false,
+  "deployed": false,
+  "native_actions": 0,
+  "remaining": [
+    "seven retained proposal misses",
+    "incremental learned-model gain not measured",
+    "grammar-off qualification",
+    "separate rollout authority and verification",
+    "broader real-user/product acceptance"
+  ]
+}

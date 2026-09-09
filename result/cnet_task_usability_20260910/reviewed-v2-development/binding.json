@@ -1,0 +1,27 @@
+{
+  "at_utc": "2026-09-09T21:25:41.582547+00:00",
+  "fresh_confirmation": false,
+  "mode": "exposed_paired_diagnostic",
+  "pins": {
+    "/home/marble/AI/CNET-worktrees/herdr-language-20260909/.artifacts/intent-ablation/bin/TaskIntentAblation/debug/cnet-task-intent-ablation.deps.json": "c1b56a26409f28e4ece230e9ad61e23a779de3759112e094991afa2fa84a28c1",
+    "/home/marble/AI/CNET-worktrees/herdr-language-20260909/.artifacts/intent-ablation/bin/TaskIntentAblation/debug/cnet-task-intent-ablation.dll": "627b66101afbd0e0cbf108660efca6a8e07a2b7afb007ffb873f76a58690fefd",
+    "/home/marble/AI/CNET-worktrees/herdr-language-20260909/.artifacts/intent-ablation/bin/TaskIntentAblation/debug/cnet-task-intent-ablation.runtimeconfig.json": "088bcc1a867d80d3923a812855f7ae9297fc8ac3d844cf9a83510bd8d1352af8",
+    "/home/marble/AI/CNET-worktrees/herdr-language-20260909/.artifacts/usability-review3-20260910/bin/CnetControlPlane/debug/cnet-control.deps.json": "e0983ed80181a6cc3c395ce4284cf6831fe6e759146b229b743b5cb5eb8ddd51",
+    "/home/marble/AI/CNET-worktrees/herdr-language-20260909/.artifacts/usability-review3-20260910/bin/CnetControlPlane/debug/cnet-control.dll": "55d041bc416ce9e45c47250e32add194a543e308b5240ad9d906bf184a328130",
+    "/home/marble/AI/CNET-worktrees/herdr-language-20260909/.artifacts/usability-review3-20260910/bin/CnetControlPlane/debug/cnet-control.runtimeconfig.json": "088bcc1a867d80d3923a812855f7ae9297fc8ac3d844cf9a83510bd8d1352af8",
+    "/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane/Learning/LearningCaseRequestSyntax.cs": "40ce411fb4afb42f6a1a409e6063a0b6baab57fe3fbd4b106a961ba22aaee864",
+    "/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane/Learning/LearningIntentModel.cs": "f958af6aec9c9c13c8366d29eb935ff0b8850e08ad46abf153f0dafc07dba5cf",
+    "/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane/Learning/LearningIntentProposer.cs": "87772a4f0e30e08c1474bf2f345d39ee230fb6198813b1e964ce47c209d0804b",
+    "/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane/Learning/LearningIntentSpec.cs": "11a49f1ce447b397bd61a0554a1cfaa65a0d8ca73138cce9460e4bf55704b4f8",
+    "/home/marble/AI/CNET-worktrees/herdr-language-20260909/dotnet/CnetControlPlane/Learning/LearningTaskProposal.cs": "e15c50832e837b1c46d9c17efb1027698ab3770a74744ebe474482c264599a05",
+    "/home/marble/AI/CNET-worktrees/herdr-language-20260909/result/cnet_learned_intent_proposer_20260910/confirmation-v2/evidence/private/confirmation.json": "10cdd9e0c4a5422fe08a105b6d0cabc72d092a76df1b8b70ab34a13812276e32",
+    "/home/marble/AI/CNET-worktrees/herdr-language-20260909/tools/task_intent_ablation/Program.cs": "f826c979cde89b28a52acdabb72ec1d9a0ef0c7b44d9d046006df9af90e3b6c8",
+    "/home/marble/AI/CNET-worktrees/herdr-language-20260909/tools/task_intent_ablation/run_diagnostic.py": "7cd78bb73fc087285b1bd71ed2c8e6985eda3e1594338a8c7fa2867218950202",
+    "/home/marble/AI/CNET-worktrees/herdr-language-20260909/tools/task_intent_ablation/test_probe.py": "3fbd2ff946275ede1fafa0ebfe7f432aa89208ffc3742259d70da029d1e80d54",
+    "/home/marble/AI/CNET-worktrees/herdr-language-20260909/tools/task_paraphrase_eval/evaluate.py": "30893a95fc08329db530d9be3804dc8b60c4df5f8dfcd4b11f362a2fb6ba7a28",
+    "/home/marble/dotnet/dotnet": "1c121dbde456ab6e24f6d04eb10ac732d142b72b8a9415b7637a1e9daff212f0"
+  },
+  "schema": 1,
+  "synthetic": true,
+  "training_eligible": false
+}

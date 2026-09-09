@@ -1,0 +1,38 @@
+{
+  "schema": 1,
+  "artifact": "draft1.json",
+  "origin": "Independently authored synthetic English requests, created directly from the supplied behavioral contract by the fresh-context author role.",
+  "training_eligible": false,
+  "source_access": {
+    "supplied_material": "Author task instructions and custodian confirmation that ready key is the integer original input scalar code point.",
+    "files_read": ["/tmp/cnet-confirmation-v2-qR7n165F/author/draft1.json"],
+    "files_written": ["/tmp/cnet-confirmation-v2-qR7n165F/author/draft1.json", "/tmp/cnet-confirmation-v2-qR7n165F/author/provenance.json"],
+    "repository_access": false,
+    "prior_corpus_access": false,
+    "candidate_access": false,
+    "results_access": false,
+    "external_network_or_model_calls": false
+  },
+  "no_score_attestation": "No candidate was accessed or run, and no evaluation, test, or scoring was performed. Only self-authored corpus structure and internal uniqueness may be checked before delivery.",
+  "scope": "Procedural fresh-context separation using the same underlying model and tools; not OS or third-party isolation.",
+  "declared_counts": {"total":128,"ready":80,"upper":40,"lower":40,"clarify":24,"abstain":24},
+  "internal_structure_check": {
+    "method": "Read only the authored draft to count rows, fields, families and UTF-16 length, compare internal Unicode-casefold/punctuation/whitespace-normalized strings, and compute its SHA-256. This check did not execute requests or inspect a candidate.",
+    "counts_match": true,
+    "unique_ids": 128,
+    "families": 27,
+    "normalized_duplicate_groups": 0,
+    "maximum_text_characters": 301,
+    "rows_exceeding_256_utf16_units": ["a24"],
+    "draft1_sha256": "606071bcc3c8eef890dd9110607ae712843b0032179a2608754744e805acba7d"
+  },
+  "uncertainties_and_resolutions": [
+    {"issue":"Ready key serialization","resolution":"Custodian confirmed integer original input scalar code point; no converted output is stored."},
+    {"issue":"Valid typed proposals whose native casing may expand, cross Latin-1 boundaries, or remain unchanged","resolution":"Kept ready when the original scalar is permitted, independently of downstream native coverage."},
+    {"issue":"Multiple characters versus full-string requests","resolution":"Clarify rows explicitly present alternative candidate operands; abstain rows explicitly request whole-word or whole-string conversion."},
+    {"issue":"Control scalars","resolution":"Explicit C0, DEL and C1 control operands are abstain; printable or spacing non-control Latin-1 operands are retained as ready."},
+    {"issue":"Character names","resolution":"Names are not decoded or guessed; explicit name-only operands request clarification."}
+  ],
+  "draft_preservation": "draft1.json is permanent and must not be overwritten. Any custodian-directed repair will create a separately numbered draft.",
+  "repair_rounds_used": 0
+}

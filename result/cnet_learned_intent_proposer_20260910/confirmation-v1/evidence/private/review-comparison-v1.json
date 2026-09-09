@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "corpus_path": "/tmp/cnet-learned-confirmation-xAqJks4W/author-v1.json",
+  "corpus_sha256": "c10227f4fc0164dff49eb0683c7bb4c2a3bb7cf57183ca120e1d55b3b75335bf",
+  "review_path": "/tmp/cnet-learned-confirmation-xAqJks4W/blind-review-v1.json",
+  "review_sha256": "c2bd83925d4f5d516be7b373388d8228a5df00660b22ab5856cae15bca0b02c8",
+  "reviewed_count": 128,
+  "agreement_count": 128,
+  "issues": [],
+  "no_score": true
+}

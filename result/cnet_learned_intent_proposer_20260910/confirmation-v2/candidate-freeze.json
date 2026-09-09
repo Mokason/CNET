@@ -1,0 +1,80 @@
+{
+  "schema": 1,
+  "frozen_at_utc": "2026-09-09T20:30:59.633Z",
+  "source_commit": "f78fc27302ec1d33ad1ff8c203f51104a6adb1de",
+  "working_tree": "uncommitted partial-intent repair on experiment/herdr-language-20260909",
+  "pins": {
+    "dotnet/CnetControlPlane/Learning/LearningTaskProposal.cs": "641b45fe20dac9f20434bc85a7810ad8c166b8b114b46003d92214d6e57a84f7",
+    "dotnet/CnetControlPlane/Learning/LearningCaseRequestSyntax.cs": "42a4e34f0c6aace63ee7f027d14dd79f296ef8ea50dcbb29a9a12c6e5dd1cd29",
+    "dotnet/CnetControlPlane/Learning/LearningIntentProposer.cs": "341840982a34e10d5a8bb051b5d115533012bbf6ae367ecb4dc6d264cadabea7",
+    "dotnet/CnetControlPlane/Learning/LearningIntentModel.cs": "f958af6aec9c9c13c8366d29eb935ff0b8850e08ad46abf153f0dafc07dba5cf",
+    "dotnet/CnetControlPlane/Learning/LearningIntentSpec.cs": "11a49f1ce447b397bd61a0554a1cfaa65a0d8ca73138cce9460e4bf55704b4f8",
+    "dotnet/CnetControlPlane.Tests/LearningIntentProposerTests.cs": "dce4e66ef1bf722385942acaa5df5eaef6e51aa30b5a3c21717e6c7c9207dc71",
+    "dotnet/CnetControlPlane.Tests/LearningPartialIntentTests.cs": "108571185c66bd13ae2d1df45af1f24ae92ba24dba5773b6968f39e4e401b053",
+    ".artifacts/partial-intent-v2/bin/CnetControlPlane/debug/cnet-control.dll": "98c8a4026f2ab50dfab02c4b18ccf4ea3cae184d747ade0b0562fe2968ff261e"
+  },
+  "source_snapshot": [
+    {
+      "source": "dotnet/CnetControlPlane/Learning/LearningTaskProposal.cs",
+      "destination": "result/cnet_learned_intent_proposer_20260910/confirmation-v2/candidate-source/dotnet/CnetControlPlane/Learning/LearningTaskProposal.cs",
+      "sha256": "641b45fe20dac9f20434bc85a7810ad8c166b8b114b46003d92214d6e57a84f7"
+    },
+    {
+      "source": "dotnet/CnetControlPlane/Learning/LearningCaseRequestSyntax.cs",
+      "destination": "result/cnet_learned_intent_proposer_20260910/confirmation-v2/candidate-source/dotnet/CnetControlPlane/Learning/LearningCaseRequestSyntax.cs",
+      "sha256": "42a4e34f0c6aace63ee7f027d14dd79f296ef8ea50dcbb29a9a12c6e5dd1cd29"
+    },
+    {
+      "source": "dotnet/CnetControlPlane/Learning/LearningIntentProposer.cs",
+      "destination": "result/cnet_learned_intent_proposer_20260910/confirmation-v2/candidate-source/dotnet/CnetControlPlane/Learning/LearningIntentProposer.cs",
+      "sha256": "341840982a34e10d5a8bb051b5d115533012bbf6ae367ecb4dc6d264cadabea7"
+    },
+    {
+      "source": "dotnet/CnetControlPlane/Learning/LearningIntentModel.cs",
+      "destination": "result/cnet_learned_intent_proposer_20260910/confirmation-v2/candidate-source/dotnet/CnetControlPlane/Learning/LearningIntentModel.cs",
+      "sha256": "f958af6aec9c9c13c8366d29eb935ff0b8850e08ad46abf153f0dafc07dba5cf"
+    },
+    {
+      "source": "dotnet/CnetControlPlane/Learning/LearningIntentSpec.cs",
+      "destination": "result/cnet_learned_intent_proposer_20260910/confirmation-v2/candidate-source/dotnet/CnetControlPlane/Learning/LearningIntentSpec.cs",
+      "sha256": "11a49f1ce447b397bd61a0554a1cfaa65a0d8ca73138cce9460e4bf55704b4f8"
+    },
+    {
+      "source": "dotnet/CnetControlPlane.Tests/LearningIntentProposerTests.cs",
+      "destination": "result/cnet_learned_intent_proposer_20260910/confirmation-v2/candidate-source/dotnet/CnetControlPlane.Tests/LearningIntentProposerTests.cs",
+      "sha256": "dce4e66ef1bf722385942acaa5df5eaef6e51aa30b5a3c21717e6c7c9207dc71"
+    },
+    {
+      "source": "dotnet/CnetControlPlane.Tests/LearningPartialIntentTests.cs",
+      "destination": "result/cnet_learned_intent_proposer_20260910/confirmation-v2/candidate-source/dotnet/CnetControlPlane.Tests/LearningPartialIntentTests.cs",
+      "sha256": "108571185c66bd13ae2d1df45af1f24ae92ba24dba5773b6968f39e4e401b053"
+    }
+  ],
+  "regression_tests": 2426,
+  "focused_parser_tests": 1506,
+  "partial_intent_tests": 23,
+  "full_regression_trx": {
+    "path": "result/cnet_learned_intent_proposer_20260910/confirmation-v2/qualification/full-suite.trx",
+    "sha256": "0a11eb72f7aaa3bdc1c0590fb1b1d89285ea9331a831a6db4e1ef7125c4a8c17"
+  },
+  "exposed_development": {
+    "path": "result/cnet_learned_intent_proposer_20260910/confirmation-v2/development.json",
+    "sha256": "dcc2ff858d3d14eacc03bf2d06e569f4a15c745f2ab8350dc8d0943eddac46cb",
+    "exact": "128/128",
+    "fresh": false
+  },
+  "confirmation_corpus_sha256": null,
+  "confirmation_scoring_limit": 1,
+  "floors": {
+    "wrong_ready": 0,
+    "ready": "72/80",
+    "ready_per_operation": "34/40",
+    "clarify": "22/24",
+    "abstain": "23/24"
+  },
+  "synthetic": true,
+  "training_eligible": false,
+  "grammar_off": false,
+  "deployed": false,
+  "note": "Freeze precedes fresh authoring; old candidate/corpus/score remain retained. No corpus authoring or candidate tuning after fresh scoring."
+}

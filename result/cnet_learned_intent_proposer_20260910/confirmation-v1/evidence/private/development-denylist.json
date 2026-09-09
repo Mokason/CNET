@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "origin": "literal request constants and literal InlineData inputs in current exposed proposer tests",
+  "source_path": "dotnet/CnetControlPlane.Tests/LearningIntentProposerTests.cs",
+  "source_sha256": "dce4e66ef1bf722385942acaa5df5eaef6e51aa30b5a3c21717e6c7c9207dc71",
+  "count": 11,
+  "normalization": "Unicode casefold then remove Unicode P* punctuation and all Unicode whitespace",
+  "exact_sha256": [
+    "02eeb305f7af44fb92b0e453845c8d462f5eb7b29943751029db540432ed5778",
+    "202c6a693b586359d53b38f87f91ffc7d2ce537614a22d93c18530e93c3284d5",
+    "30c73013600da39f87165555d33dd83da20b237901a6681b940094282ec6db4b",
+    "41b2ee0dcc4cd90343d9782e34a5b7b359f034759c44a2de8b91639bfc52e8cb",
+    "4e9e7719cafeaf1745bf330f18bb02c2549d56433a271adfdce0cececfa6af7f",
+    "5efa8850bc5f680415cdcbce024393f299a7cf28d318e88cb108c277c64dcdf2",
+    "5fd68878c110d11fe5821980f8a2def5388ccf98bcadf3c760cfdb78cee7d00d",
+    "6c87e6111514af6f3cab534534d15408d57300d7c20917dbdba8a4f30e39c2b8",
+    "70edc17abc101eb2d248f626902c7b098e5c3b78d1721da90870bafa10861334",
+    "c930cc85e5556d0ab85db23ae306c95371dc593f623e0a62925739126a02eb5c",
+    "eaa024a9477416acd87c4465c96514c0c6b1e3a0407d297767ad37832c0c0056"
+  ],
+  "normalized_sha256": [
+    "2cc73b73ffbd4b3ec8ff5f45ff020c7fc81507f080f59344f11c85488719cfaa",
+    "40134adcc6f5d6e9bfd0f5a2af1504e88269c4bf4d7f141a863629d7baca9510",
+    "7103740ca419a90ce1d69ede0d05c7f51d654567826e90e7ea417f608fe00d98",
+    "7df9916b156d88aaa3bd9300f1c71f2694b4b56acc0891043826b39370d59aaf",
+    "836fb5f277910fcbec20d42ff00ba2ca35b068873b86fc9bcf04e1f07158f3c8",
+    "8ec6a7a7341ad0f255859339b0d862811f01270d151a2d7f3df0bd7b29ce55e1",
+    "c1681355b5693180fb6b4d1383ae7ad5e69eaacf11461e1c93e1ed333790e18e",
+    "df548ed176478e1a4cdf179a28a08e4dfe47102194d5c2969d6f0b72e4ac9a2e",
+    "f9259b9b3c3abca07548812050347bdbf07aa1fc44e6c2815187d0d1ed37fa44",
+    "f99bb71c2be75e1a66c393176067333c6aef3d98d4a5497ccbb88f36f03bdb1f"
+  ]
+}

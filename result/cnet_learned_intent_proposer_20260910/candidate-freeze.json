@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "frozen_at_utc": "2026-09-09 19:44:41 UTC",
+  "source_commit": "f78fc27302ec1d33ad1ff8c203f51104a6adb1de",
+  "working_tree": "uncommitted learned-intent proposer on experiment/herdr-language-20260909",
+  "pins": {
+    "dotnet/CnetControlPlane/Learning/LearningTaskProposal.cs": "84b14bf8dcd30bfe55a56849958fe6f155cb75fba9117ee18a90c093a48cf004",
+    "dotnet/CnetControlPlane/Learning/LearningCaseRequestSyntax.cs": "42a4e34f0c6aace63ee7f027d14dd79f296ef8ea50dcbb29a9a12c6e5dd1cd29",
+    "dotnet/CnetControlPlane/Learning/LearningIntentProposer.cs": "341840982a34e10d5a8bb051b5d115533012bbf6ae367ecb4dc6d264cadabea7",
+    "dotnet/CnetControlPlane/Learning/LearningIntentModel.cs": "f958af6aec9c9c13c8366d29eb935ff0b8850e08ad46abf153f0dafc07dba5cf",
+    "dotnet/CnetControlPlane/Learning/LearningIntentSpec.cs": "11a49f1ce447b397bd61a0554a1cfaa65a0d8ca73138cce9460e4bf55704b4f8",
+    "dotnet/CnetControlPlane.Tests/LearningIntentProposerTests.cs": "dce4e66ef1bf722385942acaa5df5eaef6e51aa30b5a3c21717e6c7c9207dc71",
+    ".artifacts/learned-intent-freeze/bin/CnetControlPlane/debug/cnet-control.dll": "92db20a37772db1a2e6ae6b35c6e0b2c31f151246caa2c9e960fee6ad2653d96"
+  },
+  "regression_tests": 2403,
+  "proposer_tests": 16,
+  "confirmation_corpus_sha256": null,
+  "confirmation_scoring_limit": 1,
+  "floors": {
+    "wrong_ready": 0,
+    "ready": "72/80",
+    "ready_per_operation": "34/40",
+    "clarify": "22/24",
+    "abstain": "23/24"
+  },
+  "synthetic": true,
+  "training_eligible": false,
+  "grammar_off": false,
+  "deployed": false,
+  "note": "Implementer must not author or inspect the next confirmation texts before scoring. Independent contract-only author required. Source hashes were unchanged after the freeze suite."
+}

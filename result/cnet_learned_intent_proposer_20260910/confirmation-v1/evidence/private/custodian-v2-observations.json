@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "corpus_sha256": "806c0c2d38eeda7422f0cc03e36e50ff5698687513df4b50a90d4abe8c5b5f53",
+  "review_scope": "Custodian inspected the 26 newly authored replacement texts against the unchanged behavioral contract and checked invariant preservation mechanically.",
+  "changed_only_permitted_text_fields": 26,
+  "unchanged_rows": 102,
+  "status_operation_key_family_changes": 0,
+  "strict_schema_and_quotas": "pass",
+  "scalar_logic": "No scalar issues in mechanical checks or custodian inspection; original input keys remain fixed.",
+  "exact_or_normalized_overlap_issues": 0,
+  "provisional_label_issues": [],
+  "awaiting_independent_blind_review": true,
+  "no_candidate_source_read": true,
+  "no_score": true
+}

@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "author": "/root/confirmation_custodian_v1/author",
+  "reviewer": "/root/confirmation_custodian_v1/blind_reviewer",
+  "custodian": "/root/confirmation_custodian_v1",
+  "author_and_reviewer_context": "fork_turns=none; no model override; behavioral contract supplied verbatim",
+  "author_reported_access": "No non-owned files accessed. No implementation execution, scoring, external model calls, or subagents used.",
+  "author_presubmission_drafts": [
+    {"path":"author-v1-draft.json","purpose":"Preserved before replacing category-encoding IDs with neutral sequential IDs"},
+    {"path":"author-v1-neutral-draft.json","purpose":"Preserved before seven prompt wording adjustments to eliminate internal punctuation/whitespace-normalized duplicates"}
+  ],
+  "reviewer_allowed_data": ["blind-view-v1.json","blind-view-v2.json"],
+  "reviewer_blinding": "Only id/text views and behavioral contract; no author labels, keys or families",
+  "custodian_allowed_repo_reads": ["tools/task_paraphrase_eval/evaluate.py strict loader and dependencies only","plans/cnet_paraphrase_evaluation_20260909.md contractual section","prior corpus files via mechanical comparison without displaying their texts"],
+  "skill_used": "/home/marble/.agents/skills/using-agent-skills/SKILL.md",
+  "custodian_repairs": "None authored; one bounded overlap repair requested from author",
+  "no_score": true,
+  "synthetic": true,
+  "training_eligible": false,
+  "independence_limit": "Procedural fresh contexts on same model/tools, not enforced OS isolation or independent organizations"
+}

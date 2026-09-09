@@ -1,0 +1,1058 @@
+{
+  "schema": 1,
+  "source_path": "/tmp/cnet-confirmation-v2-qR7n165F/author/draft1.json",
+  "source_sha256": "606071bcc3c8eef890dd9110607ae712843b0032179a2608754744e805acba7d",
+  "ready_count": 80,
+  "all_keys_match_unique_original": false,
+  "all_ready_requests_within_length_and_control_contract": true,
+  "rows": [
+    {
+      "id": "u01",
+      "declared_original_key": 113,
+      "independent_candidates": [
+        113
+      ],
+      "methods": [
+        "bare_single_letter"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 12
+    },
+    {
+      "id": "u02",
+      "declared_original_key": 114,
+      "independent_candidates": [
+        114
+      ],
+      "methods": [
+        "bare_single_letter"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 17
+    },
+    {
+      "id": "u03",
+      "declared_original_key": 115,
+      "independent_candidates": [
+        115
+      ],
+      "methods": [
+        "bare_single_letter"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 23
+    },
+    {
+      "id": "u04",
+      "declared_original_key": 116,
+      "independent_candidates": [
+        116
+      ],
+      "methods": [
+        "bare_single_letter"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 24
+    },
+    {
+      "id": "u05",
+      "declared_original_key": 118,
+      "independent_candidates": [
+        118
+      ],
+      "methods": [
+        "bare_single_letter"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 19
+    },
+    {
+      "id": "u06",
+      "declared_original_key": 119,
+      "independent_candidates": [
+        119
+      ],
+      "methods": [
+        "bare_single_letter"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 29
+    },
+    {
+      "id": "u07",
+      "declared_original_key": 120,
+      "independent_candidates": [
+        120
+      ],
+      "methods": [
+        "bare_single_letter"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 13
+    },
+    {
+      "id": "u08",
+      "declared_original_key": 121,
+      "independent_candidates": [
+        121
+      ],
+      "methods": [
+        "bare_single_letter"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 22
+    },
+    {
+      "id": "u09",
+      "declared_original_key": 98,
+      "independent_candidates": [
+        98
+      ],
+      "methods": [
+        "bare_single_letter"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 42
+    },
+    {
+      "id": "u10",
+      "declared_original_key": 99,
+      "independent_candidates": [
+        99
+      ],
+      "methods": [
+        "bare_single_letter"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 39
+    },
+    {
+      "id": "u11",
+      "declared_original_key": 100,
+      "independent_candidates": [
+        100
+      ],
+      "methods": [
+        "bare_single_letter"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 34
+    },
+    {
+      "id": "u12",
+      "declared_original_key": 101,
+      "independent_candidates": [
+        73,
+        97,
+        100,
+        101
+      ],
+      "methods": [
+        "bare_single_letter"
+      ],
+      "key_matches_unique_original": false,
+      "control_free": true,
+      "utf16_units": 39
+    },
+    {
+      "id": "u13",
+      "declared_original_key": 102,
+      "independent_candidates": [
+        102
+      ],
+      "methods": [
+        "bare_single_letter"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 30
+    },
+    {
+      "id": "u14",
+      "declared_original_key": 103,
+      "independent_candidates": [
+        103
+      ],
+      "methods": [
+        "bare_single_letter"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 30
+    },
+    {
+      "id": "u15",
+      "declared_original_key": 104,
+      "independent_candidates": [
+        104
+      ],
+      "methods": [
+        "bare_single_letter"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 39
+    },
+    {
+      "id": "u16",
+      "declared_original_key": 106,
+      "independent_candidates": [
+        106
+      ],
+      "methods": [
+        "bare_single_letter"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 43
+    },
+    {
+      "id": "u17",
+      "declared_original_key": 51,
+      "independent_candidates": [
+        51
+      ],
+      "methods": [
+        "quoted_literal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 39
+    },
+    {
+      "id": "u18",
+      "declared_original_key": 56,
+      "independent_candidates": [
+        56
+      ],
+      "methods": [
+        "quoted_literal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 21
+    },
+    {
+      "id": "u19",
+      "declared_original_key": 33,
+      "independent_candidates": [
+        33
+      ],
+      "methods": [
+        "quoted_literal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 23
+    },
+    {
+      "id": "u20",
+      "declared_original_key": 63,
+      "independent_candidates": [
+        63
+      ],
+      "methods": [
+        "quoted_literal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 24
+    },
+    {
+      "id": "u21",
+      "declared_original_key": 32,
+      "independent_candidates": [
+        32
+      ],
+      "methods": [
+        "quoted_literal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 44
+    },
+    {
+      "id": "u22",
+      "declared_original_key": 59,
+      "independent_candidates": [
+        59
+      ],
+      "methods": [
+        "quoted_literal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 31
+    },
+    {
+      "id": "u23",
+      "declared_original_key": 233,
+      "independent_candidates": [
+        233
+      ],
+      "methods": [
+        "quoted_literal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 27
+    },
+    {
+      "id": "u24",
+      "declared_original_key": 241,
+      "independent_candidates": [
+        241
+      ],
+      "methods": [
+        "quoted_literal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 26
+    },
+    {
+      "id": "u25",
+      "declared_original_key": 107,
+      "independent_candidates": [
+        107
+      ],
+      "methods": [
+        "hexadecimal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 28
+    },
+    {
+      "id": "u26",
+      "declared_original_key": 160,
+      "independent_candidates": [
+        160
+      ],
+      "methods": [
+        "hexadecimal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 39
+    },
+    {
+      "id": "u27",
+      "declared_original_key": 181,
+      "independent_candidates": [
+        181
+      ],
+      "methods": [
+        "hexadecimal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 35
+    },
+    {
+      "id": "u28",
+      "declared_original_key": 215,
+      "independent_candidates": [
+        215
+      ],
+      "methods": [
+        "hexadecimal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 35
+    },
+    {
+      "id": "u29",
+      "declared_original_key": 223,
+      "independent_candidates": [
+        223
+      ],
+      "methods": [
+        "hexadecimal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 35
+    },
+    {
+      "id": "u30",
+      "declared_original_key": 255,
+      "independent_candidates": [
+        255
+      ],
+      "methods": [
+        "hexadecimal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 27
+    },
+    {
+      "id": "u31",
+      "declared_original_key": 77,
+      "independent_candidates": [
+        77
+      ],
+      "methods": [
+        "hexadecimal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 44
+    },
+    {
+      "id": "u32",
+      "declared_original_key": 48,
+      "independent_candidates": [
+        48
+      ],
+      "methods": [
+        "hexadecimal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 37
+    },
+    {
+      "id": "u33",
+      "declared_original_key": 66,
+      "independent_candidates": [
+        66
+      ],
+      "methods": [
+        "decimal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 32
+    },
+    {
+      "id": "u34",
+      "declared_original_key": 108,
+      "independent_candidates": [
+        108
+      ],
+      "methods": [
+        "decimal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 61
+    },
+    {
+      "id": "u35",
+      "declared_original_key": 224,
+      "independent_candidates": [
+        224
+      ],
+      "methods": [
+        "decimal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 45
+    },
+    {
+      "id": "u36",
+      "declared_original_key": 246,
+      "independent_candidates": [
+        246
+      ],
+      "methods": [
+        "decimal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 58
+    },
+    {
+      "id": "u37",
+      "declared_original_key": 247,
+      "independent_candidates": [
+        247
+      ],
+      "methods": [
+        "decimal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 52
+    },
+    {
+      "id": "u38",
+      "declared_original_key": 42,
+      "independent_candidates": [
+        42
+      ],
+      "methods": [
+        "decimal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 56
+    },
+    {
+      "id": "u39",
+      "declared_original_key": 49,
+      "independent_candidates": [
+        49
+      ],
+      "methods": [
+        "decimal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 54
+    },
+    {
+      "id": "u40",
+      "declared_original_key": 90,
+      "independent_candidates": [
+        90
+      ],
+      "methods": [
+        "decimal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 42
+    },
+    {
+      "id": "l01",
+      "declared_original_key": 65,
+      "independent_candidates": [
+        65
+      ],
+      "methods": [
+        "bare_single_letter"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 12
+    },
+    {
+      "id": "l02",
+      "declared_original_key": 67,
+      "independent_candidates": [
+        67
+      ],
+      "methods": [
+        "bare_single_letter"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 17
+    },
+    {
+      "id": "l03",
+      "declared_original_key": 69,
+      "independent_candidates": [
+        69
+      ],
+      "methods": [
+        "bare_single_letter"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 23
+    },
+    {
+      "id": "l04",
+      "declared_original_key": 71,
+      "independent_candidates": [
+        71
+      ],
+      "methods": [
+        "bare_single_letter"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 24
+    },
+    {
+      "id": "l05",
+      "declared_original_key": 73,
+      "independent_candidates": [
+        73
+      ],
+      "methods": [
+        "bare_single_letter"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 19
+    },
+    {
+      "id": "l06",
+      "declared_original_key": 75,
+      "independent_candidates": [
+        75
+      ],
+      "methods": [
+        "bare_single_letter"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 26
+    },
+    {
+      "id": "l07",
+      "declared_original_key": 77,
+      "independent_candidates": [
+        77
+      ],
+      "methods": [
+        "bare_single_letter"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 23
+    },
+    {
+      "id": "l08",
+      "declared_original_key": 79,
+      "independent_candidates": [
+        79
+      ],
+      "methods": [
+        "bare_single_letter"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 20
+    },
+    {
+      "id": "l09",
+      "declared_original_key": 80,
+      "independent_candidates": [
+        80
+      ],
+      "methods": [
+        "bare_single_letter"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 36
+    },
+    {
+      "id": "l10",
+      "declared_original_key": 82,
+      "independent_candidates": [
+        82
+      ],
+      "methods": [
+        "bare_single_letter"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 40
+    },
+    {
+      "id": "l11",
+      "declared_original_key": 84,
+      "independent_candidates": [
+        84
+      ],
+      "methods": [
+        "bare_single_letter"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 39
+    },
+    {
+      "id": "l12",
+      "declared_original_key": 86,
+      "independent_candidates": [
+        73,
+        86,
+        97,
+        100
+      ],
+      "methods": [
+        "bare_single_letter"
+      ],
+      "key_matches_unique_original": false,
+      "control_free": true,
+      "utf16_units": 37
+    },
+    {
+      "id": "l13",
+      "declared_original_key": 88,
+      "independent_candidates": [
+        88
+      ],
+      "methods": [
+        "bare_single_letter"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 28
+    },
+    {
+      "id": "l14",
+      "declared_original_key": 90,
+      "independent_candidates": [
+        90
+      ],
+      "methods": [
+        "bare_single_letter"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 29
+    },
+    {
+      "id": "l15",
+      "declared_original_key": 66,
+      "independent_candidates": [
+        66
+      ],
+      "methods": [
+        "bare_single_letter"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 39
+    },
+    {
+      "id": "l16",
+      "declared_original_key": 68,
+      "independent_candidates": [
+        68
+      ],
+      "methods": [
+        "bare_single_letter"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 30
+    },
+    {
+      "id": "l17",
+      "declared_original_key": 52,
+      "independent_candidates": [
+        52
+      ],
+      "methods": [
+        "quoted_literal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 42
+    },
+    {
+      "id": "l18",
+      "declared_original_key": 57,
+      "independent_candidates": [
+        57
+      ],
+      "methods": [
+        "quoted_literal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 31
+    },
+    {
+      "id": "l19",
+      "declared_original_key": 35,
+      "independent_candidates": [
+        35
+      ],
+      "methods": [
+        "quoted_literal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 37
+    },
+    {
+      "id": "l20",
+      "declared_original_key": 38,
+      "independent_candidates": [
+        38
+      ],
+      "methods": [
+        "quoted_literal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 30
+    },
+    {
+      "id": "l21",
+      "declared_original_key": 32,
+      "independent_candidates": [
+        32
+      ],
+      "methods": [
+        "quoted_literal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 45
+    },
+    {
+      "id": "l22",
+      "declared_original_key": 64,
+      "independent_candidates": [
+        64
+      ],
+      "methods": [
+        "quoted_literal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 34
+    },
+    {
+      "id": "l23",
+      "declared_original_key": 220,
+      "independent_candidates": [
+        220
+      ],
+      "methods": [
+        "quoted_literal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 27
+    },
+    {
+      "id": "l24",
+      "declared_original_key": 198,
+      "independent_candidates": [
+        198
+      ],
+      "methods": [
+        "quoted_literal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 26
+    },
+    {
+      "id": "l25",
+      "declared_original_key": 70,
+      "independent_candidates": [
+        70
+      ],
+      "methods": [
+        "hexadecimal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 28
+    },
+    {
+      "id": "l26",
+      "declared_original_key": 163,
+      "independent_candidates": [
+        163
+      ],
+      "methods": [
+        "hexadecimal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 39
+    },
+    {
+      "id": "l27",
+      "declared_original_key": 192,
+      "independent_candidates": [
+        192
+      ],
+      "methods": [
+        "hexadecimal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 35
+    },
+    {
+      "id": "l28",
+      "declared_original_key": 216,
+      "independent_candidates": [
+        216
+      ],
+      "methods": [
+        "hexadecimal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 35
+    },
+    {
+      "id": "l29",
+      "declared_original_key": 178,
+      "independent_candidates": [
+        178
+      ],
+      "methods": [
+        "hexadecimal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 35
+    },
+    {
+      "id": "l30",
+      "declared_original_key": 222,
+      "independent_candidates": [
+        222
+      ],
+      "methods": [
+        "hexadecimal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 27
+    },
+    {
+      "id": "l31",
+      "declared_original_key": 122,
+      "independent_candidates": [
+        122
+      ],
+      "methods": [
+        "hexadecimal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 44
+    },
+    {
+      "id": "l32",
+      "declared_original_key": 54,
+      "independent_candidates": [
+        54
+      ],
+      "methods": [
+        "hexadecimal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 37
+    },
+    {
+      "id": "l33",
+      "declared_original_key": 72,
+      "independent_candidates": [
+        72
+      ],
+      "methods": [
+        "decimal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 32
+    },
+    {
+      "id": "l34",
+      "declared_original_key": 74,
+      "independent_candidates": [
+        74
+      ],
+      "methods": [
+        "decimal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 60
+    },
+    {
+      "id": "l35",
+      "declared_original_key": 201,
+      "independent_candidates": [
+        201
+      ],
+      "methods": [
+        "decimal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 45
+    },
+    {
+      "id": "l36",
+      "declared_original_key": 209,
+      "independent_candidates": [
+        209
+      ],
+      "methods": [
+        "decimal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 58
+    },
+    {
+      "id": "l37",
+      "declared_original_key": 169,
+      "independent_candidates": [
+        169
+      ],
+      "methods": [
+        "decimal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 52
+    },
+    {
+      "id": "l38",
+      "declared_original_key": 61,
+      "independent_candidates": [
+        61
+      ],
+      "methods": [
+        "decimal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 56
+    },
+    {
+      "id": "l39",
+      "declared_original_key": 53,
+      "independent_candidates": [
+        53
+      ],
+      "methods": [
+        "decimal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 54
+    },
+    {
+      "id": "l40",
+      "declared_original_key": 250,
+      "independent_candidates": [
+        250
+      ],
+      "methods": [
+        "decimal"
+      ],
+      "key_matches_unique_original": true,
+      "control_free": true,
+      "utf16_units": 43
+    }
+  ],
+  "candidate_used": false,
+  "score_executed": false
+}

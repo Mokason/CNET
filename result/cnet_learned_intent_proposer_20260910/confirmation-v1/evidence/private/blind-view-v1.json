@@ -1,0 +1,514 @@
+[
+  {
+    "id": "c001",
+    "text": "Uppercase a"
+  },
+  {
+    "id": "c002",
+    "text": "Make b uppercase."
+  },
+  {
+    "id": "c003",
+    "text": "Convert c to upper case."
+  },
+  {
+    "id": "c004",
+    "text": "Capitalize d."
+  },
+  {
+    "id": "c005",
+    "text": "Put e in capitals."
+  },
+  {
+    "id": "c006",
+    "text": "Uppercase 'f'."
+  },
+  {
+    "id": "c007",
+    "text": "Make \"g\" a capital letter."
+  },
+  {
+    "id": "c008",
+    "text": "Convert 'H' to uppercase."
+  },
+  {
+    "id": "c009",
+    "text": "Apply uppercase conversion to \"i\"."
+  },
+  {
+    "id": "c010",
+    "text": "Turn 'J' into its uppercase form."
+  },
+  {
+    "id": "c011",
+    "text": "Could you put k in uppercase?"
+  },
+  {
+    "id": "c012",
+    "text": "Please make the letter 'l' capital."
+  },
+  {
+    "id": "c013",
+    "text": "I would like m converted to upper case."
+  },
+  {
+    "id": "c014",
+    "text": "Would you capitalize the character \"n\"?"
+  },
+  {
+    "id": "c015",
+    "text": "Please use the uppercase form of o."
+  },
+  {
+    "id": "c016",
+    "text": "Make \u00e9 uppercase."
+  },
+  {
+    "id": "c017",
+    "text": "Capitalize '\u00f1', please."
+  },
+  {
+    "id": "c018",
+    "text": "Put \u00fc in upper case."
+  },
+  {
+    "id": "c019",
+    "text": "Convert the letter '\u00df' to uppercase."
+  },
+  {
+    "id": "c020",
+    "text": "Please uppercase \u00ff."
+  },
+  {
+    "id": "c021",
+    "text": "Uppercase U+0070."
+  },
+  {
+    "id": "c022",
+    "text": "Convert U+00E0 to upper case."
+  },
+  {
+    "id": "c023",
+    "text": "Make the character U+00B5 uppercase."
+  },
+  {
+    "id": "c024",
+    "text": "Please capitalize U+0041."
+  },
+  {
+    "id": "c025",
+    "text": "Apply uppercase conversion to U+00D7."
+  },
+  {
+    "id": "c026",
+    "text": "Uppercase decimal codepoint 113."
+  },
+  {
+    "id": "c027",
+    "text": "Convert decimal codepoint 230 to uppercase."
+  },
+  {
+    "id": "c028",
+    "text": "Make decimal codepoint 248 upper case."
+  },
+  {
+    "id": "c029",
+    "text": "Please capitalize the character at decimal codepoint 90."
+  },
+  {
+    "id": "c030",
+    "text": "Put decimal codepoint 160 in uppercase."
+  },
+  {
+    "id": "c031",
+    "text": "Uppercase '0'."
+  },
+  {
+    "id": "c032",
+    "text": "Make \"7\" uppercase."
+  },
+  {
+    "id": "c033",
+    "text": "Please convert '9' to upper case."
+  },
+  {
+    "id": "c034",
+    "text": "Uppercase '!'."
+  },
+  {
+    "id": "c035",
+    "text": "Convert \"?\" to uppercase."
+  },
+  {
+    "id": "c036",
+    "text": "Make '.' uppercase."
+  },
+  {
+    "id": "c037",
+    "text": "Apply upper case to '@'."
+  },
+  {
+    "id": "c038",
+    "text": "Please put ' ' in uppercase."
+  },
+  {
+    "id": "c039",
+    "text": "Convert '\u00a3' to uppercase."
+  },
+  {
+    "id": "c040",
+    "text": "Make \"\u00f7\" upper case."
+  },
+  {
+    "id": "c041",
+    "text": "Lowercase R"
+  },
+  {
+    "id": "c042",
+    "text": "Make S lowercase."
+  },
+  {
+    "id": "c043",
+    "text": "Convert T to lower case."
+  },
+  {
+    "id": "c044",
+    "text": "Put U in lowercase."
+  },
+  {
+    "id": "c045",
+    "text": "Change V to a small letter."
+  },
+  {
+    "id": "c046",
+    "text": "Lowercase 'W'."
+  },
+  {
+    "id": "c047",
+    "text": "Make \"X\" a lowercase letter."
+  },
+  {
+    "id": "c048",
+    "text": "Convert 'y' to lowercase."
+  },
+  {
+    "id": "c049",
+    "text": "Apply lowercase conversion to \"Z\"."
+  },
+  {
+    "id": "c050",
+    "text": "Turn 'a' into its lowercase form."
+  },
+  {
+    "id": "c051",
+    "text": "Could you put B in lowercase?"
+  },
+  {
+    "id": "c052",
+    "text": "Please make the letter 'C' lower case."
+  },
+  {
+    "id": "c053",
+    "text": "I would like D converted to lower case."
+  },
+  {
+    "id": "c054",
+    "text": "Would you lowercase the character \"E\"?"
+  },
+  {
+    "id": "c055",
+    "text": "Please use the lowercase form of F."
+  },
+  {
+    "id": "c056",
+    "text": "Make \u00c9 lowercase."
+  },
+  {
+    "id": "c057",
+    "text": "Lowercase '\u00d1', please."
+  },
+  {
+    "id": "c058",
+    "text": "Put \u00dc in lower case."
+  },
+  {
+    "id": "c059",
+    "text": "Convert the letter '\u00c6' to lowercase."
+  },
+  {
+    "id": "c060",
+    "text": "Please lowercase \u00d8."
+  },
+  {
+    "id": "c061",
+    "text": "Lowercase U+0047."
+  },
+  {
+    "id": "c062",
+    "text": "Convert U+00C0 to lower case."
+  },
+  {
+    "id": "c063",
+    "text": "Make the character U+00DE lowercase."
+  },
+  {
+    "id": "c064",
+    "text": "Please lowercase U+0068."
+  },
+  {
+    "id": "c065",
+    "text": "Apply lowercase conversion to U+00F7."
+  },
+  {
+    "id": "c066",
+    "text": "Lowercase decimal codepoint 73."
+  },
+  {
+    "id": "c067",
+    "text": "Convert decimal codepoint 199 to lowercase."
+  },
+  {
+    "id": "c068",
+    "text": "Make decimal codepoint 208 lower case."
+  },
+  {
+    "id": "c069",
+    "text": "Please lowercase the character at decimal codepoint 106."
+  },
+  {
+    "id": "c070",
+    "text": "Put decimal codepoint 255 in lowercase."
+  },
+  {
+    "id": "c071",
+    "text": "Lowercase '2'."
+  },
+  {
+    "id": "c072",
+    "text": "Make \"4\" lowercase."
+  },
+  {
+    "id": "c073",
+    "text": "Please convert '6' to lower case."
+  },
+  {
+    "id": "c074",
+    "text": "Lowercase '#'."
+  },
+  {
+    "id": "c075",
+    "text": "Convert \";\" to lowercase."
+  },
+  {
+    "id": "c076",
+    "text": "Make ',' lowercase."
+  },
+  {
+    "id": "c077",
+    "text": "Apply lower case to '_'."
+  },
+  {
+    "id": "c078",
+    "text": "I would like ' ' converted to lowercase."
+  },
+  {
+    "id": "c079",
+    "text": "Convert '\u00a9' to lowercase."
+  },
+  {
+    "id": "c080",
+    "text": "Make \"\u00d7\" lower case."
+  },
+  {
+    "id": "c081",
+    "text": "Please apply uppercase conversion."
+  },
+  {
+    "id": "c082",
+    "text": "Please convert to lowercase."
+  },
+  {
+    "id": "c083",
+    "text": "Make the character capital."
+  },
+  {
+    "id": "c084",
+    "text": "Put the input in lower case."
+  },
+  {
+    "id": "c085",
+    "text": "Apply uppercase conversion to:"
+  },
+  {
+    "id": "c086",
+    "text": "Can you lowercase the character?"
+  },
+  {
+    "id": "c087",
+    "text": "Change the case of 'm'."
+  },
+  {
+    "id": "c088",
+    "text": "Use case conversion on U+00E9."
+  },
+  {
+    "id": "c089",
+    "text": "Convert the case of decimal codepoint 65."
+  },
+  {
+    "id": "c090",
+    "text": "Adjust the letter case for 'Z'."
+  },
+  {
+    "id": "c091",
+    "text": "Uppercase either 'a' or 'b'."
+  },
+  {
+    "id": "c092",
+    "text": "Lowercase one of 'K' or 'L'."
+  },
+  {
+    "id": "c093",
+    "text": "Convert to uppercase; candidate input: '\u00e9' or '\u00f8'."
+  },
+  {
+    "id": "c094",
+    "text": "Convert to lowercase; input possibilities: U+004D or U+004E."
+  },
+  {
+    "id": "c095",
+    "text": "Uppercase 'k."
+  },
+  {
+    "id": "c096",
+    "text": "Lowercase \"Q."
+  },
+  {
+    "id": "c097",
+    "text": "Make 'r\" uppercase."
+  },
+  {
+    "id": "c098",
+    "text": "Convert \"S' to lowercase."
+  },
+  {
+    "id": "c099",
+    "text": "Uppercase 65"
+  },
+  {
+    "id": "c100",
+    "text": "Convert 233 to lowercase"
+  },
+  {
+    "id": "c101",
+    "text": "Use uppercase for 7"
+  },
+  {
+    "id": "c102",
+    "text": "Please lowercase !"
+  },
+  {
+    "id": "c103",
+    "text": "Perform uppercase conversion on @"
+  },
+  {
+    "id": "c104",
+    "text": "Please apply lowercase conversion to #"
+  },
+  {
+    "id": "c105",
+    "text": "Add seventeen and twenty-three."
+  },
+  {
+    "id": "c106",
+    "text": "Explain how a rainbow forms."
+  },
+  {
+    "id": "c107",
+    "text": "Do not uppercase 'v'."
+  },
+  {
+    "id": "c108",
+    "text": "Never convert 'P' to lowercase."
+  },
+  {
+    "id": "c109",
+    "text": "\"Uppercase t\""
+  },
+  {
+    "id": "c110",
+    "text": "'Lowercase Y'"
+  },
+  {
+    "id": "c111",
+    "text": "Uppercase 'd' and lowercase 'E'."
+  },
+  {
+    "id": "c112",
+    "text": "Lowercase 'N', then count the letters in banana."
+  },
+  {
+    "id": "c113",
+    "text": "Summarize this note: Please uppercase 'h'."
+  },
+  {
+    "id": "c114",
+    "text": "Translate the sentence \"Lowercase F\" into French."
+  },
+  {
+    "id": "c115",
+    "text": "Uppercase 'i' using Turkish casing rules."
+  },
+  {
+    "id": "c116",
+    "text": "Lowercase 'I' according to the Azerbaijani locale."
+  },
+  {
+    "id": "c117",
+    "text": "Uppercase the entire string 'garden'."
+  },
+  {
+    "id": "c118",
+    "text": "Convert every letter of 'MAPLE TREE' to lowercase."
+  },
+  {
+    "id": "c119",
+    "text": "Uppercase U+0101."
+  },
+  {
+    "id": "c120",
+    "text": "Lowercase '\u03a9'."
+  },
+  {
+    "id": "c121",
+    "text": "Make decimal codepoint 256 uppercase."
+  },
+  {
+    "id": "c122",
+    "text": "Convert '\ud83d\ude00' to lowercase."
+  },
+  {
+    "id": "c123",
+    "text": "Uppercase U+000A."
+  },
+  {
+    "id": "c124",
+    "text": "Lowercase decimal codepoint 127."
+  },
+  {
+    "id": "c125",
+    "text": "Uppercase U+D800."
+  },
+  {
+    "id": "c126",
+    "text": "Lowercase decimal codepoint 57343."
+  },
+  {
+    "id": "c127",
+    "text": "                                                                                                                                                                                                                                                                Uppercase 's'."
+  },
+  {
+    "id": "c128",
+    "text": "Lowercase 'T'.                                                                                                                                                                                                                                                                "
+  }
+]

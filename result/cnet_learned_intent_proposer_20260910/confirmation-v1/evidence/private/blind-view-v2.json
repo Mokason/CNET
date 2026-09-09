@@ -1,0 +1,106 @@
+[
+  {
+    "id": "c001",
+    "text": "Give a its uppercase form."
+  },
+  {
+    "id": "c002",
+    "text": "Use a capital letter for b."
+  },
+  {
+    "id": "c003",
+    "text": "Please change c into upper case."
+  },
+  {
+    "id": "c016",
+    "text": "I need the uppercase form of \u00e9."
+  },
+  {
+    "id": "c021",
+    "text": "Please put the character at U+0070 into capitals."
+  },
+  {
+    "id": "c034",
+    "text": "Please perform uppercase conversion on the character \"!\"."
+  },
+  {
+    "id": "c035",
+    "text": "I would like \"?\" put in upper case."
+  },
+  {
+    "id": "c036",
+    "text": "Take the character \".\" to uppercase."
+  },
+  {
+    "id": "c041",
+    "text": "Give R its lowercase form."
+  },
+  {
+    "id": "c046",
+    "text": "Give 'W' its small-letter form."
+  },
+  {
+    "id": "c056",
+    "text": "Please change \u00c9 into lower case."
+  },
+  {
+    "id": "c058",
+    "text": "Use the lowercase version of \u00dc."
+  },
+  {
+    "id": "c071",
+    "text": "Please perform lowercase conversion on the character \"2\"."
+  },
+  {
+    "id": "c074",
+    "text": "I would like \"#\" put in lower case."
+  },
+  {
+    "id": "c075",
+    "text": "Take the character \";\" to lowercase."
+  },
+  {
+    "id": "c076",
+    "text": "Please use lowercase for the character \",\"."
+  },
+  {
+    "id": "c082",
+    "text": "I need a character converted to lower case."
+  },
+  {
+    "id": "c091",
+    "text": "Please uppercase one character; the input could be either \"a\" or \"b\"."
+  },
+  {
+    "id": "c099",
+    "text": "Give 65 its uppercase form."
+  },
+  {
+    "id": "c102",
+    "text": "Could you convert ! into lowercase?"
+  },
+  {
+    "id": "c115",
+    "text": "Please use the Turkish locale to capitalize the letter i."
+  },
+  {
+    "id": "c116",
+    "text": "I need I in lower case using Azerbaijani casing conventions."
+  },
+  {
+    "id": "c119",
+    "text": "Give the scalar U+0101 its uppercase form."
+  },
+  {
+    "id": "c120",
+    "text": "Please make the Greek character \"\u03a9\" lower case."
+  },
+  {
+    "id": "c123",
+    "text": "Apply upper case to the scalar U+000A."
+  },
+  {
+    "id": "c125",
+    "text": "I would like U+D800 converted to upper case."
+  }
+]

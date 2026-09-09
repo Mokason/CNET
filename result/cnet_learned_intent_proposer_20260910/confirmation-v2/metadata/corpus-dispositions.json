@@ -1,0 +1,43 @@
+{
+  "schema": 1,
+  "repair_rounds_used": 1,
+  "repair_round_limit": 2,
+  "blind_review_passes_used": 2,
+  "blind_review_pass_limit": 3,
+  "initial_review": {
+    "count": 128,
+    "label_disagreements": 0,
+    "ambiguous": 0
+  },
+  "round1": {
+    "reason": "13 objective exact/normalized prior-corpus overlaps",
+    "changed_new_ids": [
+      "u01",
+      "u02",
+      "u19",
+      "u22",
+      "l01",
+      "c13",
+      "c17",
+      "c21",
+      "c22",
+      "a05",
+      "a11",
+      "a15",
+      "a17"
+    ],
+    "preserved_rows": 115,
+    "labels_operations_keys_families_unchanged": true,
+    "all_overlap_checks_after_repair": true
+  },
+  "second_review": {
+    "changed_rows_reviewed": 13,
+    "unchanged_hashes_verified": 115,
+    "label_disagreements": 0,
+    "ambiguous": 0
+  },
+  "final_review_coverage": 128,
+  "candidate_conditioned_feedback": false,
+  "score_executed": false,
+  "all_drafts_preserved": true
+}

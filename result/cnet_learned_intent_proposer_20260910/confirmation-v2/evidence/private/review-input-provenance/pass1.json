@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "source_path": "/tmp/cnet-confirmation-v2-qR7n165F/author/draft1.json",
+  "source_sha256": "606071bcc3c8eef890dd9110607ae712843b0032179a2608754744e805acba7d",
+  "blind_input_path": "/tmp/cnet-confirmation-v2-qR7n165F/reviewer/pass1-input.json",
+  "rows": 128,
+  "unchanged_rows": 0,
+  "score_executed": false
+}

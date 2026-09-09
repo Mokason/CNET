@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "round": 1,
+  "maximum_rounds": 2,
+  "trigger": "Objective exact or punctuation/whitespace-normalized overlap",
+  "ids": ["c001","c002","c003","c016","c021","c034","c035","c036","c041","c046","c056","c058","c071","c074","c075","c076","c082","c091","c099","c102","c115","c116","c119","c120","c123","c125"],
+  "required_invariants": "Only these 26 text fields may change. Preserve IDs, statuses, original input keys, operations, families, all quotas and every other row as identical JSON values.",
+  "feedback_exposure": "Only offending NEW IDs and repair invariants; no prior text, candidate outputs or score.",
+  "initial_blind_agreement": "128/128; no uncertainty",
+  "initial_custodian_scalar_issues": 0,
+  "synthetic": true,
+  "training_eligible": false,
+  "score_executed": false
+}

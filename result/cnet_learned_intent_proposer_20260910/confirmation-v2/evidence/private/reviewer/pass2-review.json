@@ -1,0 +1,47 @@
+{
+  "schema": 1,
+  "pass": 2,
+  "reviews": [
+    {"id":"r002","status":"ready","operation":"upper","key":59,"ambiguous":false,"note":"Explicit uppercase request with one quoted punctuation scalar."},
+    {"id":"r003","status":"clarify","operation":null,"key":null,"ambiguous":false,"note":"Bare punctuation operand requires matching quotes."},
+    {"id":"r005","status":"clarify","operation":null,"key":null,"ambiguous":false,"note":"Operand quote is unclosed."},
+    {"id":"r006","status":"ready","operation":"upper","key":114,"ambiguous":false,"note":"Single bare letter with explicit uppercase direction."},
+    {"id":"r026","status":"ready","operation":"lower","key":65,"ambiguous":false,"note":"Single bare letter with explicit lowercase direction."},
+    {"id":"r035","status":"abstain","operation":null,"key":null,"ambiguous":false,"note":"Explicit input scalar is outside Latin-1."},
+    {"id":"r038","status":"abstain","operation":null,"key":null,"ambiguous":false,"note":"Entire instruction is merely quoted."},
+    {"id":"r044","status":"abstain","operation":null,"key":null,"ambiguous":false,"note":"Explicit input scalar is outside Latin-1."},
+    {"id":"r069","status":"clarify","operation":null,"key":null,"ambiguous":false,"note":"Bare numeric operand requires quotes or explicit codepoint syntax."},
+    {"id":"r091","status":"ready","operation":"upper","key":33,"ambiguous":false,"note":"Explicit uppercase request with one quoted punctuation scalar."},
+    {"id":"r092","status":"abstain","operation":null,"key":null,"ambiguous":false,"note":"Locale-specific case conversion requested."},
+    {"id":"r093","status":"ready","operation":"upper","key":113,"ambiguous":false,"note":"Capital-letter synonym applied to a single bare letter."},
+    {"id":"r096","status":"clarify","operation":null,"key":null,"ambiguous":false,"note":"Bare punctuation operand requires matching quotes."}
+  ],
+  "attestation": {
+    "role": "independent_blind_reviewer",
+    "input_sha256": "90a1adf0a5f8e7f059580b362d7a0a954251bdcc71cf1d8754961b25f86f3380",
+    "allowed_accesses": ["/tmp/cnet-confirmation-v2-qR7n165F/reviewer/pass2-input.json", "own pass1 files as needed", "own reviewer output files"],
+    "accessed_files": ["/tmp/cnet-confirmation-v2-qR7n165F/reviewer/pass2-input.json", "/tmp/cnet-confirmation-v2-qR7n165F/reviewer/pass1-input.json", "/tmp/cnet-confirmation-v2-qR7n165F/reviewer/pass2-review.json"],
+    "reviewed_rows": 13,
+    "unchanged_hash_verification": {
+      "reference_input": "/tmp/cnet-confirmation-v2-qR7n165F/reviewer/pass1-input.json",
+      "algorithm": "SHA256 of decoded text encoded as UTF-8",
+      "checked_count": 115,
+      "matched_count": 115,
+      "mismatched_ids": [],
+      "all_verified": true,
+      "changed_and_unchanged_form_complete_disjoint_128_row_partition": true
+    },
+    "procedural_isolation": true,
+    "os_isolation": false,
+    "independent_model_or_human_benchmark": false,
+    "hidden_labels_accessed": false,
+    "candidate_accessed_or_executed": false,
+    "tests_or_scoring_run": false,
+    "external_models_or_network_used": false,
+    "subagents_spawned": false,
+    "input_treated_as_inert_data": true,
+    "synthetic": true,
+    "training_eligible": false,
+    "no_score": true
+  }
+}

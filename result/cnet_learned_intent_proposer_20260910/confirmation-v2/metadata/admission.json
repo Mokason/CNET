@@ -1,0 +1,559 @@
+{
+  "schema": 1,
+  "admitted": true,
+  "corpus_path": "/tmp/cnet-confirmation-v2-qR7n165F/confirmation.json",
+  "corpus_sha256": "10cdd9e0c4a5422fe08a105b6d0cabc72d092a76df1b8b70ab34a13812276e32",
+  "protocol_path": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/result/cnet_learned_intent_proposer_20260910/confirmation-v2/metadata/corpus-protocol.json",
+  "protocol_sha256": "4ec4d34ae51d436c61076adba62cf171eb6a5a8e12f22e7fd7c84d5538975f48",
+  "synthetic": true,
+  "training_eligible": false,
+  "score_executed": false,
+  "corpus_mode": "0444",
+  "quotas": {
+    "total": 128,
+    "ready": 80,
+    "upper": 40,
+    "lower": 40,
+    "clarify": 24,
+    "abstain": 24,
+    "min_named_families": 8
+  },
+  "families": {
+    "direct_letter": 15,
+    "polite_letter": 10,
+    "synonym_letter": 7,
+    "quoted_digit": 4,
+    "quoted_punctuation": 6,
+    "quoted_space": 2,
+    "latin1_letter": 4,
+    "hex_scalar": 16,
+    "decimal_scalar": 16,
+    "missing_direction": 4,
+    "missing_input": 4,
+    "multiple_candidates": 4,
+    "malformed_quotes": 4,
+    "bare_numeric": 4,
+    "bare_punctuation": 2,
+    "named_character": 2,
+    "unrelated": 2,
+    "negated": 2,
+    "quoted_instruction": 2,
+    "compound_request": 2,
+    "embedded_request": 2,
+    "locale_specific": 2,
+    "full_string": 2,
+    "outside_latin1": 3,
+    "control_scalar": 5,
+    "surrogate_scalar": 1,
+    "overlength_request": 1
+  },
+  "family_count": 27,
+  "strict_validator": {
+    "pass": true,
+    "load_corpus_source_sha256": "f9a70c3fb2feefcb63624e02490b9ad2a39f6cb203996995fc5c52a9fa865575"
+  },
+  "independent_original_scalar_audit": {
+    "pass": true,
+    "checked_ready_rows": 80,
+    "candidate_used": false,
+    "raw_path": "/tmp/cnet-confirmation-v2-qR7n165F/validation/draft2-keys-final.json",
+    "raw_sha256": "de25de8d3f3bf80cc84632383a457921bf00ca9dc49001abf012aa4e0ae1e9e8"
+  },
+  "reviews_and_dispositions": {
+    "schema": 1,
+    "repair_rounds_used": 1,
+    "repair_round_limit": 2,
+    "blind_review_passes_used": 2,
+    "blind_review_pass_limit": 3,
+    "initial_review": {
+      "count": 128,
+      "label_disagreements": 0,
+      "ambiguous": 0
+    },
+    "round1": {
+      "reason": "13 objective exact/normalized prior-corpus overlaps",
+      "changed_new_ids": [
+        "u01",
+        "u02",
+        "u19",
+        "u22",
+        "l01",
+        "c13",
+        "c17",
+        "c21",
+        "c22",
+        "a05",
+        "a11",
+        "a15",
+        "a17"
+      ],
+      "preserved_rows": 115,
+      "labels_operations_keys_families_unchanged": true,
+      "all_overlap_checks_after_repair": true
+    },
+    "second_review": {
+      "changed_rows_reviewed": 13,
+      "unchanged_hashes_verified": 115,
+      "label_disagreements": 0,
+      "ambiguous": 0
+    },
+    "final_review_coverage": 128,
+    "candidate_conditioned_feedback": false,
+    "score_executed": false,
+    "all_drafts_preserved": true
+  },
+  "overlap": {
+    "pass": true,
+    "normalization": "Unicode casefold then remove Unicode P* punctuation and all whitespace",
+    "internal_exact_collisions": 0,
+    "internal_normalized_collisions": 0,
+    "prior_exact_collisions": 0,
+    "prior_normalized_collisions": 0,
+    "prior_collection_count": 16,
+    "prior_text_count": 2048,
+    "prior_unique_exact": 2048,
+    "prior_unique_normalized": 1998,
+    "prior_inventory": [
+      {
+        "path": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/benchmarks/task_paraphrases_20260909/qualification.json",
+        "sha256": "9f0ae2c6a2c57edc00d7f3759c1fefc5830ffc033ee3838a33015a5edf74cd05",
+        "count": 128
+      },
+      {
+        "path": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/benchmarks/task_paraphrases_20260909/confirmation.json",
+        "sha256": "1f37ea2cb4073cbdb1be4ded22ded6375076447d7b75356798c5d209f8e377cb",
+        "count": 128
+      },
+      {
+        "path": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/benchmarks/task_paraphrases_followup_20260909/confirmation.json",
+        "sha256": "612e4007398666202abd5f0a104c0ebadd6e75121ebf67471dcfb9e498f14cd3",
+        "count": 128
+      },
+      {
+        "path": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/benchmarks/task_paraphrases_round10_20260909/confirmation.json",
+        "sha256": "ba3347376a322c3084c2d25996f9a084cce759e5508e792e5b40fb5395d679cb",
+        "count": 128
+      },
+      {
+        "path": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/benchmarks/task_paraphrases_round11_20260909/confirmation.json",
+        "sha256": "2f3d137b379e41160871ac817d87c579ea4d421b6406edc73cc6c1a73906a946",
+        "count": 128
+      },
+      {
+        "path": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/benchmarks/task_paraphrases_round3_20260909/confirmation.json",
+        "sha256": "4e0a31349ce0b2fc73a9d2727388a33ee6a08ba56f23cebf9bba818a361ebf46",
+        "count": 128
+      },
+      {
+        "path": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/benchmarks/task_paraphrases_round4_20260909/confirmation.json",
+        "sha256": "c17d36329aca0b880b4fe470df4becb36110f11b2b1a4a5c6ca17aba3af26130",
+        "count": 128
+      },
+      {
+        "path": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/benchmarks/task_paraphrases_round5_20260909/confirmation.json",
+        "sha256": "233e52c0d1fc5966cbe877e2d08769e1501fc1a29819534f05e3192fe37772e5",
+        "count": 128
+      },
+      {
+        "path": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/benchmarks/task_paraphrases_round6_20260909/confirmation.json",
+        "sha256": "2022d8c4a07c1799245d81396cf4979308c32c49d8abddf78a4314d17159378b",
+        "count": 128
+      },
+      {
+        "path": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/benchmarks/task_paraphrases_round7_20260909/confirmation.json",
+        "sha256": "e67f6646e839c0d8cd2629efd70ba3fe8822c226521bda755c08b103f439295b",
+        "count": 128
+      },
+      {
+        "path": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/benchmarks/task_paraphrases_round8_20260909/confirmation.json",
+        "sha256": "fdb71d2095de99f4397440611b9a2733294cf9bbefdd9b9d63e4c6869977035c",
+        "count": 128
+      },
+      {
+        "path": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/benchmarks/task_paraphrases_round9_20260909/confirmation.json",
+        "sha256": "d6632a6224495725ae528033da4226b14b47be950d7f36f4fc54d6de99b92a8d",
+        "count": 128
+      },
+      {
+        "path": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/result/cnet_herdr_three_heads_20260909/exposed-corpora/hermes-first.json",
+        "sha256": "f47c14e717f414984fcbb1f472ddbf39460b5ef301a805f902af91bb74b59a57",
+        "count": 128
+      },
+      {
+        "path": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/result/cnet_herdr_three_heads_20260909/exposed-corpora/hermes-second.json",
+        "sha256": "102f76da2de5ed7a93b6c97730736e95d254bf9fffd76a894483cf7c440b669b",
+        "count": 128
+      },
+      {
+        "path": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/result/cnet_herdr_three_heads_20260909/exposed-corpora/hermes-third.json",
+        "sha256": "7b71796aa4d40e61439668af3ad5a100c0aa2cdb2667e5d3cc239810cb063e0c",
+        "count": 128
+      },
+      {
+        "path": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/result/cnet_learned_intent_proposer_20260910/confirmation-v1/evidence/private/confirmation.json",
+        "sha256": "806c0c2d38eeda7422f0cc03e36e50ff5698687513df4b50a90d4abe8c5b5f53",
+        "count": 128
+      }
+    ],
+    "prior_freeze_metadata": [
+      {
+        "path": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/benchmarks/task_paraphrases_20260909/freeze.json",
+        "sha256": "1bf769fa77a416237a8a1e2534fbe949346a8e22fba630f1c0a4551e0c7be0fe"
+      },
+      {
+        "path": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/benchmarks/task_paraphrases_followup_20260909/freeze.json",
+        "sha256": "69ab525fef0e91a6d64398a0d5829f3b314b04cd7ced2a7ea4e3c6a605f31a49"
+      },
+      {
+        "path": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/benchmarks/task_paraphrases_round10_20260909/freeze.json",
+        "sha256": "ac418e0c6b686f957a1e6e982fabf69610efcaa8daa7a8a07b4b09aa9e88b617"
+      },
+      {
+        "path": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/benchmarks/task_paraphrases_round11_20260909/freeze.json",
+        "sha256": "98da93e7c582ee8b5cb5fb8f539f572de6d7a1cb0d2a3668057e2873f954618a"
+      },
+      {
+        "path": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/benchmarks/task_paraphrases_round3_20260909/freeze.json",
+        "sha256": "e78224298ce97e8fc8cd69088c64a54463934b2d2731030de8146d1c9b65e6b9"
+      },
+      {
+        "path": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/benchmarks/task_paraphrases_round4_20260909/freeze.json",
+        "sha256": "903f5fddd1788e52e779b67ab0c128930c0d914bb0fc679f1456b7e0c7b00a75"
+      },
+      {
+        "path": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/benchmarks/task_paraphrases_round5_20260909/freeze.json",
+        "sha256": "7516f836a996c8fcc18b106295d41b817394b86f0bf627fd9eeec03e98da3d4e"
+      },
+      {
+        "path": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/benchmarks/task_paraphrases_round6_20260909/freeze.json",
+        "sha256": "7dd7a45af5d3c5b8b78c7c4bf6b8dd28f9d69994220c8962984a9e50024e8889"
+      },
+      {
+        "path": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/benchmarks/task_paraphrases_round7_20260909/freeze.json",
+        "sha256": "f368856640aece0360fc9c0e0f0879da5616282b910b28967bf76d56cf9b699d"
+      },
+      {
+        "path": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/benchmarks/task_paraphrases_round8_20260909/freeze.json",
+        "sha256": "b70010bb8c7166be84788b8bffcb33d611256681c0af4b412a6222230b9e5a91"
+      },
+      {
+        "path": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/benchmarks/task_paraphrases_round9_20260909/freeze.json",
+        "sha256": "7e7842704946d15f1713fe4e128a2c69178dfc0f5c488b998ddd79c65de0c921"
+      }
+    ],
+    "denylists": [
+      {
+        "path": "/tmp/cnet-confirmation-v2-qR7n165F/training-denylist.json",
+        "sha256": "58d7d2690343f6a49d7d62a9ddf3e185a255045200ebe73a44cab3ef9c2d1b19",
+        "group": "TrainCorpus",
+        "count": 359,
+        "unique_exact": 359,
+        "unique_normalized": 218
+      },
+      {
+        "path": "/tmp/cnet-confirmation-v2-qR7n165F/training-denylist.json",
+        "sha256": "58d7d2690343f6a49d7d62a9ddf3e185a255045200ebe73a44cab3ef9c2d1b19",
+        "group": "CalibrationCorpus",
+        "count": 52,
+        "unique_exact": 52,
+        "unique_normalized": 33
+      },
+      {
+        "path": "/tmp/cnet-confirmation-v2-qR7n165F/development-denylist.json",
+        "sha256": "fea685d0354d625075f6c45941a7f0eda7ce26e21830ae1542929eba6f443a8a",
+        "group": "development",
+        "count": 544,
+        "unique_exact": 543,
+        "unique_normalized": 218
+      }
+    ],
+    "training_calibration_development_collisions": 0,
+    "raw_path": "/tmp/cnet-confirmation-v2-qR7n165F/validation/draft2.json",
+    "raw_sha256": "baca42c63910c32b442ea62d1e02abf37d81843e1a13ba040eb664c0fbdf1277"
+  },
+  "provenance": {
+    "custodian_path": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/result/cnet_learned_intent_proposer_20260910/confirmation-v2/metadata/custodian-provenance.json",
+    "custodian_sha256": "8f42e603b715a834d8b43536ee522aa52cfe5e122b375989da77b42cf332ea9d",
+    "author_path": "/tmp/cnet-confirmation-v2-qR7n165F/author/provenance.json",
+    "author_sha256": "7fb0beb90d4b7e655a33516325861f3df9b5d76229e5343de72fb9429b87f226",
+    "author_repair_path": "/tmp/cnet-confirmation-v2-qR7n165F/author/provenance-round1.json",
+    "author_repair_sha256": "cbb4b342d1d8445e3973d4d0fbf34c1873351d6df5708d807627b78f1cfb008d",
+    "reviewer_paths": [
+      "/tmp/cnet-confirmation-v2-qR7n165F/reviewer/pass1-review.json",
+      "/tmp/cnet-confirmation-v2-qR7n165F/reviewer/pass2-review.json"
+    ],
+    "isolation": "Fresh-context author and separate fresh-context blind reviewer, same model/tools; procedural, not OS or third-party/human isolation."
+  },
+  "source_access_and_no_score_attestation": {
+    "schema": 1,
+    "role": "/root/confirmation_custodian_v2",
+    "synthetic": true,
+    "training_eligible": false,
+    "author_role": "/root/confirmation_custodian_v2/author",
+    "reviewer_role": "/root/confirmation_custodian_v2/blind_reviewer",
+    "role_context": "Both author and reviewer were spawned with fork_turns=none, without model override. Author received contract and corpus quotas only; reviewer received contract and mechanically generated neutral id/text pairs only. Review input excludes author labels, operations, original keys and families.",
+    "isolation_limit": "Procedural separation on the same model and tools; not OS isolation, third-party or human benchmark, IID sampling, or proof of real-user performance.",
+    "source_access": {
+      "skill": "/home/marble/.agents/skills/using-agent-skills/SKILL.md",
+      "authorized_validator": "tools/task_paraphrase_eval/evaluate.py:47-74 load_corpus",
+      "authorized_contract": "plans/cnet_paraphrase_evaluation_20260909.md:3-46",
+      "discovery_scan_exception": "Before the exact-range read, a line-location rg over the two authorized files returned evaluator function signatures and several schema/score-floor lines outside load_corpus. It did not expose candidate implementation, actual scores/results, prior corpus text, tests, or prior failure text. Parent was notified and directed continuation with precise attestation.",
+      "prior_corpora": "Read mechanically only to extract and hash text; never displayed, copied, or supplied to author/reviewer. Expected sixteen 128-row collections, including confirmation-v1 pinned SHA256.",
+      "prior_freeze_metadata": "Mechanical path inventory and raw-byte SHA256 only.",
+      "current_training_and_development": "Root-provided hash-only denylists, each pinned by root-supplied SHA256; no training/development source access.",
+      "new_corpus": "Custodian may inspect independently authored fresh draft and labels to validate contract; none supplied to root before admission.",
+      "candidate_implementation_access": false,
+      "training_source_access": false,
+      "candidate_tests_access": false,
+      "actual_score_access": false,
+      "prior_failure_text_access": false,
+      "external_network_or_model_calls": false,
+      "credentials_or_config_access": false
+    },
+    "validation": {
+      "strict_schema": "Extract and compile only load_corpus lines47-74 with inert strict JSON decoder; never import scoring module.",
+      "overlap": "Compare exact and Unicode-casefold/remove-P*-and-whitespace normalized SHA256 internally, against2048 prior texts, and against root denylists. Only offending NEW IDs sent to author.",
+      "original_key_audit": "Independently extract hexadecimal, explicit decimal, quoted literal or bare-letter input code points; compare original scalar integer with every ready label. Initial mechanical contraction tokenization produced two nonmatching audit rows; custodian inspected those new rows and corrected extraction of apostrophe-containing words, preserving both audit reports. No author row changed for this tooling refinement.",
+      "manual_contract_check": "Custodian inspected newly authored draft1 and found no additional label ambiguity; full independent blind review also agreed on all128 rows.",
+      "candidate_execution": false,
+      "evaluate_score_execution": false,
+      "request_text_executed_as_code_shell_or_path": false
+    },
+    "no_score_attestation": "Custodian, author and reviewer never ran CNET, Propose, candidate tests, candidate training, evaluation scoring, native/live/GPU workflows, commits, pushes or deployment. All corpus changes were before any confirmation-v2 score and based only on contract/schema/overlap/blind-label validation.",
+    "protocol_predeclared_sha256": "4ec4d34ae51d436c61076adba62cf171eb6a5a8e12f22e7fd7c84d5538975f48"
+  },
+  "archive_manifest_path": "/home/marble/AI/CNET-worktrees/herdr-language-20260909/result/cnet_learned_intent_proposer_20260910/confirmation-v2/metadata/archive-manifest.json",
+  "archive_manifest_sha256": "f054963019f4d7472961ca98d6d1fbc3887fcc7b16f6566581d0148eb9969106",
+  "raw_evidence": [
+    {
+      "source_path": "/tmp/cnet-confirmation-v2-qR7n165F/admit.py",
+      "source_relative": "admit.py",
+      "archive_relative": "evidence/private/admit.py",
+      "sha256": "e03c6311ff7a2e83e7aa7d85e341dfce49d90afc6bb62f2b1afa9c88c7358ee0",
+      "bytes": 7432
+    },
+    {
+      "source_path": "/tmp/cnet-confirmation-v2-qR7n165F/audit_keys.py",
+      "source_relative": "audit_keys.py",
+      "archive_relative": "evidence/private/audit_keys.py",
+      "sha256": "90113b801b3bdf80719b08d99b608292305490b22430ab9cacf5c046349a3e7f",
+      "bytes": 2462
+    },
+    {
+      "source_path": "/tmp/cnet-confirmation-v2-qR7n165F/author/draft1.json",
+      "source_relative": "author/draft1.json",
+      "archive_relative": "evidence/private/author/draft1.json",
+      "sha256": "606071bcc3c8eef890dd9110607ae712843b0032179a2608754744e805acba7d",
+      "bytes": 17539
+    },
+    {
+      "source_path": "/tmp/cnet-confirmation-v2-qR7n165F/author/draft2.json",
+      "source_relative": "author/draft2.json",
+      "archive_relative": "evidence/private/author/draft2.json",
+      "sha256": "10cdd9e0c4a5422fe08a105b6d0cabc72d092a76df1b8b70ab34a13812276e32",
+      "bytes": 17912
+    },
+    {
+      "source_path": "/tmp/cnet-confirmation-v2-qR7n165F/author/provenance-round1.json",
+      "source_relative": "author/provenance-round1.json",
+      "archive_relative": "evidence/private/author/provenance-round1.json",
+      "sha256": "cbb4b342d1d8445e3973d4d0fbf34c1873351d6df5708d807627b78f1cfb008d",
+      "bytes": 2272
+    },
+    {
+      "source_path": "/tmp/cnet-confirmation-v2-qR7n165F/author/provenance.json",
+      "source_relative": "author/provenance.json",
+      "archive_relative": "evidence/private/author/provenance.json",
+      "sha256": "7fb0beb90d4b7e655a33516325861f3df9b5d76229e5343de72fb9429b87f226",
+      "bytes": 2911
+    },
+    {
+      "source_path": "/tmp/cnet-confirmation-v2-qR7n165F/blind-mapping.json",
+      "source_relative": "blind-mapping.json",
+      "archive_relative": "evidence/private/blind-mapping.json",
+      "sha256": "1b193445b596cd6d798e6c61cf4d4007d314e8386bde55489660fb66bc204967",
+      "bytes": 2179
+    },
+    {
+      "source_path": "/tmp/cnet-confirmation-v2-qR7n165F/compare_review.py",
+      "source_relative": "compare_review.py",
+      "archive_relative": "evidence/private/compare_review.py",
+      "sha256": "67c083228882a3914e47dcfe9ec6db2c5f0700ebf8a0b1d6082673a1631221db",
+      "bytes": 2172
+    },
+    {
+      "source_path": "/tmp/cnet-confirmation-v2-qR7n165F/confirmation.json",
+      "source_relative": "confirmation.json",
+      "archive_relative": "evidence/private/confirmation.json",
+      "sha256": "10cdd9e0c4a5422fe08a105b6d0cabc72d092a76df1b8b70ab34a13812276e32",
+      "bytes": 17912
+    },
+    {
+      "source_path": "/tmp/cnet-confirmation-v2-qR7n165F/custodian-provenance.json",
+      "source_relative": "custodian-provenance.json",
+      "archive_relative": "evidence/private/custodian-provenance.json",
+      "sha256": "8f42e603b715a834d8b43536ee522aa52cfe5e122b375989da77b42cf332ea9d",
+      "bytes": 3798
+    },
+    {
+      "source_path": "/tmp/cnet-confirmation-v2-qR7n165F/development-denylist.json",
+      "source_relative": "development-denylist.json",
+      "archive_relative": "evidence/private/development-denylist.json",
+      "sha256": "fea685d0354d625075f6c45941a7f0eda7ce26e21830ae1542929eba6f443a8a",
+      "bytes": 55575
+    },
+    {
+      "source_path": "/tmp/cnet-confirmation-v2-qR7n165F/dispositions.json",
+      "source_relative": "dispositions.json",
+      "archive_relative": "evidence/private/dispositions.json",
+      "sha256": "ca6a5918f9e113f7b8d1fe475b180aae6b589bc5ce04e41736b0aef1f5d39e3b",
+      "bytes": 925
+    },
+    {
+      "source_path": "/tmp/cnet-confirmation-v2-qR7n165F/make_blind.py",
+      "source_relative": "make_blind.py",
+      "archive_relative": "evidence/private/make_blind.py",
+      "sha256": "36fe7a4be89e45c2bf108c168c2ccb5a2e29cc46da9c64c424c48879449c0ce7",
+      "bytes": 2121
+    },
+    {
+      "source_path": "/tmp/cnet-confirmation-v2-qR7n165F/protocol.json",
+      "source_relative": "protocol.json",
+      "archive_relative": "evidence/private/protocol.json",
+      "sha256": "4ec4d34ae51d436c61076adba62cf171eb6a5a8e12f22e7fd7c84d5538975f48",
+      "bytes": 4380
+    },
+    {
+      "source_path": "/tmp/cnet-confirmation-v2-qR7n165F/repair-round1.json",
+      "source_relative": "repair-round1.json",
+      "archive_relative": "evidence/private/repair-round1.json",
+      "sha256": "8acdf33eb47da1b3adb48efbc74cdca4fd13f234ffe510e081c7c5a75e579ee3",
+      "bytes": 885
+    },
+    {
+      "source_path": "/tmp/cnet-confirmation-v2-qR7n165F/review-input-provenance/pass1.json",
+      "source_relative": "review-input-provenance/pass1.json",
+      "archive_relative": "evidence/private/review-input-provenance/pass1.json",
+      "sha256": "6d0f5c92bb801cb40c561f43fd1275f8b3b77d0c695636f4ccb4a8b665154d1c",
+      "bytes": 330
+    },
+    {
+      "source_path": "/tmp/cnet-confirmation-v2-qR7n165F/review-input-provenance/pass2.json",
+      "source_relative": "review-input-provenance/pass2.json",
+      "archive_relative": "evidence/private/review-input-provenance/pass2.json",
+      "sha256": "515258eb4c6f88decb93a954c85bb7159883defefa1b28efa29a83ec397498e2",
+      "bytes": 331
+    },
+    {
+      "source_path": "/tmp/cnet-confirmation-v2-qR7n165F/reviewer/pass1-input.json",
+      "source_relative": "reviewer/pass1-input.json",
+      "archive_relative": "evidence/private/reviewer/pass1-input.json",
+      "sha256": "1d846887f90e88e6c24763f6b9ff4c5042946961307078017c5c0fbac4ab3a27",
+      "bytes": 11131
+    },
+    {
+      "source_path": "/tmp/cnet-confirmation-v2-qR7n165F/reviewer/pass1-review.json",
+      "source_relative": "reviewer/pass1-review.json",
+      "archive_relative": "evidence/private/reviewer/pass1-review.json",
+      "sha256": "876bf4f4e4f6b9dbb14cf1c555b42a406328cb532c43c3493794f4268d959a48",
+      "bytes": 17678
+    },
+    {
+      "source_path": "/tmp/cnet-confirmation-v2-qR7n165F/reviewer/pass2-input.json",
+      "source_relative": "reviewer/pass2-input.json",
+      "archive_relative": "evidence/private/reviewer/pass2-input.json",
+      "sha256": "90a1adf0a5f8e7f059580b362d7a0a954251bdcc71cf1d8754961b25f86f3380",
+      "bytes": 15261
+    },
+    {
+      "source_path": "/tmp/cnet-confirmation-v2-qR7n165F/reviewer/pass2-review.json",
+      "source_relative": "reviewer/pass2-review.json",
+      "archive_relative": "evidence/private/reviewer/pass2-review.json",
+      "sha256": "3dbbe09228991c027c6ee5fb39d5ab2e9198e5cd03db5e16e61801884500b097",
+      "bytes": 3258
+    },
+    {
+      "source_path": "/tmp/cnet-confirmation-v2-qR7n165F/training-denylist.json",
+      "source_relative": "training-denylist.json",
+      "archive_relative": "evidence/private/training-denylist.json",
+      "sha256": "58d7d2690343f6a49d7d62a9ddf3e185a255045200ebe73a44cab3ef9c2d1b19",
+      "bytes": 50954
+    },
+    {
+      "source_path": "/tmp/cnet-confirmation-v2-qR7n165F/validate.py",
+      "source_relative": "validate.py",
+      "archive_relative": "evidence/private/validate.py",
+      "sha256": "298e7f229e668399a50d369151529d0e6fd5d1ad130b62895ced9892954c5bae",
+      "bytes": 5672
+    },
+    {
+      "source_path": "/tmp/cnet-confirmation-v2-qR7n165F/validation/draft1-keys-refined.json",
+      "source_relative": "validation/draft1-keys-refined.json",
+      "archive_relative": "evidence/private/validation/draft1-keys-refined.json",
+      "sha256": "15c1907dba1dececc3c587b917299075114650765ddf1bfdc07d79b715d7ce13",
+      "bytes": 21941
+    },
+    {
+      "source_path": "/tmp/cnet-confirmation-v2-qR7n165F/validation/draft1-keys.json",
+      "source_relative": "validation/draft1-keys.json",
+      "archive_relative": "evidence/private/validation/draft1-keys.json",
+      "sha256": "8f106173faa8725ba76b7dbd7bc6bc58dc25bd199f3d06d8884ca55432f5c0d7",
+      "bytes": 22018
+    },
+    {
+      "source_path": "/tmp/cnet-confirmation-v2-qR7n165F/validation/draft1.json",
+      "source_relative": "validation/draft1.json",
+      "archive_relative": "evidence/private/validation/draft1.json",
+      "sha256": "d58bc39ff53214bbf4114f7809280ec468f7d91c5cd2763f81e8b41c7ae0df2a",
+      "bytes": 322524
+    },
+    {
+      "source_path": "/tmp/cnet-confirmation-v2-qR7n165F/validation/draft2-keys-final.json",
+      "source_relative": "validation/draft2-keys-final.json",
+      "archive_relative": "evidence/private/validation/draft2-keys-final.json",
+      "sha256": "de25de8d3f3bf80cc84632383a457921bf00ca9dc49001abf012aa4e0ae1e9e8",
+      "bytes": 25461
+    },
+    {
+      "source_path": "/tmp/cnet-confirmation-v2-qR7n165F/validation/draft2-keys.json",
+      "source_relative": "validation/draft2-keys.json",
+      "archive_relative": "evidence/private/validation/draft2-keys.json",
+      "sha256": "b6bff51366ecbb7ca9df49ad2e174f33a0a6018c4e10ab50a733afef2a99fa55",
+      "bytes": 21941
+    },
+    {
+      "source_path": "/tmp/cnet-confirmation-v2-qR7n165F/validation/draft2.json",
+      "source_relative": "validation/draft2.json",
+      "archive_relative": "evidence/private/validation/draft2.json",
+      "sha256": "baca42c63910c32b442ea62d1e02abf37d81843e1a13ba040eb664c0fbdf1277",
+      "bytes": 321316
+    },
+    {
+      "source_path": "/tmp/cnet-confirmation-v2-qR7n165F/validation/pass1-review-comparison.json",
+      "source_relative": "validation/pass1-review-comparison.json",
+      "archive_relative": "evidence/private/validation/pass1-review-comparison.json",
+      "sha256": "1dd2734d4c0a0cd25fd98b2a3bc045c9bc5bf566065bd3d807b2907f30a4c1c9",
+      "bytes": 667
+    },
+    {
+      "source_path": "/tmp/cnet-confirmation-v2-qR7n165F/validation/pass2-review-comparison.json",
+      "source_relative": "validation/pass2-review-comparison.json",
+      "archive_relative": "evidence/private/validation/pass2-review-comparison.json",
+      "sha256": "e500e07c38ac8e24224f90dd12f6bbf70a233c45b21be3a1bb49352113f93911",
+      "bytes": 668
+    }
+  ],
+  "candidate_freeze_binding": "Performed separately by root; custodian did not modify candidate-freeze or build assets.",
+  "floors_unchanged": {
+    "wrong_ready": 0,
+    "ready": 72,
+    "ready_denominator": 80,
+    "each_operation": 34,
+    "each_operation_denominator": 40,
+    "clarify": 22,
+    "clarify_denominator": 24,
+    "abstain": 23,
+    "abstain_denominator": 24,
+    "nonready_executable_fields": 0
+  }
+}

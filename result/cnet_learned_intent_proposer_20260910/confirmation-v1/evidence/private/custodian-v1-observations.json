@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "corpus_sha256": "c10227f4fc0164dff49eb0683c7bb4c2a3bb7cf57183ca120e1d55b3b75335bf",
+  "review_scope": "Custodian read only this newly authored corpus after generating a separate label-blind view; reviewer remains independent and receives no custodian judgments.",
+  "strict_schema_and_quotas": "pass",
+  "scalar_logic": "Mechanical explicit operand/key checks passed. Custodian inspected all 128 new rows against contract; original input keys, control/surrogate exclusions, and UTF-16 length labels appeared consistent.",
+  "provisional_label_issues": [],
+  "awaiting_independent_blind_review": true,
+  "no_candidate_source_read": true,
+  "no_score": true
+}

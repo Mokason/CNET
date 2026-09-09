@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "reviews": [
+    {"id":"c001","status":"ready","operation":"upper","key":97,"uncertain":false,"rationale":"Uppercase form explicitly requested for one bare letter."},
+    {"id":"c002","status":"ready","operation":"upper","key":98,"uncertain":false,"rationale":"Capital letter specifies uppercase for the single input letter."},
+    {"id":"c003","status":"ready","operation":"upper","key":99,"uncertain":false,"rationale":"Upper case direction and one bare letter are explicit."},
+    {"id":"c016","status":"ready","operation":"upper","key":233,"uncertain":false,"rationale":"Natural request identifies uppercase direction and one Latin-1 letter."},
+    {"id":"c021","status":"ready","operation":"upper","key":112,"uncertain":false,"rationale":"Into capitals specifies uppercase of the explicit hexadecimal codepoint."},
+    {"id":"c034","status":"ready","operation":"upper","key":33,"uncertain":false,"rationale":"Uppercase conversion explicitly targets one punctuation character in matching quotes."},
+    {"id":"c035","status":"ready","operation":"upper","key":63,"uncertain":false,"rationale":"Matching quotes identify one punctuation operand for upper case."},
+    {"id":"c036","status":"ready","operation":"upper","key":46,"uncertain":false,"rationale":"Explicit uppercase direction targets the single quoted punctuation character."},
+    {"id":"c041","status":"ready","operation":"lower","key":82,"uncertain":false,"rationale":"Lowercase form explicitly requested for one original bare letter."},
+    {"id":"c046","status":"ready","operation":"lower","key":87,"uncertain":false,"rationale":"Small-letter form is a common lowercase synonym for the quoted letter."},
+    {"id":"c056","status":"ready","operation":"lower","key":201,"uncertain":false,"rationale":"Lower case direction and one Latin-1 input letter are explicit."},
+    {"id":"c058","status":"ready","operation":"lower","key":220,"uncertain":false,"rationale":"Lowercase version explicitly specifies the operation for one Latin-1 letter."},
+    {"id":"c071","status":"ready","operation":"lower","key":50,"uncertain":false,"rationale":"Matching quotes identify a literal digit and lowercase direction is explicit."},
+    {"id":"c074","status":"ready","operation":"lower","key":35,"uncertain":false,"rationale":"Matching quotes identify one punctuation operand for lower case."},
+    {"id":"c075","status":"ready","operation":"lower","key":59,"uncertain":false,"rationale":"Explicit lowercase direction targets the single quoted punctuation character."},
+    {"id":"c076","status":"ready","operation":"lower","key":44,"uncertain":false,"rationale":"One punctuation character is quoted and lowercase is explicitly requested."},
+    {"id":"c082","status":"clarify","operation":null,"key":null,"uncertain":false,"rationale":"No specific input character is supplied."},
+    {"id":"c091","status":"clarify","operation":null,"key":null,"uncertain":false,"rationale":"Two alternative input characters remain unresolved."},
+    {"id":"c099","status":"clarify","operation":null,"key":null,"uncertain":false,"rationale":"Bare numeric text cannot be interpreted as an explicit codepoint or quoted literal."},
+    {"id":"c102","status":"clarify","operation":null,"key":null,"uncertain":false,"rationale":"Punctuation operand lacks required matching quotes."},
+    {"id":"c115","status":"abstain","operation":null,"key":null,"uncertain":false,"rationale":"The request requires locale-specific casing."},
+    {"id":"c116","status":"abstain","operation":null,"key":null,"uncertain":false,"rationale":"The request requires locale-specific casing."},
+    {"id":"c119","status":"abstain","operation":null,"key":null,"uncertain":false,"rationale":"The explicit input codepoint exceeds Latin-1."},
+    {"id":"c120","status":"abstain","operation":null,"key":null,"uncertain":false,"rationale":"The quoted input letter is outside Latin-1."},
+    {"id":"c123","status":"abstain","operation":null,"key":null,"uncertain":false,"rationale":"The explicit input is a prohibited control character."},
+    {"id":"c125","status":"abstain","operation":null,"key":null,"uncertain":false,"rationale":"The explicit input is a surrogate codepoint and not an allowed scalar."}
+  ]
+}

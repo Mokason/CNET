@@ -1,5 +1,55 @@
 # Current CNET checklist
 
+## Active: ordered usability follow-through
+
+- [x] Native grammar/learned task-to-approved-capsule offline rehearsal
+- [x] Paired grammar/hybrid diagnostic with saved-output independent review
+- [x] Test-first repair of seven exposed language misses and shared boundaries
+- [x] Full local regressions, scoped security review and rollout-preparation handoff
+- [ ] Evidence-backed broader product slice; explicit external-authority gates
+
+Successor: 2471/2471 full regressions; exposed v2 diagnostic 128/128 with zero
+wrong ready, but no hybrid gain over grammar on that cohort. Review-discovered
+wrong-ready defects were fixed with RED/GREEN. Existing private exports have
+zero eligible episodes; live activation, new fresh confirmation, richer tasks,
+dependency freshness and useful AMD training remain open. See
+[the current usability result](../result/cnet_task_usability_20260910.md).
+
+User approved this sequence after the v2 pass. Historical fresh scores stay
+unchanged; new diagnostics on exposed data never replace them. No live rollout
+or external-source approval is inferred from implementation authority.
+
+## Completed: partial-intent repair and new confirmation
+
+- [x] Preserve previous uncommitted candidate source before edits
+- [x] Execute RED/GREEN for structural missing-slot and alternative-input roles
+- [x] Run focused/full regressions and independent boundary review
+- [x] Freeze NEW candidate and independently admit NEW confirmation
+- [x] Score once under unchanged floors: all gates passed
+- [x] Complete saved-output audit and durable evidence verification
+
+Latest: 2426/2426 regressions; fresh 75/80 ready (38 upper, 37 lower), 22/24
+clarify, 24/24 abstain, zero wrong ready. All 128 rows retained, 121 exact.
+This closes this candidate's synthetic grammar-on acceptance only. Seven misses
+remain recorded; quoted-space coverage was 0/2. [Result](../result/cnet_learned_intent_proposer_20260910/confirmation-v2/result.md).
+The earlier failed checkpoints below are historical, not pooled or rescored.
+
+No deployment, grammar-off promotion, GPU campaign or automatic push.
+
+## Completed sequence: frozen learned-proposer confirmation
+
+- [x] Verify all seven candidate pins and preserve the uncommitted worktree
+- [x] Independently author, blind-review and admit one complete 128-case corpus
+- [x] Pin corpus, admission, evaluator and probe before candidate invocation
+- [x] Score the frozen grammar-on candidate once under unchanged floors
+- [x] Retain complete outputs, check pins and record measured pass/failure
+- [ ] Demonstrate fresh acceptance (only if every original floor passes)
+
+No grammar-off promotion, deployment, source changes or automatic push.
+Result: 80/80 ready, 19/24 clarify, 24/24 abstain, zero wrong ready. The 22/24
+clarification floor failed. Next: partial-intent clarification repair in a NEW
+candidate, then NEW independent confirmation; this corpus is now exposed.
+
 ## Active: Herdr three-seat improvement
 
 - [x] Outer-workspace RED/green constituent parsing and policy-boundary test

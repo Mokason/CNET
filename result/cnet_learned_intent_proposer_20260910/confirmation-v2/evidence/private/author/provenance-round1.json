@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "artifact": "draft2.json",
+  "parent_artifact": "draft1.json",
+  "origin": "Synthetic author-directed rewording of thirteen new-corpus rows identified by the custodian for objective overlap, without access to prior corpus strings.",
+  "training_eligible": false,
+  "repair_round": 1,
+  "maximum_repair_rounds": 2,
+  "changed_ids": ["u01", "u02", "u19", "u22", "l01", "c13", "c17", "c21", "c22", "a05", "a11", "a15", "a17"],
+  "change_scope": "Only text fields for the thirteen authorized IDs were reworded. All IDs, families, statuses, operations and original input keys remain unchanged. The other 115 parsed row objects remain identical.",
+  "source_access": {
+    "supplied_material": "Original author contract and custodian repair-round1 message containing new-row IDs and objective overlap finding, with no prior strings or candidate results.",
+    "files_read": ["/tmp/cnet-confirmation-v2-qR7n165F/author/draft1.json", "/tmp/cnet-confirmation-v2-qR7n165F/author/draft2.json"],
+    "files_written": ["/tmp/cnet-confirmation-v2-qR7n165F/author/draft2.json", "/tmp/cnet-confirmation-v2-qR7n165F/author/provenance-round1.json"],
+    "repository_access": false,
+    "prior_corpus_access": false,
+    "candidate_access": false,
+    "results_access": false,
+    "external_network_or_model_calls": false
+  },
+  "no_score_attestation": "No candidate was accessed or run. No evaluation or scoring was performed. Structural comparisons concern only author-owned drafts.",
+  "internal_structure_check": {
+    "row_count": 128,
+    "ready": 80,
+    "upper": 40,
+    "lower": 40,
+    "clarify": 24,
+    "abstain": 24,
+    "normalized_duplicate_groups": 0,
+    "only_authorized_text_fields_changed": true,
+    "other_115_rows_identical": true,
+    "draft1_sha256": "606071bcc3c8eef890dd9110607ae712843b0032179a2608754744e805acba7d",
+    "draft2_sha256": "10cdd9e0c4a5422fe08a105b6d0cabc72d092a76df1b8b70ab34a13812276e32"
+  },
+  "uncertainties_and_resolutions": [
+    {"issue":"Objective overlap supplied without old strings","resolution":"Independently rephrased only the listed new-row IDs while preserving the intended operation and operand or the nonready condition."}
+  ],
+  "preservation": "Original draft1.json and provenance.json were left unchanged."
+}

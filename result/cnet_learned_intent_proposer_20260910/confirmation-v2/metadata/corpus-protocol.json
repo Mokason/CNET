@@ -1,0 +1,113 @@
+{
+  "schema": 1,
+  "name": "confirmation-v2",
+  "declared_before_authoring": true,
+  "private_workspace": "/tmp/cnet-confirmation-v2-qR7n165F",
+  "contract": "Evaluate bounded Latin-1 Unicode case typed proposals, not answers. Only executable task is one explicit uppercase or lowercase request applied to one Latin-1 input scalar,0..255. Ready has operation upper/lower and ORIGINAL input scalar, never converted output. Native coverage may separately refuse; do not drop those rows. Direct commands and natural English paraphrases/common case synonyms are in scope. Single letters may be bare; literal digits, spaces and punctuation require matching quotes. U+ hexadecimal and explicit decimal codepoint operands are unambiguous. Do not interpret bare digit strings as codepoints or guess characters from names. Missing direction/input, multiple candidate characters, malformed quoting and bare numeric/punctuation operands require clarify. Unrelated tasks, negated or merely quoted instructions, compound/embedded requests, locale-specific/full-string casing and inputs outside Latin-1 require abstain. Controls, surrogates and >256 UTF-16-unit requests also abstain. Avoid linguistically debatable labels; resolve before freeze. All data synthetic,training-ineligible.",
+  "quotas": {
+    "total": 128,
+    "ready": 80,
+    "upper": 40,
+    "lower": 40,
+    "clarify": 24,
+    "abstain": 24,
+    "min_named_families": 8
+  },
+  "schema_contract": {
+    "top_level": [
+      "schema",
+      "name",
+      "cases"
+    ],
+    "schema": 1,
+    "name": "confirmation",
+    "row": [
+      "id",
+      "family",
+      "text",
+      "status",
+      "operation",
+      "key"
+    ],
+    "atom": "[A-Za-z0-9_-]{1,48}",
+    "nonready_operation": null,
+    "nonready_key": null
+  },
+  "roles": {
+    "custodian": "/root/confirmation_custodian_v2",
+    "author": "fresh-context separate child agent; contract only",
+    "reviewer": "fresh-context separate child agent; contract plus mechanically generated neutral id/text rows only",
+    "isolation": "procedural on same model/tools, not OS isolation, third-party/human benchmark or IID claim"
+  },
+  "limits": {
+    "custodian_directed_repair_rounds": 2,
+    "blind_review_passes": 3,
+    "initial_review": "all 128",
+    "subsequent_review": "changed rows plus unchanged-row hashes",
+    "preserve_all_drafts": true,
+    "no_partial_admission": true,
+    "no_output_conditioned_repair": true,
+    "no_candidate_execution": true
+  },
+  "overlap": {
+    "normalization": "Unicode casefold, then remove Unicode P* punctuation and all whitespace",
+    "checks": [
+      "internal exact",
+      "internal normalized",
+      "all 16 exposed collections exact and normalized",
+      "root hash-only training/calibration denylist",
+      "root hash-only development denylist"
+    ],
+    "expected_prior_collections": 16,
+    "expected_prior_texts": 2048,
+    "feedback": "offending NEW row IDs only; never prior strings"
+  },
+  "admission": {
+    "requirements": [
+      "strict schema",
+      "quotas",
+      "independent input-key audit",
+      "blind labels agreement",
+      "all overlaps zero",
+      "raw evidence and metadata hashes",
+      "read-only corpus mode 0444"
+    ],
+    "corpus_private_until": "root confirms the single score completed",
+    "no_score_executed_by_roles": true,
+    "synthetic": true,
+    "training_eligible": false
+  },
+  "floors": {
+    "wrong_ready": 0,
+    "ready": 72,
+    "ready_denominator": 80,
+    "each_operation": 34,
+    "each_operation_denominator": 40,
+    "clarify": 22,
+    "clarify_denominator": 24,
+    "abstain": 23,
+    "abstain_denominator": 24,
+    "nonready_executable_fields": 0
+  },
+  "source_access": {
+    "allowed": [
+      "evaluate.py load_corpus only",
+      "plan contractual section",
+      "mechanical old-text hashing without display",
+      "root hash-only denylists",
+      "owned private data",
+      "skill instructions"
+    ],
+    "forbidden": [
+      "candidate implementation",
+      "training source",
+      "tests",
+      "scores",
+      "prior failure text",
+      "external model calls",
+      "credentials/config",
+      "candidate execution"
+    ]
+  },
+  "dispositions": "Objective schema/overlap/label issues may be repaired before score within limits; ambiguous rows must be resolved or replaced before freeze. Limits exhausted means blocker and no admission."
+}

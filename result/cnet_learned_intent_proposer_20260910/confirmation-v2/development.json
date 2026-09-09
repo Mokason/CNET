@@ -1,0 +1,2205 @@
+{
+  "schema": 1,
+  "mode": "exposed_development_only",
+  "fresh_confirmation": false,
+  "assembly_sha256": "98c8a4026f2ab50dfab02c4b18ccf4ea3cae184d747ade0b0562fe2968ff261e",
+  "corpus_sha256": "806c0c2d38eeda7422f0cc03e36e50ff5698687513df4b50a90d4abe8c5b5f53",
+  "synthetic": true,
+  "training_eligible": false,
+  "passed": true,
+  "total": 128,
+  "exact": 128,
+  "wrong_ready": 0,
+  "gates": {
+    "zero_wrong_ready": true,
+    "ready_90_percent": true,
+    "upper_85_percent": true,
+    "lower_85_percent": true,
+    "clarify_90_percent": true,
+    "abstain_95_percent": true
+  },
+  "by_status": {
+    "abstain": {
+      "total": 24,
+      "exact": 24
+    },
+    "clarify": {
+      "total": 24,
+      "exact": 24
+    },
+    "ready": {
+      "total": 80,
+      "exact": 80
+    }
+  },
+  "by_operation": {
+    "lower": {
+      "total": 40,
+      "exact": 40
+    },
+    "upper": {
+      "total": 40,
+      "exact": 40
+    }
+  },
+  "by_family": {
+    "bare_numeric": {
+      "total": 3,
+      "exact": 3
+    },
+    "bare_punctuation": {
+      "total": 3,
+      "exact": 3
+    },
+    "compound_request": {
+      "total": 2,
+      "exact": 2
+    },
+    "control_operand": {
+      "total": 2,
+      "exact": 2
+    },
+    "decimal_operand": {
+      "total": 10,
+      "exact": 10
+    },
+    "direct_bare": {
+      "total": 10,
+      "exact": 10
+    },
+    "direct_quoted": {
+      "total": 10,
+      "exact": 10
+    },
+    "embedded_request": {
+      "total": 2,
+      "exact": 2
+    },
+    "extended_letter": {
+      "total": 10,
+      "exact": 10
+    },
+    "full_string": {
+      "total": 2,
+      "exact": 2
+    },
+    "hex_operand": {
+      "total": 10,
+      "exact": 10
+    },
+    "locale_specific": {
+      "total": 2,
+      "exact": 2
+    },
+    "malformed_quotes": {
+      "total": 4,
+      "exact": 4
+    },
+    "missing_direction": {
+      "total": 4,
+      "exact": 4
+    },
+    "missing_input": {
+      "total": 6,
+      "exact": 6
+    },
+    "multiple_candidates": {
+      "total": 4,
+      "exact": 4
+    },
+    "negated": {
+      "total": 2,
+      "exact": 2
+    },
+    "outside_latin1": {
+      "total": 4,
+      "exact": 4
+    },
+    "oversized_request": {
+      "total": 2,
+      "exact": 2
+    },
+    "polite_request": {
+      "total": 10,
+      "exact": 10
+    },
+    "quoted_digit": {
+      "total": 6,
+      "exact": 6
+    },
+    "quoted_instruction": {
+      "total": 2,
+      "exact": 2
+    },
+    "quoted_punctuation": {
+      "total": 8,
+      "exact": 8
+    },
+    "quoted_space": {
+      "total": 2,
+      "exact": 2
+    },
+    "quoted_symbol": {
+      "total": 4,
+      "exact": 4
+    },
+    "surrogate_operand": {
+      "total": 2,
+      "exact": 2
+    },
+    "unrelated": {
+      "total": 2,
+      "exact": 2
+    }
+  },
+  "cases": [
+    {
+      "id": "c001",
+      "family": "direct_bare",
+      "expected_status": "ready",
+      "operation": "upper",
+      "key": 97,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_upper_latin1",
+        "Key": 97,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c002",
+      "family": "direct_bare",
+      "expected_status": "ready",
+      "operation": "upper",
+      "key": 98,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_upper_latin1",
+        "Key": 98,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c003",
+      "family": "direct_bare",
+      "expected_status": "ready",
+      "operation": "upper",
+      "key": 99,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_upper_latin1",
+        "Key": 99,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c004",
+      "family": "direct_bare",
+      "expected_status": "ready",
+      "operation": "upper",
+      "key": 100,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_upper_latin1",
+        "Key": 100,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c005",
+      "family": "direct_bare",
+      "expected_status": "ready",
+      "operation": "upper",
+      "key": 101,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_upper_latin1",
+        "Key": 101,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c006",
+      "family": "direct_quoted",
+      "expected_status": "ready",
+      "operation": "upper",
+      "key": 102,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_upper_latin1",
+        "Key": 102,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c007",
+      "family": "direct_quoted",
+      "expected_status": "ready",
+      "operation": "upper",
+      "key": 103,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_upper_latin1",
+        "Key": 103,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c008",
+      "family": "direct_quoted",
+      "expected_status": "ready",
+      "operation": "upper",
+      "key": 72,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_upper_latin1",
+        "Key": 72,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c009",
+      "family": "direct_quoted",
+      "expected_status": "ready",
+      "operation": "upper",
+      "key": 105,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_upper_latin1",
+        "Key": 105,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c010",
+      "family": "direct_quoted",
+      "expected_status": "ready",
+      "operation": "upper",
+      "key": 74,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_upper_latin1",
+        "Key": 74,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c011",
+      "family": "polite_request",
+      "expected_status": "ready",
+      "operation": "upper",
+      "key": 107,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_upper_latin1",
+        "Key": 107,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c012",
+      "family": "polite_request",
+      "expected_status": "ready",
+      "operation": "upper",
+      "key": 108,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_upper_latin1",
+        "Key": 108,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c013",
+      "family": "polite_request",
+      "expected_status": "ready",
+      "operation": "upper",
+      "key": 109,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_upper_latin1",
+        "Key": 109,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c014",
+      "family": "polite_request",
+      "expected_status": "ready",
+      "operation": "upper",
+      "key": 110,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_upper_latin1",
+        "Key": 110,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c015",
+      "family": "polite_request",
+      "expected_status": "ready",
+      "operation": "upper",
+      "key": 111,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_upper_latin1",
+        "Key": 111,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c016",
+      "family": "extended_letter",
+      "expected_status": "ready",
+      "operation": "upper",
+      "key": 233,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_upper_latin1",
+        "Key": 233,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c017",
+      "family": "extended_letter",
+      "expected_status": "ready",
+      "operation": "upper",
+      "key": 241,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_upper_latin1",
+        "Key": 241,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c018",
+      "family": "extended_letter",
+      "expected_status": "ready",
+      "operation": "upper",
+      "key": 252,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_upper_latin1",
+        "Key": 252,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c019",
+      "family": "extended_letter",
+      "expected_status": "ready",
+      "operation": "upper",
+      "key": 223,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_upper_latin1",
+        "Key": 223,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c020",
+      "family": "extended_letter",
+      "expected_status": "ready",
+      "operation": "upper",
+      "key": 255,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_upper_latin1",
+        "Key": 255,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c021",
+      "family": "hex_operand",
+      "expected_status": "ready",
+      "operation": "upper",
+      "key": 112,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_upper_latin1",
+        "Key": 112,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c022",
+      "family": "hex_operand",
+      "expected_status": "ready",
+      "operation": "upper",
+      "key": 224,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_upper_latin1",
+        "Key": 224,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c023",
+      "family": "hex_operand",
+      "expected_status": "ready",
+      "operation": "upper",
+      "key": 181,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_upper_latin1",
+        "Key": 181,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c024",
+      "family": "hex_operand",
+      "expected_status": "ready",
+      "operation": "upper",
+      "key": 65,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_upper_latin1",
+        "Key": 65,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c025",
+      "family": "hex_operand",
+      "expected_status": "ready",
+      "operation": "upper",
+      "key": 215,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_upper_latin1",
+        "Key": 215,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c026",
+      "family": "decimal_operand",
+      "expected_status": "ready",
+      "operation": "upper",
+      "key": 113,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_upper_latin1",
+        "Key": 113,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c027",
+      "family": "decimal_operand",
+      "expected_status": "ready",
+      "operation": "upper",
+      "key": 230,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_upper_latin1",
+        "Key": 230,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c028",
+      "family": "decimal_operand",
+      "expected_status": "ready",
+      "operation": "upper",
+      "key": 248,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_upper_latin1",
+        "Key": 248,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c029",
+      "family": "decimal_operand",
+      "expected_status": "ready",
+      "operation": "upper",
+      "key": 90,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_upper_latin1",
+        "Key": 90,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c030",
+      "family": "decimal_operand",
+      "expected_status": "ready",
+      "operation": "upper",
+      "key": 160,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_upper_latin1",
+        "Key": 160,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c031",
+      "family": "quoted_digit",
+      "expected_status": "ready",
+      "operation": "upper",
+      "key": 48,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_upper_latin1",
+        "Key": 48,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c032",
+      "family": "quoted_digit",
+      "expected_status": "ready",
+      "operation": "upper",
+      "key": 55,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_upper_latin1",
+        "Key": 55,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c033",
+      "family": "quoted_digit",
+      "expected_status": "ready",
+      "operation": "upper",
+      "key": 57,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_upper_latin1",
+        "Key": 57,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c034",
+      "family": "quoted_punctuation",
+      "expected_status": "ready",
+      "operation": "upper",
+      "key": 33,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_upper_latin1",
+        "Key": 33,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c035",
+      "family": "quoted_punctuation",
+      "expected_status": "ready",
+      "operation": "upper",
+      "key": 63,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_upper_latin1",
+        "Key": 63,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c036",
+      "family": "quoted_punctuation",
+      "expected_status": "ready",
+      "operation": "upper",
+      "key": 46,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_upper_latin1",
+        "Key": 46,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c037",
+      "family": "quoted_punctuation",
+      "expected_status": "ready",
+      "operation": "upper",
+      "key": 64,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_upper_latin1",
+        "Key": 64,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c038",
+      "family": "quoted_space",
+      "expected_status": "ready",
+      "operation": "upper",
+      "key": 32,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_upper_latin1",
+        "Key": 32,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c039",
+      "family": "quoted_symbol",
+      "expected_status": "ready",
+      "operation": "upper",
+      "key": 163,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_upper_latin1",
+        "Key": 163,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c040",
+      "family": "quoted_symbol",
+      "expected_status": "ready",
+      "operation": "upper",
+      "key": 247,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_upper_latin1",
+        "Key": 247,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c041",
+      "family": "direct_bare",
+      "expected_status": "ready",
+      "operation": "lower",
+      "key": 82,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_lower_latin1",
+        "Key": 82,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c042",
+      "family": "direct_bare",
+      "expected_status": "ready",
+      "operation": "lower",
+      "key": 83,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_lower_latin1",
+        "Key": 83,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c043",
+      "family": "direct_bare",
+      "expected_status": "ready",
+      "operation": "lower",
+      "key": 84,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_lower_latin1",
+        "Key": 84,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c044",
+      "family": "direct_bare",
+      "expected_status": "ready",
+      "operation": "lower",
+      "key": 85,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_lower_latin1",
+        "Key": 85,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c045",
+      "family": "direct_bare",
+      "expected_status": "ready",
+      "operation": "lower",
+      "key": 86,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_lower_latin1",
+        "Key": 86,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c046",
+      "family": "direct_quoted",
+      "expected_status": "ready",
+      "operation": "lower",
+      "key": 87,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_lower_latin1",
+        "Key": 87,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c047",
+      "family": "direct_quoted",
+      "expected_status": "ready",
+      "operation": "lower",
+      "key": 88,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_lower_latin1",
+        "Key": 88,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c048",
+      "family": "direct_quoted",
+      "expected_status": "ready",
+      "operation": "lower",
+      "key": 121,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_lower_latin1",
+        "Key": 121,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c049",
+      "family": "direct_quoted",
+      "expected_status": "ready",
+      "operation": "lower",
+      "key": 90,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_lower_latin1",
+        "Key": 90,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c050",
+      "family": "direct_quoted",
+      "expected_status": "ready",
+      "operation": "lower",
+      "key": 97,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_lower_latin1",
+        "Key": 97,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c051",
+      "family": "polite_request",
+      "expected_status": "ready",
+      "operation": "lower",
+      "key": 66,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_lower_latin1",
+        "Key": 66,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c052",
+      "family": "polite_request",
+      "expected_status": "ready",
+      "operation": "lower",
+      "key": 67,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_lower_latin1",
+        "Key": 67,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c053",
+      "family": "polite_request",
+      "expected_status": "ready",
+      "operation": "lower",
+      "key": 68,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_lower_latin1",
+        "Key": 68,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c054",
+      "family": "polite_request",
+      "expected_status": "ready",
+      "operation": "lower",
+      "key": 69,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_lower_latin1",
+        "Key": 69,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c055",
+      "family": "polite_request",
+      "expected_status": "ready",
+      "operation": "lower",
+      "key": 70,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_lower_latin1",
+        "Key": 70,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c056",
+      "family": "extended_letter",
+      "expected_status": "ready",
+      "operation": "lower",
+      "key": 201,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_lower_latin1",
+        "Key": 201,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c057",
+      "family": "extended_letter",
+      "expected_status": "ready",
+      "operation": "lower",
+      "key": 209,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_lower_latin1",
+        "Key": 209,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c058",
+      "family": "extended_letter",
+      "expected_status": "ready",
+      "operation": "lower",
+      "key": 220,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_lower_latin1",
+        "Key": 220,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c059",
+      "family": "extended_letter",
+      "expected_status": "ready",
+      "operation": "lower",
+      "key": 198,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_lower_latin1",
+        "Key": 198,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c060",
+      "family": "extended_letter",
+      "expected_status": "ready",
+      "operation": "lower",
+      "key": 216,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_lower_latin1",
+        "Key": 216,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c061",
+      "family": "hex_operand",
+      "expected_status": "ready",
+      "operation": "lower",
+      "key": 71,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_lower_latin1",
+        "Key": 71,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c062",
+      "family": "hex_operand",
+      "expected_status": "ready",
+      "operation": "lower",
+      "key": 192,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_lower_latin1",
+        "Key": 192,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c063",
+      "family": "hex_operand",
+      "expected_status": "ready",
+      "operation": "lower",
+      "key": 222,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_lower_latin1",
+        "Key": 222,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c064",
+      "family": "hex_operand",
+      "expected_status": "ready",
+      "operation": "lower",
+      "key": 104,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_lower_latin1",
+        "Key": 104,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c065",
+      "family": "hex_operand",
+      "expected_status": "ready",
+      "operation": "lower",
+      "key": 247,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_lower_latin1",
+        "Key": 247,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c066",
+      "family": "decimal_operand",
+      "expected_status": "ready",
+      "operation": "lower",
+      "key": 73,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_lower_latin1",
+        "Key": 73,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c067",
+      "family": "decimal_operand",
+      "expected_status": "ready",
+      "operation": "lower",
+      "key": 199,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_lower_latin1",
+        "Key": 199,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c068",
+      "family": "decimal_operand",
+      "expected_status": "ready",
+      "operation": "lower",
+      "key": 208,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_lower_latin1",
+        "Key": 208,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c069",
+      "family": "decimal_operand",
+      "expected_status": "ready",
+      "operation": "lower",
+      "key": 106,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_lower_latin1",
+        "Key": 106,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c070",
+      "family": "decimal_operand",
+      "expected_status": "ready",
+      "operation": "lower",
+      "key": 255,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_lower_latin1",
+        "Key": 255,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c071",
+      "family": "quoted_digit",
+      "expected_status": "ready",
+      "operation": "lower",
+      "key": 50,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_lower_latin1",
+        "Key": 50,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c072",
+      "family": "quoted_digit",
+      "expected_status": "ready",
+      "operation": "lower",
+      "key": 52,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_lower_latin1",
+        "Key": 52,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c073",
+      "family": "quoted_digit",
+      "expected_status": "ready",
+      "operation": "lower",
+      "key": 54,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_lower_latin1",
+        "Key": 54,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c074",
+      "family": "quoted_punctuation",
+      "expected_status": "ready",
+      "operation": "lower",
+      "key": 35,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_lower_latin1",
+        "Key": 35,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c075",
+      "family": "quoted_punctuation",
+      "expected_status": "ready",
+      "operation": "lower",
+      "key": 59,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_lower_latin1",
+        "Key": 59,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c076",
+      "family": "quoted_punctuation",
+      "expected_status": "ready",
+      "operation": "lower",
+      "key": 44,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_lower_latin1",
+        "Key": 44,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c077",
+      "family": "quoted_punctuation",
+      "expected_status": "ready",
+      "operation": "lower",
+      "key": 95,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_lower_latin1",
+        "Key": 95,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c078",
+      "family": "quoted_space",
+      "expected_status": "ready",
+      "operation": "lower",
+      "key": 32,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_lower_latin1",
+        "Key": 32,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c079",
+      "family": "quoted_symbol",
+      "expected_status": "ready",
+      "operation": "lower",
+      "key": 169,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_lower_latin1",
+        "Key": 169,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c080",
+      "family": "quoted_symbol",
+      "expected_status": "ready",
+      "operation": "lower",
+      "key": 215,
+      "proposal": {
+        "Status": "ready",
+        "Code": "typed_case_change",
+        "Dataset": "unicode17_lower_latin1",
+        "Key": 215,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c081",
+      "family": "missing_input",
+      "expected_status": "clarify",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "clarify",
+        "Code": "specify_case_input",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": "Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5)."
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c082",
+      "family": "missing_input",
+      "expected_status": "clarify",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "clarify",
+        "Code": "specify_case_input",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": "Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5)."
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c083",
+      "family": "missing_input",
+      "expected_status": "clarify",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "clarify",
+        "Code": "specify_case_input",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": "Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5)."
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c084",
+      "family": "missing_input",
+      "expected_status": "clarify",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "clarify",
+        "Code": "specify_case_input",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": "Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5)."
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c085",
+      "family": "missing_input",
+      "expected_status": "clarify",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "clarify",
+        "Code": "specify_case_input",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": "Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5)."
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c086",
+      "family": "missing_input",
+      "expected_status": "clarify",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "clarify",
+        "Code": "specify_case_input",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": "Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5)."
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c087",
+      "family": "missing_direction",
+      "expected_status": "clarify",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "clarify",
+        "Code": "specify_case_input",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": "Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5)."
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c088",
+      "family": "missing_direction",
+      "expected_status": "clarify",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "clarify",
+        "Code": "specify_case_input",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": "Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5)."
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c089",
+      "family": "missing_direction",
+      "expected_status": "clarify",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "clarify",
+        "Code": "specify_case_input",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": "Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5)."
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c090",
+      "family": "missing_direction",
+      "expected_status": "clarify",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "clarify",
+        "Code": "specify_case_input",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": "Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5)."
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c091",
+      "family": "multiple_candidates",
+      "expected_status": "clarify",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "clarify",
+        "Code": "specify_case_input",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": "Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5)."
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c092",
+      "family": "multiple_candidates",
+      "expected_status": "clarify",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "clarify",
+        "Code": "specify_case_input",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": "Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5)."
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c093",
+      "family": "multiple_candidates",
+      "expected_status": "clarify",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "clarify",
+        "Code": "specify_case_input",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": "Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5)."
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c094",
+      "family": "multiple_candidates",
+      "expected_status": "clarify",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "clarify",
+        "Code": "specify_case_input",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": "Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5)."
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c095",
+      "family": "malformed_quotes",
+      "expected_status": "clarify",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "clarify",
+        "Code": "specify_case_input",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": "Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5)."
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c096",
+      "family": "malformed_quotes",
+      "expected_status": "clarify",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "clarify",
+        "Code": "specify_case_input",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": "Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5)."
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c097",
+      "family": "malformed_quotes",
+      "expected_status": "clarify",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "clarify",
+        "Code": "specify_case_input",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": "Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5)."
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c098",
+      "family": "malformed_quotes",
+      "expected_status": "clarify",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "clarify",
+        "Code": "specify_case_input",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": "Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5)."
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c099",
+      "family": "bare_numeric",
+      "expected_status": "clarify",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "clarify",
+        "Code": "specify_case_input",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": "Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5)."
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c100",
+      "family": "bare_numeric",
+      "expected_status": "clarify",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "clarify",
+        "Code": "specify_case_input",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": "Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5)."
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c101",
+      "family": "bare_numeric",
+      "expected_status": "clarify",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "clarify",
+        "Code": "specify_case_input",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": "Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5)."
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c102",
+      "family": "bare_punctuation",
+      "expected_status": "clarify",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "clarify",
+        "Code": "specify_case_input",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": "Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5)."
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c103",
+      "family": "bare_punctuation",
+      "expected_status": "clarify",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "clarify",
+        "Code": "specify_case_input",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": "Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5)."
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c104",
+      "family": "bare_punctuation",
+      "expected_status": "clarify",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "clarify",
+        "Code": "specify_case_input",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": "Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5)."
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c105",
+      "family": "unrelated",
+      "expected_status": "abstain",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "abstain",
+        "Code": "unsupported_intent",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c106",
+      "family": "unrelated",
+      "expected_status": "abstain",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "abstain",
+        "Code": "unsupported_intent",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c107",
+      "family": "negated",
+      "expected_status": "abstain",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "abstain",
+        "Code": "unsupported_intent",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c108",
+      "family": "negated",
+      "expected_status": "abstain",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "abstain",
+        "Code": "unsupported_intent",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c109",
+      "family": "quoted_instruction",
+      "expected_status": "abstain",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "abstain",
+        "Code": "unsupported_intent",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c110",
+      "family": "quoted_instruction",
+      "expected_status": "abstain",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "abstain",
+        "Code": "unsupported_intent",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c111",
+      "family": "compound_request",
+      "expected_status": "abstain",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "abstain",
+        "Code": "unsupported_intent",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c112",
+      "family": "compound_request",
+      "expected_status": "abstain",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "abstain",
+        "Code": "unsupported_intent",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c113",
+      "family": "embedded_request",
+      "expected_status": "abstain",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "abstain",
+        "Code": "unsupported_intent",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c114",
+      "family": "embedded_request",
+      "expected_status": "abstain",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "abstain",
+        "Code": "unsupported_intent",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c115",
+      "family": "locale_specific",
+      "expected_status": "abstain",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "abstain",
+        "Code": "unsupported_intent",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c116",
+      "family": "locale_specific",
+      "expected_status": "abstain",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "abstain",
+        "Code": "unsupported_intent",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c117",
+      "family": "full_string",
+      "expected_status": "abstain",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "abstain",
+        "Code": "unsupported_intent",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c118",
+      "family": "full_string",
+      "expected_status": "abstain",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "abstain",
+        "Code": "unsupported_intent",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c119",
+      "family": "outside_latin1",
+      "expected_status": "abstain",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "abstain",
+        "Code": "input_domain",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c120",
+      "family": "outside_latin1",
+      "expected_status": "abstain",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "abstain",
+        "Code": "input_domain",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c121",
+      "family": "outside_latin1",
+      "expected_status": "abstain",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "abstain",
+        "Code": "input_domain",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c122",
+      "family": "outside_latin1",
+      "expected_status": "abstain",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "abstain",
+        "Code": "input_bounds",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c123",
+      "family": "control_operand",
+      "expected_status": "abstain",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "abstain",
+        "Code": "input_domain",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c124",
+      "family": "control_operand",
+      "expected_status": "abstain",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "abstain",
+        "Code": "input_domain",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c125",
+      "family": "surrogate_operand",
+      "expected_status": "abstain",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "abstain",
+        "Code": "input_domain",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c126",
+      "family": "surrogate_operand",
+      "expected_status": "abstain",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "abstain",
+        "Code": "input_domain",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c127",
+      "family": "oversized_request",
+      "expected_status": "abstain",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "abstain",
+        "Code": "input_bounds",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    },
+    {
+      "id": "c128",
+      "family": "oversized_request",
+      "expected_status": "abstain",
+      "operation": null,
+      "key": null,
+      "proposal": {
+        "Status": "abstain",
+        "Code": "input_bounds",
+        "Dataset": null,
+        "Key": null,
+        "Prompt": null
+      },
+      "exact": true,
+      "wrong_ready": false
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "schema": 1,
+  "role": "/root/confirmation_custodian_v2",
+  "synthetic": true,
+  "training_eligible": false,
+  "author_role": "/root/confirmation_custodian_v2/author",
+  "reviewer_role": "/root/confirmation_custodian_v2/blind_reviewer",
+  "role_context": "Both author and reviewer were spawned with fork_turns=none, without model override. Author received contract and corpus quotas only; reviewer received contract and mechanically generated neutral id/text pairs only. Review input excludes author labels, operations, original keys and families.",
+  "isolation_limit": "Procedural separation on the same model and tools; not OS isolation, third-party or human benchmark, IID sampling, or proof of real-user performance.",
+  "source_access": {
+    "skill": "/home/marble/.agents/skills/using-agent-skills/SKILL.md",
+    "authorized_validator": "tools/task_paraphrase_eval/evaluate.py:47-74 load_corpus",
+    "authorized_contract": "plans/cnet_paraphrase_evaluation_20260909.md:3-46",
+    "discovery_scan_exception": "Before the exact-range read, a line-location rg over the two authorized files returned evaluator function signatures and several schema/score-floor lines outside load_corpus. It did not expose candidate implementation, actual scores/results, prior corpus text, tests, or prior failure text. Parent was notified and directed continuation with precise attestation.",
+    "prior_corpora": "Read mechanically only to extract and hash text; never displayed, copied, or supplied to author/reviewer. Expected sixteen 128-row collections, including confirmation-v1 pinned SHA256.",
+    "prior_freeze_metadata": "Mechanical path inventory and raw-byte SHA256 only.",
+    "current_training_and_development": "Root-provided hash-only denylists, each pinned by root-supplied SHA256; no training/development source access.",
+    "new_corpus": "Custodian may inspect independently authored fresh draft and labels to validate contract; none supplied to root before admission.",
+    "candidate_implementation_access": false,
+    "training_source_access": false,
+    "candidate_tests_access": false,
+    "actual_score_access": false,
+    "prior_failure_text_access": false,
+    "external_network_or_model_calls": false,
+    "credentials_or_config_access": false
+  },
+  "validation": {
+    "strict_schema": "Extract and compile only load_corpus lines47-74 with inert strict JSON decoder; never import scoring module.",
+    "overlap": "Compare exact and Unicode-casefold/remove-P*-and-whitespace normalized SHA256 internally, against2048 prior texts, and against root denylists. Only offending NEW IDs sent to author.",
+    "original_key_audit": "Independently extract hexadecimal, explicit decimal, quoted literal or bare-letter input code points; compare original scalar integer with every ready label. Initial mechanical contraction tokenization produced two nonmatching audit rows; custodian inspected those new rows and corrected extraction of apostrophe-containing words, preserving both audit reports. No author row changed for this tooling refinement.",
+    "manual_contract_check": "Custodian inspected newly authored draft1 and found no additional label ambiguity; full independent blind review also agreed on all128 rows.",
+    "candidate_execution": false,
+    "evaluate_score_execution": false,
+    "request_text_executed_as_code_shell_or_path": false
+  },
+  "no_score_attestation": "Custodian, author and reviewer never ran CNET, Propose, candidate tests, candidate training, evaluation scoring, native/live/GPU workflows, commits, pushes or deployment. All corpus changes were before any confirmation-v2 score and based only on contract/schema/overlap/blind-label validation.",
+  "protocol_predeclared_sha256": "4ec4d34ae51d436c61076adba62cf171eb6a5a8e12f22e7fd7c84d5538975f48"
+}

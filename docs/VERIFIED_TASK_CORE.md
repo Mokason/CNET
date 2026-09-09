@@ -8,10 +8,13 @@ the frozen Unicode soak. See [first-milestone results](../result/cnet_verified_t
 and the [captured-task continuation](CAPTURE_TASK_INBOX.md).
 
 The initial task is Unicode 17 explicit simple case changes for Latin-1 input
-codepoints. A grammar proposes an operation and input; it never calculates the
-answer. Only the native certified result, checked against an independent
-source, can become a verified task observation. This is not a trained semantic
-model, a full Unicode text converter or unrestricted natural-language access.
+codepoints. The grammar owns recognized requests; an offline character-ngram
+proposer can propose a typed operation for an otherwise unclaimed request.
+Neither path calculates the answer. Only the native certified result, checked
+against an independent source, can become a verified task observation. This is
+not a full Unicode text converter or unrestricted natural-language access.
+See the [September 10 usability checkpoint](../result/cnet_task_usability_20260910.md)
+for the measured contribution and remaining rollout/data gates.
 
 ## Installation and compatibility
 
@@ -83,6 +86,22 @@ The checked native numeric result is 924 / U+039C when that capability has
 actually been learned. The independent expected value is never substituted
 for an unavailable native answer. The source's explicit-change contract still
 abstains for inputs such as `ß`, whose simple uppercase field is empty.
+
+The private native rehearsal also verifies `Kindly recode the glyph 'µ' toward
+capitals.` through missing evidence, approved external correction, probation,
+and an offline verified result. `Kindly recode the glyph 'A' toward small
+letters.` retains the existing lowercase capability. These are exposed
+development examples, not new blind language evidence. All rehearsal observations
+are synthetic and cannot establish genuine usage or trainable experience.
+
+The fallback accepts only its closed request vocabulary and a single explicit
+direction; unknown modifiers, compound actions and unstructured repeated
+operands refuse. Exact operand spans are masked, not matching substrings in
+other words. Model confidence cannot invent a missing direction, turn an OOD
+operand into a Latin-1 input, or bypass policy and native capsule coverage.
+Internal calibration counts status and operation agreement, not independently
+verified operand correctness; the separate diagnostic scorer checks original
+input keys as well. The grammar remains the primary owner.
 
 ## Input and response contract
 

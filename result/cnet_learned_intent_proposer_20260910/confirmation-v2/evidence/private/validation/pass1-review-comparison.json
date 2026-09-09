@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "pass": 1,
+  "corpus_path": "/tmp/cnet-confirmation-v2-qR7n165F/author/draft1.json",
+  "corpus_sha256": "606071bcc3c8eef890dd9110607ae712843b0032179a2608754744e805acba7d",
+  "review_path": "/tmp/cnet-confirmation-v2-qR7n165F/reviewer/pass1-review.json",
+  "review_sha256": "876bf4f4e4f6b9dbb14cf1c555b42a406328cb532c43c3493794f4268d959a48",
+  "input_path": "/tmp/cnet-confirmation-v2-qR7n165F/reviewer/pass1-input.json",
+  "input_sha256": "1d846887f90e88e6c24763f6b9ff4c5042946961307078017c5c0fbac4ab3a27",
+  "reviewed_count": 128,
+  "unchanged_rows": 0,
+  "issues": [],
+  "all_reviewed_rows_agree_unambiguously": true,
+  "score_executed": false
+}

@@ -1,0 +1,457 @@
+{
+  "arms": {
+    "grammar": {
+      "by_family": {
+        "bare_numeric": {
+          "exact": 4,
+          "total": 4
+        },
+        "bare_punctuation": {
+          "exact": 2,
+          "total": 2
+        },
+        "compound_request": {
+          "exact": 2,
+          "total": 2
+        },
+        "control_scalar": {
+          "exact": 5,
+          "total": 5
+        },
+        "decimal_scalar": {
+          "exact": 16,
+          "total": 16
+        },
+        "direct_letter": {
+          "exact": 15,
+          "total": 15
+        },
+        "embedded_request": {
+          "exact": 2,
+          "total": 2
+        },
+        "full_string": {
+          "exact": 2,
+          "total": 2
+        },
+        "hex_scalar": {
+          "exact": 16,
+          "total": 16
+        },
+        "latin1_letter": {
+          "exact": 4,
+          "total": 4
+        },
+        "locale_specific": {
+          "exact": 2,
+          "total": 2
+        },
+        "malformed_quotes": {
+          "exact": 4,
+          "total": 4
+        },
+        "missing_direction": {
+          "exact": 4,
+          "total": 4
+        },
+        "missing_input": {
+          "exact": 4,
+          "total": 4
+        },
+        "multiple_candidates": {
+          "exact": 4,
+          "total": 4
+        },
+        "named_character": {
+          "exact": 2,
+          "total": 2
+        },
+        "negated": {
+          "exact": 2,
+          "total": 2
+        },
+        "outside_latin1": {
+          "exact": 3,
+          "total": 3
+        },
+        "overlength_request": {
+          "exact": 1,
+          "total": 1
+        },
+        "polite_letter": {
+          "exact": 10,
+          "total": 10
+        },
+        "quoted_digit": {
+          "exact": 4,
+          "total": 4
+        },
+        "quoted_instruction": {
+          "exact": 2,
+          "total": 2
+        },
+        "quoted_punctuation": {
+          "exact": 6,
+          "total": 6
+        },
+        "quoted_space": {
+          "exact": 2,
+          "total": 2
+        },
+        "surrogate_scalar": {
+          "exact": 1,
+          "total": 1
+        },
+        "synonym_letter": {
+          "exact": 7,
+          "total": 7
+        },
+        "unrelated": {
+          "exact": 2,
+          "total": 2
+        }
+      },
+      "by_operation": {
+        "lower": {
+          "exact": 40,
+          "total": 40
+        },
+        "upper": {
+          "exact": 40,
+          "total": 40
+        }
+      },
+      "by_status": {
+        "abstain": {
+          "exact": 24,
+          "total": 24
+        },
+        "clarify": {
+          "exact": 24,
+          "total": 24
+        },
+        "ready": {
+          "exact": 80,
+          "total": 80
+        }
+      },
+      "exact": 128,
+      "gates": {
+        "abstain_95_percent": true,
+        "clarify_90_percent": true,
+        "lower_85_percent": true,
+        "ready_90_percent": true,
+        "upper_85_percent": true,
+        "zero_wrong_ready": true
+      },
+      "passed": true,
+      "total": 128,
+      "wrong_ready": 0
+    },
+    "guarded_learned_raw": {
+      "by_family": {
+        "bare_numeric": {
+          "exact": 0,
+          "total": 4
+        },
+        "bare_punctuation": {
+          "exact": 0,
+          "total": 2
+        },
+        "compound_request": {
+          "exact": 2,
+          "total": 2
+        },
+        "control_scalar": {
+          "exact": 5,
+          "total": 5
+        },
+        "decimal_scalar": {
+          "exact": 0,
+          "total": 16
+        },
+        "direct_letter": {
+          "exact": 3,
+          "total": 15
+        },
+        "embedded_request": {
+          "exact": 2,
+          "total": 2
+        },
+        "full_string": {
+          "exact": 2,
+          "total": 2
+        },
+        "hex_scalar": {
+          "exact": 3,
+          "total": 16
+        },
+        "latin1_letter": {
+          "exact": 0,
+          "total": 4
+        },
+        "locale_specific": {
+          "exact": 2,
+          "total": 2
+        },
+        "malformed_quotes": {
+          "exact": 0,
+          "total": 4
+        },
+        "missing_direction": {
+          "exact": 0,
+          "total": 4
+        },
+        "missing_input": {
+          "exact": 0,
+          "total": 4
+        },
+        "multiple_candidates": {
+          "exact": 0,
+          "total": 4
+        },
+        "named_character": {
+          "exact": 0,
+          "total": 2
+        },
+        "negated": {
+          "exact": 2,
+          "total": 2
+        },
+        "outside_latin1": {
+          "exact": 3,
+          "total": 3
+        },
+        "overlength_request": {
+          "exact": 1,
+          "total": 1
+        },
+        "polite_letter": {
+          "exact": 1,
+          "total": 10
+        },
+        "quoted_digit": {
+          "exact": 1,
+          "total": 4
+        },
+        "quoted_instruction": {
+          "exact": 2,
+          "total": 2
+        },
+        "quoted_punctuation": {
+          "exact": 0,
+          "total": 6
+        },
+        "quoted_space": {
+          "exact": 0,
+          "total": 2
+        },
+        "surrogate_scalar": {
+          "exact": 1,
+          "total": 1
+        },
+        "synonym_letter": {
+          "exact": 0,
+          "total": 7
+        },
+        "unrelated": {
+          "exact": 2,
+          "total": 2
+        }
+      },
+      "by_operation": {
+        "lower": {
+          "exact": 2,
+          "total": 40
+        },
+        "upper": {
+          "exact": 6,
+          "total": 40
+        }
+      },
+      "by_status": {
+        "abstain": {
+          "exact": 24,
+          "total": 24
+        },
+        "clarify": {
+          "exact": 0,
+          "total": 24
+        },
+        "ready": {
+          "exact": 8,
+          "total": 80
+        }
+      },
+      "exact": 32,
+      "gates": {
+        "abstain_95_percent": true,
+        "clarify_90_percent": false,
+        "lower_85_percent": false,
+        "ready_90_percent": false,
+        "upper_85_percent": false,
+        "zero_wrong_ready": true
+      },
+      "passed": false,
+      "total": 128,
+      "wrong_ready": 0
+    },
+    "hybrid": {
+      "by_family": {
+        "bare_numeric": {
+          "exact": 4,
+          "total": 4
+        },
+        "bare_punctuation": {
+          "exact": 2,
+          "total": 2
+        },
+        "compound_request": {
+          "exact": 2,
+          "total": 2
+        },
+        "control_scalar": {
+          "exact": 5,
+          "total": 5
+        },
+        "decimal_scalar": {
+          "exact": 16,
+          "total": 16
+        },
+        "direct_letter": {
+          "exact": 15,
+          "total": 15
+        },
+        "embedded_request": {
+          "exact": 2,
+          "total": 2
+        },
+        "full_string": {
+          "exact": 2,
+          "total": 2
+        },
+        "hex_scalar": {
+          "exact": 16,
+          "total": 16
+        },
+        "latin1_letter": {
+          "exact": 4,
+          "total": 4
+        },
+        "locale_specific": {
+          "exact": 2,
+          "total": 2
+        },
+        "malformed_quotes": {
+          "exact": 4,
+          "total": 4
+        },
+        "missing_direction": {
+          "exact": 4,
+          "total": 4
+        },
+        "missing_input": {
+          "exact": 4,
+          "total": 4
+        },
+        "multiple_candidates": {
+          "exact": 4,
+          "total": 4
+        },
+        "named_character": {
+          "exact": 2,
+          "total": 2
+        },
+        "negated": {
+          "exact": 2,
+          "total": 2
+        },
+        "outside_latin1": {
+          "exact": 3,
+          "total": 3
+        },
+        "overlength_request": {
+          "exact": 1,
+          "total": 1
+        },
+        "polite_letter": {
+          "exact": 10,
+          "total": 10
+        },
+        "quoted_digit": {
+          "exact": 4,
+          "total": 4
+        },
+        "quoted_instruction": {
+          "exact": 2,
+          "total": 2
+        },
+        "quoted_punctuation": {
+          "exact": 6,
+          "total": 6
+        },
+        "quoted_space": {
+          "exact": 2,
+          "total": 2
+        },
+        "surrogate_scalar": {
+          "exact": 1,
+          "total": 1
+        },
+        "synonym_letter": {
+          "exact": 7,
+          "total": 7
+        },
+        "unrelated": {
+          "exact": 2,
+          "total": 2
+        }
+      },
+      "by_operation": {
+        "lower": {
+          "exact": 40,
+          "total": 40
+        },
+        "upper": {
+          "exact": 40,
+          "total": 40
+        }
+      },
+      "by_status": {
+        "abstain": {
+          "exact": 24,
+          "total": 24
+        },
+        "clarify": {
+          "exact": 24,
+          "total": 24
+        },
+        "ready": {
+          "exact": 80,
+          "total": 80
+        }
+      },
+      "exact": 128,
+      "gates": {
+        "abstain_95_percent": true,
+        "clarify_90_percent": true,
+        "lower_85_percent": true,
+        "ready_90_percent": true,
+        "upper_85_percent": true,
+        "zero_wrong_ready": true
+      },
+      "passed": true,
+      "total": 128,
+      "wrong_ready": 0
+    }
+  },
+  "fresh_confirmation": false,
+  "limitation": "Guarded learned raw retains handwritten input/domain/operand guards and differs in preprocessing; equal outputs do not prove fallback was unused.",
+  "native_actions": 0,
+  "paired_changed_rows": [],
+  "paired_exact_delta": 0,
+  "response_sha256": "140672f51cca38678c188b69499eb2349da72775c4fd763047e4d8d2aef33f49",
+  "schema": 1,
+  "synthetic": true,
+  "training_eligible": false
+}

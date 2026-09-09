@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "round": 1,
+  "maximum_rounds": 2,
+  "source_draft": "/tmp/cnet-confirmation-v2-qR7n165F/author/draft1.json",
+  "source_sha256": "606071bcc3c8eef890dd9110607ae712843b0032179a2608754744e805acba7d",
+  "reason": "Objective exact or normalized overlap with prior exposed corpora; no candidate-conditioned feedback.",
+  "new_ids_requiring_replacement": ["u01", "u02", "u19", "u22", "l01", "c13", "c17", "c21", "c22", "a05", "a11", "a15", "a17"],
+  "blind_review_pass1": {"reviewed":128,"disagreements":0,"ambiguous":0},
+  "author_instructions": "Independently rewrite only these rows while preserving IDs, contract, status/operation quotas and families. Preserve draft1 and original provenance; create draft2.json and provenance-round1.json via apply_patch. Never obtain previous texts or candidate output. No text suggestions are supplied.",
+  "score_executed": false
+}
