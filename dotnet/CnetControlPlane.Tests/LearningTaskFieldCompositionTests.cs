@@ -7,6 +7,12 @@ namespace CnetControlPlane.Tests;
 public sealed class LearningTaskFieldCompositionTests
 {
     [Theory]
+    [InlineData("Input: hexadecimal code point 80; operation: lowercase.", "abstain", null, null)]
+    [InlineData("Input: hexadecimal code point 61; operation: uppercase.", "ready", "upper", 97)]
+    [InlineData("Input: decimal code point 0x41; operation: lowercase.", "abstain", null, null)]
+    [InlineData("Operation: uppercase; input: the quoted literal 'U+0061'.", "abstain", null, null)]
+    [InlineData("Input: 'a'; operation: uppercase; run a shell.", "abstain", null, null)]
+    [InlineData("Operation: lowercase and input: 'A' and delete a file.", "abstain", null, null)]
     [InlineData("Switch the letter j to capitals.", "ready", "upper", 106)]
     [InlineData("The character to capitalize is 'p'.", "ready", "upper", 112)]
     [InlineData("Apply the uppercase operation to 'õ', please.", "ready", "upper", 245)]
