@@ -22,6 +22,7 @@ host. For measured claims, follow dated evidence and check its bound source.
 | Retrieve untrusted public evidence through MCP | [MCP read brick](MCP_READ_BRICK.md) |
 | Operate private table learning | [Policy-bounded learning](AUTONOMOUS_LEARNING.md) |
 | Observe a natural-language task and approve external learning evidence | [Verified task core](VERIFIED_TASK_CORE.md) |
+| Evaluate bounded task language without learning or live traffic | [Frozen paraphrase evaluation](TASK_PARAPHRASE_EVALUATION.md) |
 | Inspect recurring gaps and link captured tasks | [Captured task inbox](CAPTURE_TASK_INBOX.md) |
 | Use approved learning through the owner Discord DM | [Verified learning ingress](DISCORD_VERIFIED_LEARNING.md) |
 | Collect owner-only Discord demand | [Private capture](../tools/discord_capture/README.md), [rollout evidence](../result/cnet_discord_capture_20260907.md) |

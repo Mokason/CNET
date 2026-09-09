@@ -89,15 +89,25 @@ abstains for inputs such as `ß`, whose simple uppercase field is empty.
 Supported forms include `unicode upper 181`, `uppercase µ`, `convert 'µ' to
 uppercase`, `make a uppercase`, and `What is the lowercase of A?`. Leading
 `please`, question punctuation and the documented variants are bounded grammar
-rules, not a promise that arbitrary paraphrases are recognized.
+rules, not a promise that arbitrary paraphrases are recognized. The expanded
+grammar also recognizes `capital form`, `small-letter form`, `upper case`,
+`lower-case`, `capitalize`, bounded polite frames, and `decimal codepoint`.
+For example: `Could you give me the capital form of 'µ', please?` and
+`For the character A, give its lowercase form.` See the separate
+[frozen proposal evaluation](TASK_PARAPHRASE_EVALUATION.md) for measured limits.
 
 Requests are at most 256 UTF-16 code units; control characters and surrogates
-refuse. Bare numeric strings such as `uppercase 65`, multiple characters,
+refuse, including decoded control values in canonical, hexadecimal and decimal
+operands. Bare numeric strings such as `uppercase 65`, multiple candidates,
 missing case direction, malformed quotes and ambiguous punctuation require
 clarification. Quote literal digits/punctuation; use `codepoint 181` or
 `U+00B5` for an explicit codepoint. Input above 255, including Greek small
 `μ` (different from micro sign `µ`), is out of domain. No substring extraction
-from surrounding instructions or multi-action execution is permitted.
+from surrounding instructions or multi-action execution is permitted. Explicit
+whole-string and locale-specific requests abstain. The grammar is not a universal
+compound-intent classifier: the retained legacy `uppercase µ and run a shell`
+case requests clarification, while recognized compound case instructions
+abstain. Neither classification contains an executable proposal.
 
 The JSON envelope is `learning_task` with `proposal`, `replayed`, and
 `experience`. `proposal.Status` is `ready`, `clarify`, or `abstain`.
@@ -163,8 +173,9 @@ separate update/revalidation protocol exists.
 
 The concrete next slices and unchanged empirical gates are in
 [the plan](../plans/cnet_verified_task_core_20260908.md). Still required: reviewed
-live rollout and real origin review of captured tasks, useful reusable compositions in the existing
-capsule system, dependency-aware freshness, and independently evaluated AMD
+live rollout and real origin review of captured tasks, richer composition inputs
+beyond the [implemented numeric subset reuse](COMPOSITION_REUSE.md),
+dependency-aware freshness, and independently evaluated AMD
 selection/clarification/composition/abstention candidates. No useful-gain floor
 was lowered, no synthetic request was called real usage, and no learned
 allocator was enabled by this milestone.

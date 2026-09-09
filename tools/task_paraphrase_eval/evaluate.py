@@ -123,6 +123,16 @@ def digest(raw):
     return hashlib.sha256(raw).hexdigest()
 
 
+def encode_requests(texts):
+    # Private probe wire: arrays of original UTF-16 units. JSON string decoders
+    # may reject lone surrogates before the actual parser can abstain on them.
+    units = []
+    for text in texts:
+        raw = text.encode("utf-16-le", errors="surrogatepass")
+        units.append([raw[i] | raw[i + 1] << 8 for i in range(0, len(raw), 2)])
+    return json.dumps(units, separators=(",", ":")).encode("ascii")
+
+
 def run(args):
     repository = Path(__file__).resolve().parents[2]
     corpus_root = repository / "benchmarks/task_paraphrases_20260909"
@@ -147,7 +157,7 @@ def run(args):
     if not dotnet:
         raise ValueError("dotnet_unavailable")
     result = subprocess.run([dotnet, str(probe), str(Path(args.assembly).resolve()), args.assembly_sha256],
-                            input=json.dumps([c["text"] for c in cases], ensure_ascii=True).encode(),
+                            input=encode_requests([c["text"] for c in cases]),
                             capture_output=True, timeout=30, env={})
     if result.returncode or result.stderr:
         raise ValueError("managed_probe_refused")

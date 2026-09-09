@@ -146,7 +146,7 @@ class ActualManagedProbe(unittest.TestCase):
                               input=raw, capture_output=True, timeout=30)
 
     def test_unchanged_real_parser_returns_only_proposals(self):
-        result = self.invoke(json.dumps(["uppercase µ", "uppercase 65", "unrelated request"]).encode())
+        result = self.invoke(evaluator.encode_requests(["uppercase µ", "uppercase 65", "unrelated request"]))
         self.assertEqual(result.returncode, 0, result.stderr)
         response = json.loads(result.stdout)
         self.assertEqual(response["schema"], 1)
@@ -158,21 +158,22 @@ class ActualManagedProbe(unittest.TestCase):
         self.assertNotIn("Value", proposals[0])
 
     def test_hash_mismatch_refuses_before_parser_execution(self):
-        result = self.invoke(b'["uppercase A"]', "0" * 64)
+        result = self.invoke(evaluator.encode_requests(["uppercase A"]), "0" * 64)
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(result.stdout, b"")
 
     def test_lone_surrogates_reach_the_actual_parser_as_abstentions(self):
         requests = ['uppercase "\ud800"', 'lowercase "\udfff"', 'uppercase 😀']
-        result = self.invoke(json.dumps(requests).encode())
+        result = self.invoke(evaluator.encode_requests(requests))
         self.assertEqual(result.returncode, 0, "PARAPHRASE_SURROGATE_RED probe rejected parser-domain input")
         proposals = json.loads(result.stdout)["proposals"]
         self.assertEqual([p["Status"] for p in proposals], ["abstain"] * 3)
         self.assertTrue(all(p["Dataset"] is None and p["Key"] is None for p in proposals))
 
     def test_probe_input_bounds_and_types_refuse(self):
-        for raw in (b'{}', b'[]', b'[null]', b'[1]', b'not json', b' ' * 131073,
-                    json.dumps(["uppercase A"] * 129).encode()):
+        for raw in (b'{}', b'[]', b'[null]', b'[1]', b'not json', b' ' * (4 * 1024 * 1024 + 1),
+                    b'[[65536]]', b'[[-1]]', b'[[1.5]]', b'[[true]]', b'[["65"]]', b'["uppercase A"]',
+                    json.dumps([[65] * 4097]).encode(), evaluator.encode_requests(["uppercase A"] * 129)):
             with self.subTest(length=len(raw)):
                 result = self.invoke(raw)
                 self.assertNotEqual(result.returncode, 0)

@@ -15,12 +15,18 @@ try
     var identity = Convert.ToHexString(SHA256.HashData(assemblyBytes)).ToLowerInvariant();
     if (identity != args[1]) throw new InvalidDataException();
     using var input = Console.OpenStandardInput();
-    using var document = JsonDocument.Parse(ReadBounded(input, 131072), new JsonDocumentOptions { MaxDepth = 4 });
+    // At most 128 requests x 4096 UTF-16 units; numeric JSON is bounded to 4 MiB.
+    // Units preserve malformed surrogate input for the real parser to refuse.
+    using var document = JsonDocument.Parse(ReadBounded(input, 4 * 1024 * 1024), new JsonDocumentOptions { MaxDepth = 4 });
     if (document.RootElement.ValueKind != JsonValueKind.Array || document.RootElement.GetArrayLength() is < 1 or > 128)
         throw new InvalidDataException();
     var requests = document.RootElement.EnumerateArray().Select(item =>
-        item.ValueKind == JsonValueKind.String ? item.GetString()! : throw new InvalidDataException()).ToArray();
-    if (requests.Any(text => text.Length > 2048)) throw new InvalidDataException();
+    {
+        if (item.ValueKind != JsonValueKind.Array || item.GetArrayLength() > 4096) throw new InvalidDataException();
+        return new string(item.EnumerateArray().Select(unit =>
+            unit.ValueKind == JsonValueKind.Number && unit.TryGetUInt16(out var value)
+                ? (char)value : throw new InvalidDataException()).ToArray());
+    }).ToArray();
     // Load exactly the bytes hashed above. No path reopen or entry-point call.
     var assembly = Assembly.Load(assemblyBytes);
     var type = assembly.GetType("CnetControlPlane.Learning.LearningTaskParser", throwOnError: true)!;

@@ -61,6 +61,11 @@ reserve GPUs, alter clocks, reset devices or interrupt existing jobs.
 
 ## Fresh evidence
 
+For actual managed task-parser proposal scoring, use the separate
+[frozen paraphrase runbook](TASK_PARAPHRASE_EVALUATION.md). Its integrity tests
+use developer fixtures; do not open confirmation during development or mistake
+proposal accuracy for native answer certification.
+
 Source-bound gates deliberately refuse if tracked or untracked state changes
 during execution. Finish edits first, run these gates sequentially, and capture
 console output outside the repository:
