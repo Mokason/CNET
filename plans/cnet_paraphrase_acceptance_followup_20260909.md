@@ -105,3 +105,29 @@ explicit type, and no case word alone authorizes a request. Test-first fixes
 also cover bare-capital article ambiguity and case words inside operands.
 Review this staged boundary, run native/regression/coverage gates, freeze a new
 candidate, then score the unopened round4 population exactly once.
+
+Round4 scored confirmation failed: 36/80 ready (17/40 upper, 19/40 lower),
+8/24 clarify, 24/24 abstain, zero wrong ready. All 128 rows remain recorded;
+this fourth confirmation is now development-only. Its candidate had scored
+all four exposed predecessor collections perfectly, which did not predict
+success on this new set. No gate or label was changed.
+
+Round5 composes shared output verbs, desire phrases, manner phrases and input
+declarations in explicit whole-request frames. An independent design review
+rejected a closed-vocabulary fallback because word membership cannot distinguish
+applying a function from requesting its input or an unsupported output format.
+Those counterexamples are executable refusal tests. Operation alternatives
+are non-executable, and numeric descriptions remain input-only. A combined
+declaration regex hit the unchanged 1000-node bound; smaller equivalent frames
+resolve it without disabling the guard. The 70 new phrase tests were executed
+RED (62 failed), then the combined 310 parser cases passed after repairs.
+
+The session exhausted fresh-agent capacity. Round5 therefore reuses two
+isolated author/custodian contexts with knowledge of their own prior authored
+sets but no implementation, graph, tests, results or CNET execution access.
+This is procedural blindness, not fresh-context authorship, IID sampling,
+external-model validation or population confidence. They independently checked
+128 labels and 80 original-input keys, with zero exact overlaps against 640
+previously exposed texts. Root has not opened or executed round5 during repair.
+Its quotas, original contract and all acceptance floors are unchanged. Freeze
+source/binary identities after regression and boundary review, then score once.

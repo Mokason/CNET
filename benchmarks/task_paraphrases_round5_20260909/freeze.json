@@ -1,0 +1,111 @@
+{
+  "schema": 1,
+  "name": "confirmation",
+  "round": 5,
+  "confirmation_file": "benchmarks/task_paraphrases_round5_20260909/confirmation.json",
+  "confirmation_sha256": "233e52c0d1fc5966cbe877e2d08769e1501fc1a29819534f05e3192fe37772e5",
+  "frozen_at_utc": "2026-09-09 08:28:30 UTC",
+  "file_bytes": 26480,
+  "counts": {
+    "total": 128,
+    "ready": 80,
+    "upper": 40,
+    "lower": 40,
+    "clarify": 24,
+    "abstain": 24,
+    "unique_ids": 128,
+    "unique_texts": 128,
+    "family_count": 28
+  },
+  "bounds": {
+    "max_text_unicode_characters": 283,
+    "max_text_utf16_units": 283,
+    "file_byte_limit": 131072,
+    "text_unicode_character_limit": 2048,
+    "ready_utf16_unit_limit": 256
+  },
+  "reviews": {
+    "status": "passed",
+    "author_agent": "/root/acceptance_v3_author",
+    "custodian_agent": "/root/acceptance_v4_author",
+    "author_status_labels_reviewed": 128,
+    "custodian_status_labels_reviewed": 128,
+    "author_ready_original_byte_keys_verified": 80,
+    "custodian_ready_original_byte_keys_independently_rederived": 80,
+    "custodian_ready_operations_independently_rederived": 80,
+    "nonready_operation_and_key_null_verified": 48,
+    "schema_and_bounds_verified": true,
+    "review_basis": "Only the supplied behavior contract and permitted project instructions; no implementation, tests, graph, or CNET results.",
+    "private_revision_count": 1,
+    "private_revision_basis": "One question was reworded to remove a semantic ambiguity. Its operation, original input, and status remained unchanged.",
+    "certification_floor_or_contract_relaxed": false,
+    "implementation_or_score_informed_adjustments": false,
+    "downstream_coverage_or_mapping_availability_used_for_labels": false
+  },
+  "overlap_check": {
+    "method": "Exact text equality only; prior texts were processed mechanically and not displayed for design or review.",
+    "prior_case_count": 640,
+    "prior_unique_text_count": 640,
+    "overlap_count": 0,
+    "passed": true,
+    "prior_corpora": [
+      {
+        "file": "benchmarks/task_paraphrases_20260909/qualification.json",
+        "sha256": "9f0ae2c6a2c57edc00d7f3759c1fefc5830ffc033ee3838a33015a5edf74cd05",
+        "case_count": 128
+      },
+      {
+        "file": "benchmarks/task_paraphrases_20260909/confirmation.json",
+        "sha256": "1f37ea2cb4073cbdb1be4ded22ded6375076447d7b75356798c5d209f8e377cb",
+        "case_count": 128
+      },
+      {
+        "file": "benchmarks/task_paraphrases_followup_20260909/confirmation.json",
+        "sha256": "612e4007398666202abd5f0a104c0ebadd6e75121ebf67471dcfb9e498f14cd3",
+        "case_count": 128
+      },
+      {
+        "file": "benchmarks/task_paraphrases_round3_20260909/confirmation.json",
+        "sha256": "4e0a31349ce0b2fc73a9d2727388a33ee6a08ba56f23cebf9bba818a361ebf46",
+        "case_count": 128
+      },
+      {
+        "file": "benchmarks/task_paraphrases_round4_20260909/confirmation.json",
+        "sha256": "c17d36329aca0b880b4fe470df4becb36110f11b2b1a4a5c6ca17aba3af26130",
+        "case_count": 128
+      }
+    ]
+  },
+  "unopened_root_attestation": {
+    "agent": "/root",
+    "received_at_utc": "2026-09-09 08:21:25 UTC",
+    "text": "Root attests no round5 corpus text, family names, labels, case details, or results seen, opened, scored or used for implementation. No other agent implements source in this task; bounded design reviewer received only a design and behavior contract, no round5 corpus. Root has only metadata author/custodian messages and will stay blind until candidate freeze."
+  },
+  "author_attestation": {
+    "agent": "/root/acceptance_v3_author",
+    "received_at_utc": "2026-09-09 08:27:34 UTC",
+    "text": "Synthetic and training-ineligible; reused author context knows only its own round-3 corpus among prior corpora. No implementation/tests/Graft/results/performance reads, no CNET execution, no prior text/labels used beyond acknowledged own-authored context, no subagents/providers/network, no root disclosure of new texts/families/case details. I did not adjust difficulty from unknown results; this is not fresh-context, external, or IID evidence."
+  },
+  "custodian_attestation": {
+    "agent": "/root/acceptance_v4_author",
+    "recorded_at_utc": "2026-09-09 08:28:30 UTC",
+    "text": "I reviewed all 128 final corpus statuses and independently rederived all 80 ready operation and original-byte labels without executing CNET. I accessed no CNET implementation, tests, Graft or other code graphs, results, or performance. Prior corpora were read programmatically only for exact text equality and metadata; prior content was not displayed for design. I used no subagents, providers, or network. Root received only count, hash, size, review-status, and attestation metadata, with no new text, family names, or individual case details before freeze.",
+    "context_reused": true,
+    "prior_authored_corpus_knowledge": "I authored benchmarks/task_paraphrases_round4_20260909/confirmation.json and retain that corpus in context.",
+    "prior_reviewed_corpus_knowledge": "Before this round-5 review, no other prior corpus content was inspected."
+  },
+  "provenance": {
+    "synthetic": true,
+    "training_eligible": false,
+    "training_use_prohibited": true,
+    "context_reuse_acknowledged": true,
+    "author_prior_authored_corpus": "benchmarks/task_paraphrases_round3_20260909/confirmation.json",
+    "custodian_prior_authored_corpus": "benchmarks/task_paraphrases_round4_20260909/confirmation.json",
+    "fresh_contexts": false,
+    "external_validation": false,
+    "iid_claim": false,
+    "no_cnet_execution": true,
+    "no_implementation_or_results_access": true,
+    "no_new_corpus_content_disclosed_to_root_before_freeze": true
+  }
+}
