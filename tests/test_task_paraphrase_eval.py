@@ -3,7 +3,9 @@ import copy
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
+import subprocess
 import unittest
 
 MODULE = Path(__file__).resolve().parents[1] / "tools/task_paraphrase_eval/evaluate.py"
@@ -12,6 +14,9 @@ if not MODULE.exists():
 spec = importlib.util.spec_from_file_location("paraphrase_eval", MODULE)
 evaluator = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(evaluator)
+REPOSITORY = MODULE.parents[2]
+PROBE = REPOSITORY / ".artifacts/task-verified/bin/TaskParaphraseProbe/debug/cnet-task-paraphrase-probe.dll"
+ASSEMBLY = REPOSITORY / ".artifacts/task-verified/bin/CnetControlPlane/debug/cnet-control.dll"
 
 
 def fixture():
@@ -121,6 +126,39 @@ class ExactScoring(unittest.TestCase):
             predictions[0] = malformed
             with self.assertRaises(ValueError): evaluator.score(self.cases, predictions)
         with self.assertRaises(ValueError): evaluator.score(self.cases, self.proposals[:-1])
+
+
+class ActualManagedProbe(unittest.TestCase):
+    def invoke(self, raw, identity=None):
+        self.assertTrue(PROBE.is_file(), "PARAPHRASE_PROBE_RED missing_hash_bound_managed_probe")
+        identity = identity or hashlib.sha256(ASSEMBLY.read_bytes()).hexdigest()
+        return subprocess.run([os.environ.get("DOTNET_HOST_PATH", "dotnet"), str(PROBE), str(ASSEMBLY), identity],
+                              input=raw, capture_output=True, timeout=30)
+
+    def test_unchanged_real_parser_returns_only_proposals(self):
+        result = self.invoke(json.dumps(["uppercase µ", "uppercase 65", "unrelated request"]).encode())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        response = json.loads(result.stdout)
+        self.assertEqual(response["schema"], 1)
+        self.assertEqual(response["assembly_sha256"], hashlib.sha256(ASSEMBLY.read_bytes()).hexdigest())
+        proposals = response["proposals"]
+        self.assertEqual([p["Status"] for p in proposals], ["ready", "clarify", "abstain"])
+        self.assertEqual(proposals[0]["Key"], 181)
+        self.assertEqual(proposals[0]["Dataset"], "unicode17_upper_latin1")
+        self.assertNotIn("Value", proposals[0])
+
+    def test_hash_mismatch_refuses_before_parser_execution(self):
+        result = self.invoke(b'["uppercase A"]', "0" * 64)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, b"")
+
+    def test_probe_input_bounds_and_types_refuse(self):
+        for raw in (b'{}', b'[]', b'[null]', b'[1]', b'not json', b' ' * 131073,
+                    json.dumps(["uppercase A"] * 129).encode()):
+            with self.subTest(length=len(raw)):
+                result = self.invoke(raw)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(result.stdout, b"")
 
 
 if __name__ == "__main__":
