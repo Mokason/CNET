@@ -7,6 +7,15 @@ namespace CnetControlPlane.Tests;
 public sealed class LearningTaskFrameTests
 {
     [Theory]
+    [InlineData("Uppercase code point 0 or code point 65.", "abstain", null, null)]
+    [InlineData("Change case of code point 0 or code point 65.", "abstain", null, null)]
+    [InlineData("Uppercase U+0000 or 'a'.", "abstain", null, null)]
+    [InlineData("Uppercase U+03BC or 'a'.", "abstain", null, null)]
+    [InlineData("Uppercase the letter with a.", "clarify", null, null)]
+    [InlineData("Uppercase the character at A.", "clarify", null, null)]
+    [InlineData("The character is the letter with a; please capitalize it.", "clarify", null, null)]
+    [InlineData("Uppercase the character at U+0000.", "abstain", null, null)]
+    [InlineData("Lowercase the character represented by code-point 65.", "ready", "lower", 65)]
     [InlineData("Kindly put 'à' in upper case.", "ready", "upper", 224)]
     [InlineData("I'd like you to convert 'þ' to uppercase.", "ready", "upper", 254)]
     [InlineData("Kindly put 'Å' in lower case.", "ready", "lower", 197)]
