@@ -19,6 +19,7 @@ ROUND3_FREEZE_SHA256 = "e78224298ce97e8fc8cd69088c64a54463934b2d2731030de8146d1c
 ROUND4_FREEZE_SHA256 = "903f5fddd1788e52e779b67ab0c128930c0d914bb0fc679f1456b7e0c7b00a75"
 ROUND5_FREEZE_SHA256 = "7516f836a996c8fcc18b106295d41b817394b86f0bf627fd9eeec03e98da3d4e"
 ROUND6_FREEZE_SHA256 = "7dd7a45af5d3c5b8b78c7c4bf6b8dd28f9d69994220c8962984a9e50024e8889"
+ROUND7_FREEZE_SHA256 = "f368856640aece0360fc9c0e0f0879da5616282b910b28967bf76d56cf9b699d"
 
 
 def _object(pairs):
@@ -151,6 +152,8 @@ def suite_identity(suite, collection):
         return "task_paraphrases_round5_20260909", ROUND5_FREEZE_SHA256
     if suite == "round6" and collection == "confirmation":
         return "task_paraphrases_round6_20260909", ROUND6_FREEZE_SHA256
+    if suite == "round7" and collection == "confirmation":
+        return "task_paraphrases_round7_20260909", ROUND7_FREEZE_SHA256
     raise ValueError("suite_collection")
 
 
@@ -203,7 +206,7 @@ def run(args):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("collection", choices=("qualification", "confirmation"))
-    parser.add_argument("--suite", choices=("original", "followup", "round3", "round4", "round5", "round6"), default="original",
+    parser.add_argument("--suite", choices=("original", "followup", "round3", "round4", "round5", "round6", "round7"), default="original",
                         help="explicit frozen population; only original has qualification")
     parser.add_argument("--assembly", required=True)
     parser.add_argument("--assembly-sha256", required=True)
