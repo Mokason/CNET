@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "baseline_source_commit": "0585835",
+  "baseline_parser_sha256": "baddb1aecb944c313c3dfd9a598a1e1c9c42b4c426d03662b8e0fce140127e85",
+  "qualification_sha256": "9f0ae2c6a2c57edc00d7f3759c1fefc5830ffc033ee3838a33015a5edf74cd05",
+  "confirmation_sha256": "1f37ea2cb4073cbdb1be4ded22ded6375076447d7b75356798c5d209f8e377cb",
+  "cases_per_collection": 128,
+  "ready_per_collection": 80,
+  "clarify_per_collection": 24,
+  "abstain_per_collection": 24,
+  "exact_cross_collection_overlap": 0,
+  "authors": "separate fresh-context GPT-6 Astra agents, contract-only, independently cross-reviewed before freeze",
+  "origin": "synthetic",
+  "training_eligible": false,
+  "confirmation_opened": false
+}
