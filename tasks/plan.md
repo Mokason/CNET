@@ -1,5 +1,14 @@
 # Current CNET work plan
 
+## Active: frozen task-proposal evaluation
+
+Follow [the September 9 evaluation protocol](../plans/cnet_paraphrase_evaluation_20260909.md):
+independently authored synthetic qualification and confirmation, immutable
+corpus/source identities, exact typed-action scoring and unchanged safety
+floors. Confirmation remains unopened until candidate code is frozen. Parser
+repairs may use exposed development evidence, never that sealed confirmation.
+No deployment, real capture or frozen-soak changes are part of this slice.
+
 ## Source complete: useful bounded composition reuse
 
 The [September 9 composition slice](../plans/cnet_composition_reuse_20260909.md)

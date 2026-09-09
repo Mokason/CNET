@@ -1,5 +1,13 @@
 # Current CNET checklist
 
+## Active: independent synthetic paraphrase/OOD evaluation
+
+- [ ] Freeze contract-based qualification and separate sealed confirmation
+- [ ] Test hash/schema/score integrity and record the unmodified parser baseline
+- [ ] Repair measured development gaps without weakening safety or certification
+- [ ] Freeze candidate before confirmation and retain any failed gates
+- [ ] Private native checks, regression/coverage, review and measured handoff
+
 ## Completed source: bounded useful composition reuse
 
 - [x] Export selected canonical capsule files without a new packaging format
