@@ -1,0 +1,206 @@
+{
+  "schema": 1,
+  "name": "confirmation",
+  "round": 8,
+  "status": "frozen",
+  "frozen_at_utc": "2026-09-09 09:21:01 UTC",
+  "confirmation_path": "benchmarks/task_paraphrases_round8_20260909/confirmation.json",
+  "confirmation_sha256": "fdb71d2095de99f4397440611b9a2733294cf9bbefdd9b9d63e4c6869977035c",
+  "synthetic": true,
+  "training_eligible": false,
+  "external_validation": false,
+  "fresh_context": false,
+  "iid": false,
+  "corpus": {
+    "utf8_bytes": 26338,
+    "cases": 128,
+    "unique_ids": 128,
+    "unique_texts": 128,
+    "family_count": 35,
+    "ready": 80,
+    "ready_upper": 40,
+    "ready_lower": 40,
+    "clarify": 24,
+    "abstain": 24
+  },
+  "bounds": {
+    "schema_version": 1,
+    "corpus_name": "confirmation",
+    "minimum_families": 8,
+    "id_and_family_pattern": "^[A-Za-z0-9_-]{1,48}$",
+    "case_text_max_unicode_characters": 2048,
+    "corpus_max_utf8_bytes": 131072,
+    "task_input_max_utf16_units": 256,
+    "observed_max_unicode_characters": 274,
+    "observed_max_utf16_units": 274,
+    "observed_max_ready_utf16_units": 72,
+    "over_task_limit_cases_may_be_present_only_as_abstain": true
+  },
+  "original_acceptance_floors": {
+    "unchanged": true,
+    "all_rows_count": true,
+    "strict_nonready_operation_and_key_null": true,
+    "wrong_ready": {
+      "maximum": 0
+    },
+    "exact_ready": {
+      "minimum": 72,
+      "total": 80,
+      "minimum_fraction": 0.9
+    },
+    "exact_upper": {
+      "minimum": 34,
+      "total": 40,
+      "minimum_fraction": 0.85
+    },
+    "exact_lower": {
+      "minimum": 34,
+      "total": 40,
+      "minimum_fraction": 0.85
+    },
+    "clarify": {
+      "minimum": 22,
+      "total": 24,
+      "minimum_fraction": 0.9
+    },
+    "abstain": {
+      "minimum": 23,
+      "total": 24,
+      "minimum_fraction": 0.95
+    }
+  },
+  "label_review": {
+    "contract": "Original supplied single-scalar upper/lower behavior contract",
+    "every_final_status_reviewed": true,
+    "statuses_reviewed": 128,
+    "ready_original_byte_keys_independently_rederived": 80,
+    "ready_operations_independently_rederived": 80,
+    "ready_key_means": "Original Latin1 input scalar byte; never the case-converted answer",
+    "nonready_operation_and_key_null": true,
+    "simple_case_change_or_downstream_coverage_not_used_to_reject_ready": true,
+    "scalar_normalization_performed": false,
+    "text_revisions_requested": 0,
+    "status_or_key_or_operation_changes": 0,
+    "unresolved_findings": 0,
+    "cnet_executed": false,
+    "runtime_acceptance_results_observed": false
+  },
+  "exact_text_overlap_review": {
+    "comparison": "Exact decoded text equality without normalization",
+    "prior_corpora": 8,
+    "prior_cases": 1024,
+    "prior_unique_texts": 1024,
+    "overlap_count": 0,
+    "prior_hashes_unchanged_during_review": true,
+    "prior_texts_or_labels_displayed": false,
+    "baselines": [
+      {
+        "path": "benchmarks/task_paraphrases_20260909/qualification.json",
+        "sha256": "9f0ae2c6a2c57edc00d7f3759c1fefc5830ffc033ee3838a33015a5edf74cd05",
+        "cases": 128
+      },
+      {
+        "path": "benchmarks/task_paraphrases_20260909/confirmation.json",
+        "sha256": "1f37ea2cb4073cbdb1be4ded22ded6375076447d7b75356798c5d209f8e377cb",
+        "cases": 128
+      },
+      {
+        "path": "benchmarks/task_paraphrases_followup_20260909/confirmation.json",
+        "sha256": "612e4007398666202abd5f0a104c0ebadd6e75121ebf67471dcfb9e498f14cd3",
+        "cases": 128
+      },
+      {
+        "path": "benchmarks/task_paraphrases_round3_20260909/confirmation.json",
+        "sha256": "4e0a31349ce0b2fc73a9d2727388a33ee6a08ba56f23cebf9bba818a361ebf46",
+        "cases": 128
+      },
+      {
+        "path": "benchmarks/task_paraphrases_round4_20260909/confirmation.json",
+        "sha256": "c17d36329aca0b880b4fe470df4becb36110f11b2b1a4a5c6ca17aba3af26130",
+        "cases": 128
+      },
+      {
+        "path": "benchmarks/task_paraphrases_round5_20260909/confirmation.json",
+        "sha256": "233e52c0d1fc5966cbe877e2d08769e1501fc1a29819534f05e3192fe37772e5",
+        "cases": 128
+      },
+      {
+        "path": "benchmarks/task_paraphrases_round6_20260909/confirmation.json",
+        "sha256": "2022d8c4a07c1799245d81396cf4979308c32c49d8abddf78a4314d17159378b",
+        "cases": 128
+      },
+      {
+        "path": "benchmarks/task_paraphrases_round7_20260909/confirmation.json",
+        "sha256": "e67f6646e839c0d8cd2629efd70ba3fe8822c226521bda755c08b103f439295b",
+        "cases": 128
+      }
+    ]
+  },
+  "attestations": {
+    "author": {
+      "agent": "/root/acceptance_v4_author",
+      "role": "round8_author",
+      "received": true,
+      "context_reused": true,
+      "prior_context_knowledge": [
+        "round4_authorship",
+        "round5_custody_and_semantic_review",
+        "round6_authorship",
+        "round7_custody_and_semantic_review"
+      ],
+      "prior_corpus_files_opened_during_round8_authorship": false,
+      "implementation_tests_graphs_results_or_performance_access": false,
+      "failure_scores_or_implementation_feedback_requested_or_seen": false,
+      "cnet_executed": false,
+      "subagents_external_providers_or_network_used": false,
+      "new_case_texts_family_names_or_individual_case_details_disclosed_to_root_before_freeze": false,
+      "difficulty_or_labels_adjusted_from_runtime_results": false,
+      "final_corpus_hold_confirmed": true
+    },
+    "custodian": {
+      "agent": "/root/acceptance_v3_author",
+      "role": "round8_label_custodian",
+      "received": true,
+      "context_reused": true,
+      "prior_context_knowledge": [
+        "round3_authorship",
+        "round5_authorship",
+        "round6_custody_and_semantic_review",
+        "round7_authorship"
+      ],
+      "prior_corpus_file_access": "Mechanical exact-text comparison, count validation and SHA-256 only; no prior text or labels displayed",
+      "implementation_tests_graphs_results_or_performance_access": false,
+      "cnet_executed": false,
+      "subagents_external_providers_or_network_used": false,
+      "new_case_texts_family_names_or_individual_case_details_disclosed_to_root_before_freeze": false,
+      "difficulty_or_labels_adjusted_from_runtime_results": false
+    },
+    "root": {
+      "agent": "/root",
+      "role": "sole_implementer",
+      "received": true,
+      "round8_case_texts_or_family_names_seen_before_freeze": false,
+      "round8_corpus_opened_before_freeze": false,
+      "round8_corpus_executed_before_freeze": false,
+      "evidence_basis": "Explicit root attestation before custody review"
+    },
+    "design_reviewer": {
+      "round8_content_access": false,
+      "evidence_basis": "Explicit root attestation"
+    }
+  },
+  "methodology_limits": [
+    "Synthetic contract-authored corpus; training-ineligible.",
+    "Author and custodian reused contexts with the prior corpus knowledge stated above.",
+    "Not fresh-context, IID, or external validation.",
+    "No implementation or runtime performance information was available to the author or custodian.",
+    "No CNET execution or runtime gate result is represented by this freeze manifest.",
+    "Original behavior contract, quotas, bounds and numerical acceptance floors remain unchanged."
+  ],
+  "execution_policy": {
+    "model_constraint": "Astra only",
+    "external_provider_execution": false,
+    "no_commits_by_author_or_custodian": true,
+    "commit_responsibility": "root"
+  }
+}

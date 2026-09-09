@@ -1,0 +1,1030 @@
+{
+  "schema": 1,
+  "name": "confirmation",
+  "cases": [
+    {
+      "id": "r8u01",
+      "family": "polite_request",
+      "text": "I'd like you to write the letter 't' as a capital.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 116
+    },
+    {
+      "id": "r8u02",
+      "family": "polite_request",
+      "text": "Please present a capital-letter version of 'a'.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 97
+    },
+    {
+      "id": "r8u03",
+      "family": "result_question",
+      "text": "Could you give me the upper-case counterpart to 'i'?",
+      "status": "ready",
+      "operation": "upper",
+      "key": 105
+    },
+    {
+      "id": "r8u04",
+      "family": "direct_conversion",
+      "text": "Show what 'o' becomes under uppercase conversion.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 111
+    },
+    {
+      "id": "r8u05",
+      "family": "case_declaration",
+      "text": "The requested case for the letter 'b' is upper.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 98
+    },
+    {
+      "id": "r8u06",
+      "family": "stated_preference",
+      "text": "I need uppercase applied to the character 'c'.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 99
+    },
+    {
+      "id": "r8u07",
+      "family": "case_synonym",
+      "text": "Put the supplied letter 'k' into capital letters.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 107
+    },
+    {
+      "id": "r8u08",
+      "family": "case_synonym",
+      "text": "For the letter 'r', capitalisation is the operation I want.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 114
+    },
+    {
+      "id": "r8u09",
+      "family": "result_question",
+      "text": "What is the capital-letter counterpart to 'ç'?",
+      "status": "ready",
+      "operation": "upper",
+      "key": 231
+    },
+    {
+      "id": "r8u10",
+      "family": "polite_request",
+      "text": "Please let 'á' appear in uppercase.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 225
+    },
+    {
+      "id": "r8u11",
+      "family": "case_synonym",
+      "text": "Would you make the letter 'û' a capital?",
+      "status": "ready",
+      "operation": "upper",
+      "key": 251
+    },
+    {
+      "id": "r8u12",
+      "family": "direct_conversion",
+      "text": "Give the upper-case equivalent of the character 'ÿ'.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 255
+    },
+    {
+      "id": "r8u13",
+      "family": "stated_preference",
+      "text": "I'm requesting the capital-letter form of 'ñ'.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 241
+    },
+    {
+      "id": "r8u14",
+      "family": "passive_request",
+      "text": "The character I'd like uppercased is 'ß'.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 223
+    },
+    {
+      "id": "r8u15",
+      "family": "direct_conversion",
+      "text": "Please choose the uppercase form corresponding to 'µ'.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 181
+    },
+    {
+      "id": "r8u16",
+      "family": "declared_input",
+      "text": "I have chosen 'í' as the input; return its capital form.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 237
+    },
+    {
+      "id": "r8u17",
+      "family": "declared_input",
+      "text": "The input for my request is 'è'. I need uppercase.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 232
+    },
+    {
+      "id": "r8u18",
+      "family": "declared_input",
+      "text": "My desired case is upper, and the input character is 'â'.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 226
+    },
+    {
+      "id": "r8u19",
+      "family": "declared_input",
+      "text": "For this conversion, use the character 'ø' and the case uppercase.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 248
+    },
+    {
+      "id": "r8u20",
+      "family": "field_declarations",
+      "text": "Provided input: 'ï'. Desired case: uppercase.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 239
+    },
+    {
+      "id": "r8u21",
+      "family": "bare_letter",
+      "text": "I would like to uppercase y.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 121
+    },
+    {
+      "id": "r8u22",
+      "family": "bare_letter",
+      "text": "Can you put n into upper case?",
+      "status": "ready",
+      "operation": "upper",
+      "key": 110
+    },
+    {
+      "id": "r8u23",
+      "family": "bare_letter",
+      "text": "Please capitalise the letter ö.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 246
+    },
+    {
+      "id": "r8u24",
+      "family": "bare_letter",
+      "text": "My uppercase conversion should use the letter é.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 233
+    },
+    {
+      "id": "r8u25",
+      "family": "bare_letter",
+      "text": "Make the single letter s a capital.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 115
+    },
+    {
+      "id": "r8u26",
+      "family": "unicode_notation",
+      "text": "The uppercase task uses Unicode scalar U+00F0.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 240
+    },
+    {
+      "id": "r8u27",
+      "family": "unicode_notation",
+      "text": "I would like U+00E5 converted to upper case.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 229
+    },
+    {
+      "id": "r8u28",
+      "family": "unicode_notation",
+      "text": "Which capital-letter form corresponds to code point U+00E6?",
+      "status": "ready",
+      "operation": "upper",
+      "key": 230
+    },
+    {
+      "id": "r8u29",
+      "family": "hexadecimal_notation",
+      "text": "Please perform uppercase conversion on hexadecimal code point 0x00F5.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 245
+    },
+    {
+      "id": "r8u30",
+      "family": "hexadecimal_notation",
+      "text": "Take hexadecimal code point 0x0070 as input for uppercase.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 112
+    },
+    {
+      "id": "r8u31",
+      "family": "decimal_notation",
+      "text": "Uppercase is requested for the scalar at decimal code point 238.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 238
+    },
+    {
+      "id": "r8u32",
+      "family": "decimal_notation",
+      "text": "For code point 234 in decimal, I want its uppercase character.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 234
+    },
+    {
+      "id": "r8u33",
+      "family": "decimal_notation",
+      "text": "The input character has decimal code point 250; convert it to uppercase.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 250
+    },
+    {
+      "id": "r8u34",
+      "family": "quoted_digit",
+      "text": "Put the quoted digit '8' into uppercase.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 56
+    },
+    {
+      "id": "r8u35",
+      "family": "quoted_digit",
+      "text": "An uppercase version of the character '3', please.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 51
+    },
+    {
+      "id": "r8u36",
+      "family": "quoted_punctuation",
+      "text": "Could you show ')' in upper case?",
+      "status": "ready",
+      "operation": "upper",
+      "key": 41
+    },
+    {
+      "id": "r8u37",
+      "family": "quoted_punctuation",
+      "text": "Please apply the uppercase operation to the literal '['.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 91
+    },
+    {
+      "id": "r8u38",
+      "family": "quoted_space",
+      "text": "I need uppercase conversion for the quoted space ' '.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 32
+    },
+    {
+      "id": "r8u39",
+      "family": "quoted_symbol",
+      "text": "For the literal character '½', I'd like the uppercase form.",
+      "status": "ready",
+      "operation": "upper",
+      "key": 189
+    },
+    {
+      "id": "r8u40",
+      "family": "already_in_case",
+      "text": "Would you supply the uppercase form of the character 'Z'?",
+      "status": "ready",
+      "operation": "upper",
+      "key": 90
+    },
+    {
+      "id": "r8l01",
+      "family": "polite_request",
+      "text": "Please write the letter 'T' as a small letter.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 84
+    },
+    {
+      "id": "r8l02",
+      "family": "stated_preference",
+      "text": "I would like a lower-case version of the character 'A'.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 65
+    },
+    {
+      "id": "r8l03",
+      "family": "result_question",
+      "text": "Can you give me the small-letter counterpart to 'O'?",
+      "status": "ready",
+      "operation": "lower",
+      "key": 79
+    },
+    {
+      "id": "r8l04",
+      "family": "direct_conversion",
+      "text": "Show what the character 'I' becomes under lowercase conversion.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 73
+    },
+    {
+      "id": "r8l05",
+      "family": "case_declaration",
+      "text": "The case requested for the letter 'B' is lower.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 66
+    },
+    {
+      "id": "r8l06",
+      "family": "direct_conversion",
+      "text": "Please apply lowercasing to the supplied character 'C'.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 67
+    },
+    {
+      "id": "r8l07",
+      "family": "case_synonym",
+      "text": "Put the letter 'K' into its small-letter form.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 75
+    },
+    {
+      "id": "r8l08",
+      "family": "case_declaration",
+      "text": "The operation I want for 'R' is a lowercase conversion.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 82
+    },
+    {
+      "id": "r8l09",
+      "family": "result_question",
+      "text": "What is the lower-case counterpart to the character 'Ç'?",
+      "status": "ready",
+      "operation": "lower",
+      "key": 199
+    },
+    {
+      "id": "r8l10",
+      "family": "stated_preference",
+      "text": "I'd like 'Á' to appear in lowercase.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 193
+    },
+    {
+      "id": "r8l11",
+      "family": "case_synonym",
+      "text": "Will you turn the letter 'Û' into a small letter?",
+      "status": "ready",
+      "operation": "lower",
+      "key": 219
+    },
+    {
+      "id": "r8l12",
+      "family": "direct_conversion",
+      "text": "Give me the lowercase equivalent of the character 'Ü'.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 220
+    },
+    {
+      "id": "r8l13",
+      "family": "stated_preference",
+      "text": "I am requesting the small-letter form of 'Ñ'.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 209
+    },
+    {
+      "id": "r8l14",
+      "family": "passive_request",
+      "text": "The character I'd like lowercased is 'Ý'.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 221
+    },
+    {
+      "id": "r8l15",
+      "family": "direct_conversion",
+      "text": "Please choose the lowercase form corresponding to 'È'.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 200
+    },
+    {
+      "id": "r8l16",
+      "family": "declared_input",
+      "text": "My chosen input is 'Í'; return its small-letter form.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 205
+    },
+    {
+      "id": "r8l17",
+      "family": "declared_input",
+      "text": "The input for this conversion is 'Ò'. I need lowercase.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 210
+    },
+    {
+      "id": "r8l18",
+      "family": "declared_input",
+      "text": "My desired case is lower, and the supplied character is 'Â'.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 194
+    },
+    {
+      "id": "r8l19",
+      "family": "declared_input",
+      "text": "For the conversion, use 'Ø' as the character and lowercase as the case.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 216
+    },
+    {
+      "id": "r8l20",
+      "family": "field_declarations",
+      "text": "Desired case: lowercase. Provided input: 'Ï'.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 207
+    },
+    {
+      "id": "r8l21",
+      "family": "bare_letter",
+      "text": "I'd like you to lowercase Y.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 89
+    },
+    {
+      "id": "r8l22",
+      "family": "bare_letter",
+      "text": "Can you put N into lower case?",
+      "status": "ready",
+      "operation": "lower",
+      "key": 78
+    },
+    {
+      "id": "r8l23",
+      "family": "bare_letter",
+      "text": "Please use the small-letter form of Ö.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 214
+    },
+    {
+      "id": "r8l24",
+      "family": "bare_letter",
+      "text": "My lowercase conversion should use the letter É.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 201
+    },
+    {
+      "id": "r8l25",
+      "family": "bare_letter",
+      "text": "Make the single letter S lowercase.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 83
+    },
+    {
+      "id": "r8l26",
+      "family": "unicode_notation",
+      "text": "This lowercase task uses Unicode scalar U+00D0.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 208
+    },
+    {
+      "id": "r8l27",
+      "family": "unicode_notation",
+      "text": "I would like U+00C5 converted into lowercase.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 197
+    },
+    {
+      "id": "r8l28",
+      "family": "unicode_notation",
+      "text": "Which small-letter form corresponds to Unicode code point U+00C6?",
+      "status": "ready",
+      "operation": "lower",
+      "key": 198
+    },
+    {
+      "id": "r8l29",
+      "family": "hexadecimal_notation",
+      "text": "Please perform lowercasing on hex code point 0x00D5.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 213
+    },
+    {
+      "id": "r8l30",
+      "family": "hexadecimal_notation",
+      "text": "Take hexadecimal code point 0x0050 as input for lowercase.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 80
+    },
+    {
+      "id": "r8l31",
+      "family": "decimal_notation",
+      "text": "Lowercase is requested for the character at decimal code point 206.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 206
+    },
+    {
+      "id": "r8l32",
+      "family": "decimal_notation",
+      "text": "For code point 202 in decimal, I want its lowercase character.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 202
+    },
+    {
+      "id": "r8l33",
+      "family": "decimal_notation",
+      "text": "The input character has decimal code point 218; convert it to lowercase.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 218
+    },
+    {
+      "id": "r8l34",
+      "family": "quoted_digit",
+      "text": "Please put the quoted digit '0' into lowercase.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 48
+    },
+    {
+      "id": "r8l35",
+      "family": "quoted_digit",
+      "text": "A lowercase version of the character '5', please.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 53
+    },
+    {
+      "id": "r8l36",
+      "family": "quoted_punctuation",
+      "text": "Could you show '(' in lower case?",
+      "status": "ready",
+      "operation": "lower",
+      "key": 40
+    },
+    {
+      "id": "r8l37",
+      "family": "quoted_punctuation",
+      "text": "Apply the lowercase operation to the literal ']'.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 93
+    },
+    {
+      "id": "r8l38",
+      "family": "quoted_space",
+      "text": "For the quoted space ' ', I need a lowercase conversion.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 32
+    },
+    {
+      "id": "r8l39",
+      "family": "quoted_symbol",
+      "text": "I'd like the lowercase form of the literal character '¼'.",
+      "status": "ready",
+      "operation": "lower",
+      "key": 188
+    },
+    {
+      "id": "r8l40",
+      "family": "already_in_case",
+      "text": "Would you supply the lowercase form of the character 'z'?",
+      "status": "ready",
+      "operation": "lower",
+      "key": 122
+    },
+    {
+      "id": "r8c01",
+      "family": "missing_input",
+      "text": "Please uppercase the character I have in mind.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8c02",
+      "family": "missing_input",
+      "text": "I want to see the small-letter result.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8c03",
+      "family": "missing_input",
+      "text": "Could you perform a capital-letter conversion?",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8c04",
+      "family": "missing_input",
+      "text": "Make my chosen character lowercase.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8c05",
+      "family": "missing_case",
+      "text": "The input I want to use is 'é'.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8c06",
+      "family": "missing_case",
+      "text": "Please take Unicode scalar U+00DC for this task.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8c07",
+      "family": "missing_case",
+      "text": "The code point I am giving you is 233 in decimal.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8c08",
+      "family": "missing_case",
+      "text": "My one-character input is '$'.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8c09",
+      "family": "alternative_input",
+      "text": "Make either 'l' or 'm' uppercase for me.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8c10",
+      "family": "alternative_input",
+      "text": "I want the lowercase form of 'G' or 'H'.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8c11",
+      "family": "alternative_case",
+      "text": "My requested form for 'ä' is uppercase or lowercase.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8c12",
+      "family": "alternative_case",
+      "text": "Convert code point U+00C1 to upper or lower case.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8c13",
+      "family": "bare_number",
+      "text": "Please uppercase 9 for me.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8c14",
+      "family": "bare_number",
+      "text": "Use lowercase for 73.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8c15",
+      "family": "bare_number",
+      "text": "My character is 225 and the operation is uppercase.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8c16",
+      "family": "bare_number",
+      "text": "I would like the input 0006 lowercased.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8c17",
+      "family": "bare_punctuation",
+      "text": "I want ( in uppercase.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8c18",
+      "family": "bare_punctuation",
+      "text": "Lowercase ] for me.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8c19",
+      "family": "bare_punctuation",
+      "text": "The uppercase operation should use &.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8c20",
+      "family": "bare_punctuation",
+      "text": "Could you put # into lower case?",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8c21",
+      "family": "malformed_quote",
+      "text": "Give the uppercase form of 'm.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8c22",
+      "family": "malformed_quote",
+      "text": "I need \"H in lowercase.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8c23",
+      "family": "malformed_quote",
+      "text": "Please put 'à\" into uppercase.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8c24",
+      "family": "malformed_quote",
+      "text": "The lowercase input is \"Ö'.",
+      "status": "clarify",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8a01",
+      "family": "multiple_actions",
+      "text": "Uppercase 'f' and then lowercase 'G'.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8a02",
+      "family": "multiple_actions",
+      "text": "Make 'ä' uppercase, then count the letters in the result.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8a03",
+      "family": "multiple_actions",
+      "text": "Convert 'D' to lowercase and add a comma.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8a04",
+      "family": "multiple_actions",
+      "text": "Lowercase 'F', then replace it with 'x'.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8a05",
+      "family": "negative_request",
+      "text": "Please avoid putting 'v' in uppercase.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8a06",
+      "family": "negative_request",
+      "text": "I do not want 'Q' converted to lowercase.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8a07",
+      "family": "negative_request",
+      "text": "You should refrain from capitalising 'é'.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8a08",
+      "family": "negative_request",
+      "text": "Don't give me the small-letter form of 'Ö'.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8a09",
+      "family": "quoted_or_embedded",
+      "text": "Explain what the command \"uppercase 'r'\" asks for.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8a10",
+      "family": "quoted_or_embedded",
+      "text": "Check the spelling of \"lowercase 'K'\".",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8a11",
+      "family": "quoted_or_embedded",
+      "text": "The text to copy is \"make 'á' uppercase\".",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8a12",
+      "family": "quoted_or_embedded",
+      "text": "Tell me the language of this instruction: \"Lowercase 'Í'.\"",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8a13",
+      "family": "whole_string",
+      "text": "Make the entire word 'smör' uppercase.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8a14",
+      "family": "whole_string",
+      "text": "I want all of 'CÔTE' lowercased.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8a15",
+      "family": "whole_string",
+      "text": "Turn both characters in 'éz' into uppercase.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8a16",
+      "family": "whole_string",
+      "text": "Please lowercase every letter in 'ÉCOLE'.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8a17",
+      "family": "locale_specific",
+      "text": "Make 'i' uppercase using the Azerbaijani locale.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8a18",
+      "family": "locale_specific",
+      "text": "Use Turkish-specific lowercase rules for 'I'.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8a19",
+      "family": "outside_latin1",
+      "text": "Give the uppercase form of Unicode scalar U+0103.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8a20",
+      "family": "outside_latin1",
+      "text": "Please lowercase the character 'Σ'.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8a21",
+      "family": "normalization_required",
+      "text": "Uppercase the two-code-point input 'é' as a single accented character.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8a22",
+      "family": "control_scalar",
+      "text": "Please apply lowercase to the control character U+0008.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8a23",
+      "family": "surrogate_scalar",
+      "text": "The code point U+D812 is my input; uppercase it.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    },
+    {
+      "id": "r8a24",
+      "family": "utf16_limit",
+      "text": "Please make the single supplied character 'R' lowercase; this request contains only that one input and that one case operation, and I am continuing the sentence with a description of the same request so that the complete message exceeds the stated maximum length for a task.",
+      "status": "abstain",
+      "operation": null,
+      "key": null
+    }
+  ]
+}
