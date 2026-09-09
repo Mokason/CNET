@@ -29,8 +29,11 @@ Their repaired scores are not fresh validation. The follow-up suite adds a
 separately authored and reviewed 128-case confirmation, with the same quotas
 and floors and no exact request overlap with either original collection. That
 follow-up also failed ready/OOD floors and is now exposed. `round3` provides
-another separately authored, reviewed and pinned 128-case confirmation, with
-the same quotas/floors and no exact overlaps with the three exposed collections.
+another separately authored, reviewed and pinned 128-case confirmation. It too
+failed its quality gates and is now exposed. `round4` adds a fresh 128-case
+confirmation with the same quotas/floors and no exact overlaps with all four
+exposed collections (512 prior texts). Earlier attempts remain in their dated
+reports; neither repetitions nor pooled populations are fresh evidence.
 Each confirmation may be used once against a frozen candidate; adapting
 to its results requires another independently authored confirmation population.
 Reproduction is allowed but is not another independent sample. The CLI does
@@ -82,17 +85,19 @@ python3 tools/task_paraphrase_eval/evaluate.py qualification \
 The runner accepts only pinned suite/collection pairs and verifies the manifest
 and requested corpus hashes. It never reads another collection. `--suite
 original` is the backward-compatible default and supports `qualification` and
-`confirmation`; both are development-only now. `--suite followup` and
-`--suite round3` support only `confirmation` and cannot silently select another
-population. The follow-up set is also development-only after its failed run.
+`confirmation`; both are development-only now. `--suite followup`,
+`--suite round3`, and `--suite round4` support only `confirmation` and cannot
+silently select another population. Follow-up and round3 are development-only
+after their failed runs. Round3's separately pinned nested manifest layout is
+validated explicitly; other suites retain their flat corpus-hash fields.
 After candidate source/binary pins are committed and review is complete:
 
 ```sh
-python3 tools/task_paraphrase_eval/evaluate.py confirmation --suite round3 \
+python3 tools/task_paraphrase_eval/evaluate.py confirmation --suite round4 \
   --assembly "$PARAPHRASE_ASSEMBLY_PATH" \
   --assembly-sha256 "$PARAPHRASE_ASSEMBLY_SHA256" \
   --parser-sha256 "$PARAPHRASE_PARSER_SHA256" \
-  --output "$PARAPHRASE_REPORT_DIR/round3-confirmation.json"
+  --output "$PARAPHRASE_REPORT_DIR/round4-confirmation.json"
 ```
 
 Record the first result even if it fails; never relabel, omit cases, lower

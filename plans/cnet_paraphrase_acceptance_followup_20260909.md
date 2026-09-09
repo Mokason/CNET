@@ -88,3 +88,20 @@ runner's exact pinned-manifest selection, test malformed metadata refusal before
 corpus access, review that correction, and commit a supplemental runner identity
 before the first parser invocation. Keep corpus, parser and binaries unchanged;
 the infrastructure failure is not a failed or successful quality gate.
+
+The first scored round3 confirmation then failed: 39/80 ready (20/40 upper,
+19/40 lower), 12/24 clarify, 21/24 abstain, zero wrong ready. Preserve all 128
+rows and the separate infrastructure record. No labels or floors changed.
+Round3 is now exposed development data. A fourth independent author/custodian
+pair froze another 128 cases with the same quotas and zero overlaps against
+all 512 exposed texts; root has not opened that population during repair.
+
+Round4 repair separates case lexemes from full-request frames using an internal
+marker unavailable to raw inputs, then reuses scalar/domain validation. This
+avoids multiplying the complete operation vocabulary into each frame's regex
+automaton. The earlier combined patterns hit the unchanged .NET 1000-node
+guard; the bound was not raised or disabled. Numeric declarations retain their
+explicit type, and no case word alone authorizes a request. Test-first fixes
+also cover bare-capital article ambiguity and case words inside operands.
+Review this staged boundary, run native/regression/coverage gates, freeze a new
+candidate, then score the unopened round4 population exactly once.

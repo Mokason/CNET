@@ -100,6 +100,14 @@ capitalize it.` also select one operation. Explicit numeric descriptions accept
 `codepoint`, `code point`, or `code-point`; relational words such as `at` and
 `represented by` require an explicit codepoint representation. They cannot
 select a byte from a location or an incomplete article.
+The parser separates direction words, whole-request frames and scalar decoding;
+an internal direction marker is introduced only after rejecting raw controls.
+Every executable frame must bind that marker in its operation slot, not in the
+input. This keeps lexical synonyms independent of frame syntax and avoids
+oversized combined regex automata without increasing the runtime's guard.
+Numeric input declarations preserve their explicit codepoint type. For example,
+`Input scalar: 'µ'. Case operation: upper.` and `The input code point is decimal
+65. Convert it to lowercase.` still propose only an input and a direction.
 
 Requests are at most 256 UTF-16 code units; control characters and surrogates
 refuse, including decoded control values in canonical, hexadecimal and decimal
