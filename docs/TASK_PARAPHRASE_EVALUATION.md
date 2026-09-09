@@ -22,8 +22,13 @@ overall and 85% per operation, clarification 90%, and OOD abstention 95%.
 Conservative refusals count as misses. All rows, category/family denominators,
 hashes and failed gates are retained. Certification floors are unchanged.
 
-Qualification is now exposed development data. Its repaired score is not fresh
-validation. Confirmation may be used once against a frozen candidate; adapting
+Both original collections are now exposed development data: the first
+confirmation failed ready/clarification floors, and its misses informed the
+[follow-up repair](../plans/cnet_paraphrase_acceptance_followup_20260909.md).
+Their repaired scores are not fresh validation. The follow-up suite adds a
+separately authored and reviewed 128-case confirmation, with the same quotas
+and floors and no exact request overlap with either original collection.
+Each confirmation may be used once against a frozen candidate; adapting
 to its results requires another independently authored confirmation population.
 Reproduction is allowed but is not another independent sample. The CLI does
 not enforce a durable once-only experiment counter; that is a documented
@@ -71,11 +76,25 @@ python3 tools/task_paraphrase_eval/evaluate.py qualification \
   --output "$PARAPHRASE_REPORT_DIR/development.json"
 ```
 
-The runner accepts only the two fixed frozen collection names and verifies the
-manifest and requested corpus hashes. It never reads the other collection.
-Replace `qualification` with `confirmation` only after the candidate and its
-pins are committed and the review is complete. Record that first result even
-if it fails; never relabel, omit cases, lower floors or overwrite evidence.
+The runner accepts only pinned suite/collection pairs and verifies the manifest
+and requested corpus hashes. It never reads another collection. `--suite
+original` is the backward-compatible default and supports `qualification` and
+`confirmation`; both are development-only now. `--suite followup` supports
+only `confirmation` and cannot silently select the original population.
+After candidate source/binary pins are committed and review is complete:
+
+```sh
+python3 tools/task_paraphrase_eval/evaluate.py confirmation --suite followup \
+  --assembly "$PARAPHRASE_ASSEMBLY_PATH" \
+  --assembly-sha256 "$PARAPHRASE_ASSEMBLY_SHA256" \
+  --parser-sha256 "$PARAPHRASE_PARSER_SHA256" \
+  --output "$PARAPHRASE_REPORT_DIR/followup-confirmation.json"
+```
+
+Record the first result even if it fails; never relabel, omit cases, lower
+floors or overwrite evidence. A later reproduction of that population is not
+a new confirmation. The immutable manifest records its historical unopened
+state at freeze, not its current exposure state.
 
 Exit 0 means every declared proposal gate passed; 1 means a quality gate failed
 and the full report exists; 2 means arguments, integrity, runtime or report

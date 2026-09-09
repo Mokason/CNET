@@ -104,10 +104,15 @@ clarification. Quote literal digits/punctuation; use `codepoint 181` or
 `U+00B5` for an explicit codepoint. Input above 255, including Greek small
 `μ` (different from micro sign `µ`), is out of domain. No substring extraction
 from surrounding instructions or multi-action execution is permitted. Explicit
-whole-string and locale-specific requests abstain. The grammar is not a universal
-compound-intent classifier: the retained legacy `uppercase µ and run a shell`
-case requests clarification, while recognized compound case instructions
-abstain. Neither classification contains an executable proposal.
+whole-string and locale-specific requests abstain. Candidate lists such as
+`uppercase 'a' or 'b'` clarify; recognized trailing clauses, including
+`uppercase µ and run a shell`, abstain. Missing-input article forms
+such as `Return a capitalized form` clarify rather than guessing the letter
+`a`. Quoted `'a'` and explicit `Write a as a capital letter` remain operands.
+This is a bounded grammar, not a universal compound-intent classifier: some
+second-sentence or missing-direction requests still clarify instead of
+abstaining. Both clarification and abstention remain non-executable, and such
+classification misses count against the frozen evaluation's abstention floor.
 
 The JSON envelope is `learning_task` with `proposal`, `replayed`, and
 `experience`. `proposal.Status` is `ready`, `clarify`, or `abstain`.
