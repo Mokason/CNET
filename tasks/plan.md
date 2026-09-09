@@ -1,5 +1,35 @@
 # Current CNET work plan
 
+## Active: authorized private CLI pilot
+
+Completed: pinned private installation active, helper 4/4 and separate seeded
+native rehearsal 9/9 passed; exact receipts and owner guide retained in
+`result/cnet_private_task_pilot_20260910.md` and `docs/PRIVATE_TASK_PILOT.md`.
+Only synthetic missing-evidence observations exist. Real source approval and
+human-origin review remain owner actions; no durable owner run was started.
+
+User approved a new private pilot, leaving existing services untouched.
+Deployment: `/home/marble/cnet-task-pilot-20260910-ZNTmfo`, exclusively created.
+Source: `a586a788529d8686a2aaba3c4b0d0296fe0afc6b`. No push or Discord cutover.
+
+1. Publish locked managed inventory and copy exact tested native inventory into
+   private regular files; pin manifests and bounded two-dataset policy. Verify
+   installed inspect/initialize, ancestor/mode/link constraints and source hashes.
+2. Review isolation, then start only the unique new daemon template instance.
+   No supervisor until explicit approved demand; no source import/approval or
+   automatic origin attestation. Verify synthetic ready/clarify/refusal receipts
+   and missing-evidence state; real requests default to unreviewed.
+3. Add a small private fixed-command request helper with explicit synthetic test
+   mode, RED/GREEN argument/transport checks, and exact owner handoff. Run the
+   existing seeded native learning rehearsal separately. Record pilot identity,
+   live service status, private receipts and stop instructions without raw user
+   data in git. Existing services, policies, ledgers and budgets stay unchanged.
+
+Trust boundaries: owner-only files and AF_UNIX IPC, no network/API credentials,
+no shell interpretation of requests, teacher/self-answer/allocator disabled.
+Pilot work remains policy-bounded; CLI receipts are not human-origin attestation.
+Missing skill reference checklists remain unavailable; use repository contracts.
+
 ## Active: usable task path, ordered follow-through
 
 Local verification is complete: 2471/2471 full regressions, 1550/1550 focused,

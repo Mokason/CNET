@@ -1,5 +1,12 @@
 # Current CNET checklist
 
+## Active: authorized private pilot
+
+- [x] Publish, pin and initialize a new private schema-3 installation
+- [x] Independently review isolation and start only its daemon
+- [x] Verify synthetic request helper, missing-evidence/refusal paths and seeded rehearsal
+- [x] Provide real-request, explicit evidence approval and pilot-only stop handoff
+
 ## Active: ordered usability follow-through
 
 - [x] Native grammar/learned task-to-approved-capsule offline rehearsal

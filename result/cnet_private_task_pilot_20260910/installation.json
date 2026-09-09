@@ -1,0 +1,87 @@
+{
+  "schema": 1,
+  "deployment": "/home/marble/cnet-task-pilot-20260910-ZNTmfo",
+  "source_commit": "a586a788529d8686a2aaba3c4b0d0296fe0afc6b",
+  "daemon_unit": "cnet-learning-daemon@cnet-task-pilot-20260910-ZNTmfo.service",
+  "daemon": {
+    "Restart": "no",
+    "MainPID": "3654630",
+    "NRestarts": "0",
+    "CPUQuotaPerSecUSec": "1s",
+    "MemoryMax": "1073741824",
+    "TasksMax": "128",
+    "RestrictAddressFamilies": "AF_UNIX",
+    "ActiveState": "active",
+    "SubState": "running",
+    "UnitFileState": "static"
+  },
+  "owner_started": false,
+  "source_imports": 0,
+  "source_approvals": 0,
+  "jobs": 0,
+  "synthetic_observations": 2,
+  "real_requests_observed_at_handoff": 0,
+  "training_eligible": false,
+  "helper_tests": {
+    "red_failed": 4,
+    "green_passed": 4
+  },
+  "native_rehearsal": {
+    "path": ".artifacts/pilot-install-20260910/results/pilot-rehearsal.trx",
+    "sha256": "26d51abf5787df8eafd8c3e77943ee0f106726b934c07802594c7d90c6f809d7",
+    "counters": {
+      "total": "9",
+      "executed": "9",
+      "passed": "9",
+      "failed": "0",
+      "error": "0",
+      "timeout": "0",
+      "aborted": "0",
+      "inconclusive": "0",
+      "passedButRunAborted": "0",
+      "notRunnable": "0",
+      "notExecuted": "0",
+      "disconnected": "0",
+      "warning": "0",
+      "completed": "0",
+      "inProgress": "0",
+      "pending": "0"
+    }
+  },
+  "pins": {
+    "managed.json": "5c9e769decb8456502fb79a8f7bb36b472c0d79d8a5141a4c79b96d24203d503",
+    "runtime.json": "7857598d6f7653018af16342ad4f4c9e1effb79361903ee48d87fc27f59786a6",
+    "policy.json": "031fdb4a034199a0d4598e8747d898fe1bc71fafdc74284cc3db7d324c5f06fa",
+    "managed/cnet-control.dll": "bfcc91c05cafd0a6762626e83457c697d08ed38deba2730fe956e7c962644466",
+    "ask": "5cc10506fa5cd668d944a1633f9cd5ce5f19b8ab4572044055ce7deac456e91e",
+    "test_ask.py": "54bf9dafb605a6b37dfa355188b1382f323b7c0cfb07d77d61862d034e4a0196",
+    "README.md": "096473f60e7ad86445d10e836f8279f730b22e031728744cb18e9fef555d8a8a",
+    "receipts/synthetic-verification.json": "49d02e6acbafa91e91a1442c8d7f0ccb3f97a838b735732aad2c1d5b6323c653",
+    "sources-for-review/LICENSE": "e7a93b009565cfce55919a381437ac4db883e9da2126fa28b91d12732bc53d96"
+  },
+  "unchanged_services": {
+    "cnet-learning-daemon@cnet-unicode-live-20260908-Gov37R.service": {
+      "pid": 3491189,
+      "start_monotonic": 907238519059
+    },
+    "cnet-learning-owner@cnet-unicode-live-20260908-Gov37R.service": {
+      "pid": 3491190,
+      "start_monotonic": 907238519757
+    },
+    "cnet-learning-soak-daemon@cnet-unicode-soak-20260908-Jtg1zy.service": {
+      "pid": 3240907,
+      "start_monotonic": 901001618051
+    },
+    "cnet-learning-soak-owner@cnet-unicode-soak-20260908-Jtg1zy.service": {
+      "pid": 3240909,
+      "start_monotonic": 901001644880
+    }
+  },
+  "limits": [
+    "CLI only; existing Discord unchanged",
+    "No sources imported; requests await explicit evidence approval",
+    "Durable run not started; 3600s applies only if owner explicitly starts run",
+    "No fresh language qualification or useful AMD training claim",
+    "Trusts same UID, host runtimes and kernel"
+  ]
+}
