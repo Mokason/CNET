@@ -143,6 +143,13 @@ point 65; convert it to lowercase.` preserves its declared radix. A result sent
 `to 'Q'` does not name an input: only an explicit `counterpart to` relation or
 `applied to` request binds an operand there. `quoted space ' '` names the exact
 ASCII space; an unrelated quoted character is never silently substituted.
+Relative clauses and bounded paired descriptions share these checks: `I'd like
+the uppercase character that goes with 'µ'.` and `Make the single quoted digit
+'4' uppercase.` still propose the original input. Explicit input-side asides
+such as `Use code point 0x00B5, in hexadecimal, for an uppercase conversion.`
+retain the hexadecimal type; decimal conflicts and result-format requests
+remain unsupported. Additional descriptor matching is bounded and requires a
+complete noun description, not deletion of arbitrary words.
 
 Requests are at most 256 UTF-16 code units; control characters and surrogates
 refuse, including decoded control values in canonical, hexadecimal and decimal

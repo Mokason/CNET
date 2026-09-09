@@ -228,3 +228,20 @@ separate implementation review passes all 34 independently authored boundary
 probes without further findings. The native fixture adds recipient and mixed
 radix refusals plus counterpart and decimal-declaration offline replays. The
 new runner-selection test executed RED before adding round9's immutable pins.
+
+Round9's first blind score failed: 39/80 ready (20 upper, 19 lower), 16/24
+clarify, 24/24 abstain, zero wrong ready. Full regressions passed 1,527 tests,
+99.75% parser line and 93.49% branch coverage; prior exposed sets all passed.
+Keep every row. Round10 adds relative/change clauses, compound noun descriptions
+and explicit input-side hexadecimal asides. All 49 exposed misses plus 14
+boundary cases ran RED (54 failed). Design review found no concrete issue in
+the bounded plan. Oversized modifier/relationship patterns are decomposed into
+smaller matching stages, preserving the existing 1000-node runtime limit.
+Author/custodian remain isolated and blind against 1,280 previous texts.
+
+All 670 initial focused tests passed, but implementation review found another
+recipient-role ambiguity: `Give 'Q' the corresponding lowercase result.` does
+not supply the character to convert. Five further tests ran RED (three failed).
+Restrict this frame to causative `make`; explicit change-into frames remain
+unchanged. Extend the private native refusal fixture and review only this
+correction before freezing. No blind corpus or acceptance floor changes.

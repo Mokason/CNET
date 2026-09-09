@@ -22,6 +22,7 @@ proposals may not contain a dataset/key. No floor, label or denominator changed.
 | [Round 6](task_paraphrases_round6_20260909/confirmation-1.json) | 33/80 | 15/40, 18/40 | 16/24 | 22/24 | 0 | FAIL |
 | [Round 7](task_paraphrases_round7_20260909/confirmation-1.json) | 32/80 | 14/40, 18/40 | 15/24 | 21/24 | 0 | FAIL |
 | [Round 8](task_paraphrases_round8_20260909/confirmation-1.json) | 50/80 | 23/40, 27/40 | 14/24 | 24/24 | 0 | FAIL |
+| [Round 9](task_paraphrases_round9_20260909/confirmation-1.json) | 39/80 | 20/40, 19/40 | 16/24 | 24/24 | 0 | FAIL |
 
 All rows and failed gates remain in the linked reports. Round3 also has a
 separate [infrastructure record](task_paraphrases_round3_20260909/infrastructure-attempt-1.json):
@@ -110,7 +111,14 @@ first blind score. Round8 failed ready and clarification floors; all rows
 remain. Round9 is separately authored with the original floors and zero exact
 overlaps against 1,152 exposed texts, retaining the reused-context limitation.
 
-The evaluator's 31 integrity tests pass; tracing covers 97% of 204 executable
+Round9 passed 1,527 managed/native tests, zero failures/skips, 99.75% parser
+line and 93.49% branch coverage. All 34 independent implementation probes
+passed. Source `d1d0e83` was freshly built and pinned in `3f04d74` before the
+first blind score; all nine exposed populations scored 128/128. Fresh round9
+nevertheless failed ready and clarification floors. Round10 remains separately
+authored and blind against 1,280 exposed texts under the same original floors.
+
+The evaluator's 32 integrity tests pass; tracing covers 97% of 207 executable
 lines. The unchanged capture/bridge surface passed 148 tests earlier this turn.
 Existing test-project CA1416 platform warnings remain; none were suppressed.
 Native tests use private installations and pinned external Unicode tables, not
