@@ -211,10 +211,12 @@ class RunnerIntegrity(unittest.TestCase):
 
     def read(self, path, limit=None):
         return {"freeze.json": self.frozen, "LearningTaskProposal.cs": b"source", "assembly.dll": b"assembly",
-                "cnet-task-paraphrase-probe.dll": b"probe", "qualification.json": self.corpus}[Path(path).name]
+                "cnet-task-paraphrase-probe.dll": b"probe", "qualification.json": self.corpus,
+                "confirmation.json": self.corpus}[Path(path).name]
 
     def invoke(self, *, read=None, stdout=None, returncode=0, stderr=b"", dotnet="/fixture/dotnet"):
         with patch.object(evaluator, "FREEZE_SHA256", evaluator.digest(self.frozen)), \
+             patch.object(evaluator, "FOLLOWUP_FREEZE_SHA256", evaluator.digest(self.frozen)), \
              patch.object(evaluator, "read_bounded", side_effect=read or self.read), \
              patch.object(evaluator.shutil, "which", return_value=dotnet), \
              patch.object(evaluator.subprocess, "run", return_value=SimpleNamespace(
@@ -244,6 +246,22 @@ class RunnerIntegrity(unittest.TestCase):
             with self.subTest(suite=suite), self.assertRaises(ValueError, msg="PARAPHRASE_SUITE_RED silently selected original data"):
                 self.invoke()  # Follow-up has confirmation only, no qualification.
 
+    def test_followup_reads_only_its_separately_pinned_confirmation(self):
+        self.args.suite = "followup"
+        self.args.collection = "confirmation"
+        self.corpus = json.dumps({**fixture(), "name": "confirmation"}).encode()
+        self.frozen = json.dumps({"confirmation_sha256": evaluator.digest(self.corpus)}).encode()
+        visited = []
+        def read(path, limit=None):
+            visited.append(Path(path))
+            return self.read(path, limit)
+        result = self.invoke(read=read)
+        self.assertEqual(result["suite"], "followup")
+        self.assertEqual(result["collection"], "confirmation")
+        corpus_files = [p for p in visited if p.name in {"freeze.json", "confirmation.json", "qualification.json"}]
+        self.assertTrue(all(p.parent.name == "task_paraphrases_followup_20260909" for p in corpus_files))
+        self.assertNotIn("qualification.json", [p.name for p in corpus_files])
+
     def test_changed_artifacts_cannot_issue_a_successful_score(self):
         for name in ("freeze.json", "LearningTaskProposal.cs", "assembly.dll", "qualification.json"):
             with self.subTest(name=name), self.assertRaises(ValueError):
@@ -265,8 +283,8 @@ class RunnerIntegrity(unittest.TestCase):
         with self.assertRaises(ValueError): self.invoke()
 
     def test_main_reports_quality_failure_and_reserves_output(self):
+        self.response["proposals"][0]["Key"] = 255  # Genuine score failure in the developer fixture.
         report = self.invoke()
-        report["passed"] = False
         with tempfile.TemporaryDirectory(prefix="cnet-paraphrase-wiring-") as temporary:
             output = Path(temporary) / "report.json"
             args = ["qualification", "--assembly", self.args.assembly, "--assembly-sha256", self.args.assembly_sha256,
