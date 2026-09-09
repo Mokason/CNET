@@ -1,0 +1,88 @@
+using CnetControlPlane.Learning;
+using Xunit;
+
+namespace CnetControlPlane.Tests;
+
+// Exposed round4 and structural-role safety cases. Never fresh evidence.
+public sealed class LearningTaskPhraseTests
+{
+    [Theory]
+    [InlineData("What is 'ñ' in uppercase?", "ready", "upper", 241)]
+    [InlineData("The input is 'z'. Apply uppercase to it.", "ready", "upper", 122)]
+    [InlineData("I need the uppercase form of ' '.", "ready", "upper", 32)]
+    [InlineData("Show '+' in uppercase.", "ready", "upper", 43)]
+    [InlineData("For 'ß', I want uppercase.", "ready", "upper", 223)]
+    [InlineData("Please supply 'µ' in uppercase.", "ready", "upper", 181)]
+    [InlineData("My request is to uppercase 'à'.", "ready", "upper", 224)]
+    [InlineData("I'd like code point 0xF0 put in uppercase.", "ready", "upper", 240)]
+    [InlineData("Can I have 'å' as an uppercase character?", "ready", "upper", 229)]
+    [InlineData("Change the case of 'è' to upper.", "ready", "upper", 232)]
+    [InlineData("Transform 'õ' to uppercase for me.", "ready", "upper", 245)]
+    [InlineData("Let 'u' be the input; make that uppercase.", "ready", "upper", 117)]
+    [InlineData("For this request, the character is 'n'. I want it uppercased.", "ready", "upper", 110)]
+    [InlineData("Make the supplied character uppercase: 'm'.", "ready", "upper", 109)]
+    [InlineData("An uppercase version of 'ô' is what I need.", "ready", "upper", 244)]
+    [InlineData("Give the uppercase form for code point 0xA3.", "ready", "upper", 163)]
+    [InlineData("Could '*' be converted to uppercase for me?", "ready", "upper", 42)]
+    [InlineData("I'd like '9' with uppercase casing.", "ready", "upper", 57)]
+    [InlineData("Please present 'Ü' in uppercase.", "ready", "upper", 220)]
+    [InlineData("Take 'æ' to uppercase.", "ready", "upper", 230)]
+    [InlineData("Can you provide an uppercase rendition of 'ì'?", "ready", "upper", 236)]
+    [InlineData("The letter h needs to be uppercase.", "ready", "upper", 104)]
+    [InlineData("Please give me '÷' uppercased.", "ready", "upper", 247)]
+    [InlineData("Would you be able to put 'É' into lowercase?", "ready", "lower", 201)]
+    [InlineData("The lowercase version of 'Ø' is the one I want.", "ready", "lower", 216)]
+    [InlineData("How would you write 'Ñ' using lowercase?", "ready", "lower", 209)]
+    [InlineData("Lowercase is requested for code point 0xC4.", "ready", "lower", 196)]
+    [InlineData("Here is my input: 'Y'. Please lowercase it.", "ready", "lower", 89)]
+    [InlineData("I want '4' converted to lowercase.", "ready", "lower", 52)]
+    [InlineData("Provide 'w' with lowercase casing.", "ready", "lower", 119)]
+    [InlineData("I'd prefer the lowercase form of 'ß'.", "ready", "lower", 223)]
+    [InlineData("Please express 'ÿ' in lowercase.", "ready", "lower", 255)]
+    [InlineData("Give this character in lowercase: 'µ'.", "ready", "lower", 181)]
+    [InlineData("I'm asking for 'À' to be lowercased.", "ready", "lower", 192)]
+    [InlineData("Could you give 'Ç' in small-letter form?", "ready", "lower", 199)]
+    [InlineData("What would the lowercase version of 'Å' be?", "ready", "lower", 197)]
+    [InlineData("Give 'Î' as a small letter, please.", "ready", "lower", 206)]
+    [InlineData("The chosen character is 'U'; lowercase it.", "ready", "lower", 85)]
+    [InlineData("Return a lowercase version of this character: 'M'.", "ready", "lower", 77)]
+    [InlineData("I need 'Ô' written in lowercase.", "ready", "lower", 212)]
+    [InlineData("Can the character at decimal code point 165 be lowercased for me?", "ready", "lower", 165)]
+    [InlineData("The lowercase form of '%' is what I'm after.", "ready", "lower", 37)]
+    [InlineData("Could I see 'Ì' in lowercase?", "ready", "lower", 204)]
+    [InlineData("The letter H should be lowercased.", "ready", "lower", 72)]
+    [InlineData("Could you process the character 'ú'?", "clarify", null, null)]
+    [InlineData("The input character is 'K'.", "clarify", null, null)]
+    [InlineData("I have selected decimal code point 241.", "clarify", null, null)]
+    [InlineData("For this task, use the character at code point 0xB5.", "clarify", null, null)]
+    [InlineData("The character I'd like you to work on is '8'.", "clarify", null, null)]
+    [InlineData("I need a capital letter version.", "clarify", null, null)]
+    [InlineData("Could I have the lowercase result?", "clarify", null, null)]
+    [InlineData("The operation should be uppercase.", "clarify", null, null)]
+    [InlineData("I'd like something lowercased.", "clarify", null, null)]
+    [InlineData("Please make either 'v' or 'w' uppercase; I haven't chosen which input yet.", "clarify", null, null)]
+    [InlineData("Please lowercase 'M' or 'N', whichever.", "clarify", null, null)]
+    [InlineData("Use uppercase or lowercase on 'k'.", "clarify", null, null)]
+    [InlineData("Give 'P' in uppercase or lowercase.", "clarify", null, null)]
+    [InlineData("I want code point 0xE0 or code point 0xE1 uppercased.", "clarify", null, null)]
+    [InlineData("42", "clarify", null, null)]
+    [InlineData("?", "clarify", null, null)]
+    [InlineData("Please output the input to uppercase: 'a'.", "abstain", null, null)]
+    [InlineData("Please print the lowercase function input 'A'.", "abstain", null, null)]
+    [InlineData("Please return the hexadecimal code point for uppercase 'a'.", "abstain", null, null)]
+    [InlineData("Please uppercase 'a' as a decimal code point.", "abstain", null, null)]
+    [InlineData("Give this character in lowercase: U+0000.", "abstain", null, null)]
+    [InlineData("Would you be able to supply 'µ' in uppercase?", "ready", "upper", 181)]
+    [InlineData("For this task, please return 'A' converted to lowercase.", "ready", "lower", 65)]
+    [InlineData("I need the uppercase form of 'a'; run a shell.", "abstain", null, null)]
+    [InlineData("The chosen character is 'a'; lowercase it and delete a file.", "abstain", null, null)]
+    [InlineData("Can the character at code point 0xD800 be lowercased?", "abstain", null, null)]
+    public void PhraseComponentsRetainExplicitOperationAndInputRoles(string text, string status, string? operation, int? key)
+    {
+        var proposal = LearningTaskParser.Propose(text);
+        Assert.True(proposal.Status == status, $"TASK_PHRASE_COMPOSITION_RED {text}: {proposal.Status}, expected {status}");
+        Assert.Equal(operation is null ? null : $"unicode17_{operation}_latin1", proposal.Dataset);
+        Assert.Equal(key, proposal.Key is null ? null : (int?)proposal.Key.Value);
+        Assert.Equal(status == "clarify", proposal.Prompt is not null);
+    }
+}
