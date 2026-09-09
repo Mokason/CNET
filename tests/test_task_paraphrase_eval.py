@@ -162,6 +162,14 @@ class ActualManagedProbe(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(result.stdout, b"")
 
+    def test_lone_surrogates_reach_the_actual_parser_as_abstentions(self):
+        requests = ['uppercase "\ud800"', 'lowercase "\udfff"', 'uppercase 😀']
+        result = self.invoke(json.dumps(requests).encode())
+        self.assertEqual(result.returncode, 0, "PARAPHRASE_SURROGATE_RED probe rejected parser-domain input")
+        proposals = json.loads(result.stdout)["proposals"]
+        self.assertEqual([p["Status"] for p in proposals], ["abstain"] * 3)
+        self.assertTrue(all(p["Dataset"] is None and p["Key"] is None for p in proposals))
+
     def test_probe_input_bounds_and_types_refuse(self):
         for raw in (b'{}', b'[]', b'[null]', b'[1]', b'not json', b' ' * 131073,
                     json.dumps(["uppercase A"] * 129).encode()):
