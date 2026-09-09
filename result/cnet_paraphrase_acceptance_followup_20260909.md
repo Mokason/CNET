@@ -18,6 +18,7 @@ proposals may not contain a dataset/key. No floor, label or denominator changed.
 | [Follow-up](task_paraphrases_followup_20260909/confirmation-1.json) | 54/80 | 27/40, 27/40 | 23/24 | 22/24 | 0 | FAIL |
 | [Round 3](task_paraphrases_round3_20260909/confirmation-1.json) | 39/80 | 20/40, 19/40 | 12/24 | 21/24 | 0 | FAIL |
 | [Round 4](task_paraphrases_round4_20260909/confirmation-1.json) | 36/80 | 17/40, 19/40 | 8/24 | 24/24 | 0 | FAIL |
+| [Round 5](task_paraphrases_round5_20260909/confirmation-1.json) | 13/80 | 8/40, 5/40 | 10/24 | 21/24 | 0 | FAIL |
 
 All rows and failed gates remain in the linked reports. Round3 also has a
 separate [infrastructure record](task_paraphrases_round3_20260909/infrastructure-attempt-1.json):
@@ -55,8 +56,13 @@ verb/adjective and transformation evidence now distinguishes these roles. The
 correction review found the same guard missing from a declaration frame; three
 more tests reproduced two failures, then a one-line role capture applied the
 shared guard there. All 321 focused parser cases pass after these corrections.
-Final full-suite/coverage evidence is pending. An intermediate full run overlapped
-a test rebuild and is not used as frozen-candidate evidence.
+Final round5 full-suite evidence: 1,243 tests passed, zero failures/skips, with
+parser coverage 99.49% lines and 94.44% branches. An intermediate full run overlapped
+a test rebuild and is not used as frozen-candidate evidence. The actual candidate
+was freshly built from `2d06468`, with source/binary pins committed in `e6ecc4c`
+before the first scored round5 invocation. The final bounded review verified
+eight independent predicate/conversion probes. Its passing regressions did not
+prevent failure of the new confirmation; all rows are retained unchanged.
 
 The evaluator's 28 integrity tests pass; tracing covers 97% of 195 executable
 lines. The unchanged capture/bridge surface passed 148 tests earlier this turn.
@@ -83,7 +89,9 @@ custodian contexts were reused, with knowledge of their own prior authored sets
 but no CNET code, tests, graph, results or execution access. They independently
 checked all 128 statuses and 80 original-byte operation labels, with zero exact
 overlaps against 640 prior texts. This limitation is recorded in the immutable
-manifest. Root remains blind until candidate source/binary freeze.
+manifest. Root remained blind until candidate source/binary freeze. Round5 is
+now exposed development data too. Round6 remains separately authored and blind;
+its custodian checks zero exact overlaps against all 768 exposed texts.
 
 No claim of learned semantics, broader real-user coverage, allocator gain or
 AMD task-selection improvement follows from these grammar tests. Genuine origin

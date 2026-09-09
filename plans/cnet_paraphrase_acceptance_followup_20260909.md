@@ -150,3 +150,15 @@ review after its third cycle; no broad fourth-cycle review. The earlier
 intermediate full-suite run overlapped a test-project rebuild and is not the
 final frozen-candidate regression evidence. Run a clean no-build suite after
 all source/test builds have completed and keep the assembly stable throughout.
+
+Round5's frozen candidate passed 1,243 managed/native tests (99.49% parser line,
+94.44% branch coverage), with all five exposed collections at 128/128. First
+blind score nevertheless failed: 13/80 ready (8 upper, 5 lower), 10/24 clarify,
+21/24 abstain, zero wrong ready. Its 128 rows are retained and now exposed.
+The 84 misses show new combinations of input descriptions, explicit two-field
+declarations and request structures; repairing sentence templates alone has not
+delivered fresh coverage. Round6 composes input/operation fields in either order
+and keeps scalar descriptions and unsupported output/action modifiers distinct.
+Add every exposed miss as RED development regression. Freeze an independently
+reviewed new set with the same original floors and zero overlaps against 768
+prior texts, retaining the reused-context limitation. No live changes.
