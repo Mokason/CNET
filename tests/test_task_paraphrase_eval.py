@@ -241,7 +241,7 @@ class RunnerIntegrity(unittest.TestCase):
         self.assertEqual(result["suite"], "original")
 
     def test_unknown_suites_and_unavailable_collections_refuse(self):
-        for suite in ("../escape", "followup", "round3", "round4", "round5", "round6", "round7"):
+        for suite in ("../escape", "followup", "round3", "round4", "round5", "round6", "round7", "round8"):
             self.args.suite = suite
             with self.subTest(suite=suite), self.assertRaises(ValueError, msg="PARAPHRASE_SUITE_RED silently selected original data"):
                 self.invoke()  # Follow-up has confirmation only, no qualification.
@@ -340,6 +340,22 @@ class RunnerIntegrity(unittest.TestCase):
         self.assertEqual(result["suite"], "round7", "PARAPHRASE_ROUND7_RED wrong population")
         corpus_files = [p for p in visited if p.name in {"freeze.json", "confirmation.json", "qualification.json"}]
         self.assertTrue(all(p.parent.name == "task_paraphrases_round7_20260909" for p in corpus_files))
+        self.assertNotIn("qualification.json", [p.name for p in corpus_files])
+
+    def test_round8_keeps_its_own_flat_manifest_and_collection(self):
+        self.args.suite = "round8"
+        self.args.collection = "confirmation"
+        self.corpus = json.dumps({**fixture(), "name": "confirmation"}).encode()
+        self.frozen = json.dumps({"confirmation_sha256": evaluator.digest(self.corpus)}).encode()
+        visited = []
+        def read(path, limit=None):
+            visited.append(Path(path))
+            return self.read(path, limit)
+        with patch.object(evaluator, "ROUND8_FREEZE_SHA256", evaluator.digest(self.frozen), create=True):
+            result = self.invoke(read=read)
+        self.assertEqual(result["suite"], "round8", "PARAPHRASE_ROUND8_RED wrong population")
+        corpus_files = [p for p in visited if p.name in {"freeze.json", "confirmation.json", "qualification.json"}]
+        self.assertTrue(all(p.parent.name == "task_paraphrases_round8_20260909" for p in corpus_files))
         self.assertNotIn("qualification.json", [p.name for p in corpus_files])
 
     def test_invalid_manifest_identity_refuses_before_corpus_read(self):
