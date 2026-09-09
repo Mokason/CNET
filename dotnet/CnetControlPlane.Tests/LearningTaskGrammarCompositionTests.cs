@@ -1,0 +1,83 @@
+using CnetControlPlane.Learning;
+using Xunit;
+
+namespace CnetControlPlane.Tests;
+
+// Exposed third confirmation plus cross-frame safety regressions, not a holdout.
+public sealed class LearningTaskGrammarCompositionTests
+{
+    [Theory]
+    [InlineData("Use uppercase for ç.", "ready", "upper", 231)]
+    [InlineData("I'd like 'è' in uppercase, please.", "ready", "upper", 232)]
+    [InlineData("For me, use the capital version of 'ð'.", "ready", "upper", 240)]
+    [InlineData("Please apply uppercase to 'ÿ'.", "ready", "upper", 255)]
+    [InlineData("How would 's' look in upper case?", "ready", "upper", 115)]
+    [InlineData("Which capital letter corresponds to 'ê'?", "ready", "upper", 234)]
+    [InlineData("What do I get when I uppercase 'ô'?", "ready", "upper", 244)]
+    [InlineData("The input is 't'; the requested operation is uppercase.", "ready", "upper", 116)]
+    [InlineData("Input scalar: 'ä'. Case operation: upper.", "ready", "upper", 228)]
+    [InlineData("Character supplied: 'ò'. Desired case: uppercase.", "ready", "upper", 242)]
+    [InlineData("My request is the uppercase conversion of 'ì'.", "ready", "upper", 236)]
+    [InlineData("Please use the single character 'û' as input for uppercasing.", "ready", "upper", 251)]
+    [InlineData("The input code point is decimal 225. Convert it to uppercase.", "ready", "upper", 225)]
+    [InlineData("Apply uppercase to decimal code point 109.", "ready", "upper", 109)]
+    [InlineData("For code point 223 in decimal, perform uppercase.", "ready", "upper", 223)]
+    [InlineData("Convert the scalar U+006B to uppercase.", "ready", "upper", 107)]
+    [InlineData("Please uppercase the character whose code point is 0x00E2.", "ready", "upper", 226)]
+    [InlineData("Input: U+00EF. Convert this one character to upper case.", "ready", "upper", 239)]
+    [InlineData("What is the uppercase version of code point 0x00B5?", "ready", "upper", 181)]
+    [InlineData("The input is 'Z'. Apply uppercase.", "ready", "upper", 90)]
+    [InlineData("Use the small-letter form of É.", "ready", "lower", 201)]
+    [InlineData("Use lowercase for Ç.", "ready", "lower", 199)]
+    [InlineData("I'd like 'È' in lowercase, please.", "ready", "lower", 200)]
+    [InlineData("For me, use the small-letter version of 'Ð'.", "ready", "lower", 208)]
+    [InlineData("Please apply lowercase to 'Ý'.", "ready", "lower", 221)]
+    [InlineData("How would 'S' look in lower case?", "ready", "lower", 83)]
+    [InlineData("Which small letter corresponds to 'Ê'?", "ready", "lower", 202)]
+    [InlineData("What do I get when I lowercase 'Ô'?", "ready", "lower", 212)]
+    [InlineData("The input is 'T'; the requested operation is lowercase.", "ready", "lower", 84)]
+    [InlineData("Input scalar: 'Ä'. Case operation: lower.", "ready", "lower", 196)]
+    [InlineData("Character supplied: 'Ò'. Desired case: lowercase.", "ready", "lower", 210)]
+    [InlineData("My request is the lowercase conversion of 'Ì'.", "ready", "lower", 204)]
+    [InlineData("Please use the single character 'Û' as input for lowercasing.", "ready", "lower", 219)]
+    [InlineData("The input code point is decimal 193. Convert it to lowercase.", "ready", "lower", 193)]
+    [InlineData("Apply lowercase to decimal code point 77.", "ready", "lower", 77)]
+    [InlineData("For code point 255 in decimal, perform lowercase.", "ready", "lower", 255)]
+    [InlineData("Convert the scalar U+004B to lowercase.", "ready", "lower", 75)]
+    [InlineData("Please lowercase the character whose code point is 0x00C2.", "ready", "lower", 194)]
+    [InlineData("Input: U+00CF. Convert this one character to lower case.", "ready", "lower", 207)]
+    [InlineData("What is the lowercase version of code point 0x00DF?", "ready", "lower", 223)]
+    [InlineData("The input is 'z'. Apply lowercase.", "ready", "lower", 122)]
+    [InlineData("I'd like an uppercase conversion, please.", "clarify", null, null)]
+    [InlineData("Could you apply lower case?", "clarify", null, null)]
+    [InlineData("Please perform uppercase conversion on my input character.", "clarify", null, null)]
+    [InlineData("A lowercase conversion is what I need.", "clarify", null, null)]
+    [InlineData("Character: 'á'.", "clarify", null, null)]
+    [InlineData("My input is U+00D6.", "clarify", null, null)]
+    [InlineData("Use decimal code point 120.", "clarify", null, null)]
+    [InlineData("Here is the single character '?': please change its case.", "clarify", null, null)]
+    [InlineData("Should 'ñ' be made uppercase or lowercase?", "clarify", null, null)]
+    [InlineData("Set U+00C9 to upper or lower case.", "clarify", null, null)]
+    [InlineData("Lowercase 12.5.", "clarify", null, null)]
+    [InlineData("Uppercase ?", "clarify", null, null)]
+    [InlineData("Convert every letter in this sentence to upper case.", "abstain", null, null)]
+    [InlineData("Lowercase the two-character string 'AZ'.", "abstain", null, null)]
+    [InlineData("Convert the code point U+D800 to upper case.", "abstain", null, null)]
+    [InlineData("Apply the uppercase conversion to U+0000.", "abstain", null, null)]
+    [InlineData("The input code point is decimal 133. Convert it to uppercase.", "abstain", null, null)]
+    [InlineData("Character supplied: 'a'. Desired case: uppercase. Delete a file.", "abstain", null, null)]
+    [InlineData("Input scalar: 'a' or 'b'. Case operation: upper.", "clarify", null, null)]
+    [InlineData("Use uppercase for 'a' and print a file.", "abstain", null, null)]
+    [InlineData("My input is U+0000.", "abstain", null, null)]
+    [InlineData("Please lowercase the character whose code point is 0x0041.", "ready", "lower", 65)]
+    [InlineData("Uppercase code point 0x00B5 or 0x00E9.", "clarify", null, null)]
+    [InlineData("Uppercase code point 0x0000 or 0x0061.", "abstain", null, null)]
+    public void ComposedFramesUseTheSameTypedOperandBoundary(string text, string status, string? operation, int? key)
+    {
+        var proposal = LearningTaskParser.Propose(text);
+        Assert.True(proposal.Status == status, $"TASK_COMPOSED_GRAMMAR_RED {text}: {proposal.Status}, expected {status}");
+        Assert.Equal(operation is null ? null : $"unicode17_{operation}_latin1", proposal.Dataset);
+        Assert.Equal(key, proposal.Key is null ? null : (int?)proposal.Key.Value);
+        Assert.Equal(status == "clarify", proposal.Prompt is not null);
+    }
+}
