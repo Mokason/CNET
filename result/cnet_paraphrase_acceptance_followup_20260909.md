@@ -20,6 +20,7 @@ proposals may not contain a dataset/key. No floor, label or denominator changed.
 | [Round 4](task_paraphrases_round4_20260909/confirmation-1.json) | 36/80 | 17/40, 19/40 | 8/24 | 24/24 | 0 | FAIL |
 | [Round 5](task_paraphrases_round5_20260909/confirmation-1.json) | 13/80 | 8/40, 5/40 | 10/24 | 21/24 | 0 | FAIL |
 | [Round 6](task_paraphrases_round6_20260909/confirmation-1.json) | 33/80 | 15/40, 18/40 | 16/24 | 22/24 | 0 | FAIL |
+| [Round 7](task_paraphrases_round7_20260909/confirmation-1.json) | 32/80 | 14/40, 18/40 | 15/24 | 21/24 | 0 | FAIL |
 
 All rows and failed gates remain in the linked reports. Round3 also has a
 separate [infrastructure record](task_paraphrases_round3_20260909/infrastructure-attempt-1.json):
@@ -82,7 +83,20 @@ its identities committed in `d34e7f7` before the first blind score. That score
 failed; all 128 rows remain. Round6 is now exposed development evidence, and
 round7 remains blind with zero-overlap checks against 896 prior texts.
 
-The evaluator's 29 integrity tests pass; tracing covers 97% of 198 executable
+Round7 adds request vocabulary, relative input/operation declarations and explicit
+numeric descriptions. Its 63 initial tests ran RED (57 failed); separate review
+found decimal-qualifier loss and input/result radix confusion despite passing
+focused regressions. Six more tests reproduced four failures. The correction
+preserves the declared qualifier and confines hexadecimal suffix interpretation
+to explicit numeric input declarations. All 480 focused tests and 18 independent
+correction-review probes pass; the private native fixture includes both refusals
+and a valid hexadecimal-declaration replay. Final round7 evidence: 1,402 tests
+passed, zero failures/skips, 99.69% parser line and 94.26% branch coverage. Source
+`c76351d` was freshly built and pinned in `9b0558d` before first blind scoring.
+That confirmation failed; retain all rows. Round8 is separately authored and
+blind, with zero-overlap checks against 1,024 exposed texts and the same floors.
+
+The evaluator's 30 integrity tests pass; tracing covers 97% of 201 executable
 lines. The unchanged capture/bridge surface passed 148 tests earlier this turn.
 Existing test-project CA1416 platform warnings remain; none were suppressed.
 Native tests use private installations and pinned external Unicode tables, not

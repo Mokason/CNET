@@ -190,3 +190,14 @@ now preserves the actual numeric qualifier and accepts the hexadecimal suffix
 only in explicit non-decimal numeric declarations; generic operands refuse it.
 All 480 focused tests pass after correction. Add native refusal/positive checks,
 review the bounded correction, then freeze a fresh build before the blind score.
+
+Round7 first blind score failed: 32/80 ready (14 upper, 18 lower), 15/24 clarify,
+21/24 abstain, zero wrong ready. Final regressions passed 1,402 tests; parser
+coverage was 99.69% lines and 94.26% branches. Preserve every confirmation row.
+Round8 consolidates relationship phrases, nested operand descriptions and
+declaration labels; independently author/review against 1,024 exposed texts.
+All 60 exposed misses become development regressions. An extra root-authored
+triple-double-quote test initially had a mistaken abstain label: three matching
+quotes represent the quoted quote scalar under the existing contract. Correct
+that development test to ready/lower/34 before implementation and retain both
+RED logs. No frozen corpus label or acceptance floor is changed.
