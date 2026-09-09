@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "suite": "round9",
+  "source_commit": "d1d0e83fcff306476142ff7080b096d137439986",
+  "parser_source_sha256": "c1560d26ffb97c6807dadc5075d3ef7a548b8d88d18fb760f47f485d2448fbf8",
+  "runner_source_sha256": "1d51975b7b68b2e6ce0f2c4484dbe129a2c26e629e43bc81abb9f9c762255720",
+  "probe_source_sha256": "2612534d59fee24d4455bc0bdd0761c3a25366f054b2584177e9d79c1ce43cdc",
+  "probe_project_sha256": "5129bfd10e1c88bbc786a509b9fac10f1cff54f71d3afc44e812f76f4ed83142",
+  "assembly_sha256": "ca6f73d789e1e999762f3994a34a86cfb9e1020137bc20d68c14fc34fa9859b8",
+  "probe_sha256": "6c62f87db7c8562752794b5f3ef213ce73be24ef514008ce2f7399d45c898825",
+  "freeze_sha256": "7e7842704946d15f1713fe4e128a2c69178dfc0f5c488b998ddd79c65de0c921",
+  "corpus_sha256": "d6632a6224495725ae528033da4226b14b47be950d7f36f4fc54d6de99b92a8d",
+  "build": "dotnet build tools/task_paraphrase_eval/TaskParaphraseProbe.csproj --artifacts-path .artifacts/task-verified --nologo",
+  "sdk_version": "10.0.203",
+  "target_framework": "net8.0",
+  "confirmation_opened_by_implementer_at_freeze": false,
+  "confirmation_executed_before_freeze": false,
+  "boundary_review": "Separate same-Astra design review identified recipient ambiguity in bare-to output relations. Two failures were reproduced RED and corrected; all 34 independent implementation probes passed. Reviewer had no holdout access.",
+  "regressions": {
+    "focused_parser": 605,
+    "task_filter_including_two_existing_task_tests": 607,
+    "full_managed_native": 1527,
+    "evaluator": 32,
+    "capture_bridge_earlier_this_turn": 148
+  },
+  "development_populations": "All nine exposed collections scored 128/128 on the freshly built committed candidate; all prior reports retained as development-only evidence.",
+  "authoring_limit": "Reused isolated author and custodian contexts; own prior authored sets known, no implementation/results access. Not fresh-context authorship or IID/external validation.",
+  "evaluation_origin": "synthetic",
+  "training_eligible": false,
+  "live_rollout_authorized": false
+}
