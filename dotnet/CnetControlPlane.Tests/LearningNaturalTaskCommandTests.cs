@@ -38,7 +38,8 @@ public sealed class LearningNaturalTaskCommandTests : IClassFixture<LearningComm
         deployment.Put("policy.json", Encoding.UTF8.GetBytes(policyText));
         using var initialized = Receipt(await deployment.Command("initialize"));
         // Clarification and OOD refusal do not require a native daemon or create observations.
-        foreach (var ambiguous in new[] { "uppercase 65", "uppercase '?", "uppercase \"?", "uppercase ..", "uppercase ??" })
+        foreach (var ambiguous in new[] { "uppercase 65", "uppercase '?", "uppercase \"?", "uppercase ..", "uppercase ??",
+            "Return a lowercase letter.", "Return a capital-letter version.", "Uppercase ',' or '.'." })
         {
             using var clarification = Receipt(await deployment.Command("task", "synthetic", Id('a'), ambiguous));
             Assert.Equal("clarify", clarification.RootElement.GetProperty("proposal").GetProperty("Status").GetString());
@@ -47,7 +48,8 @@ public sealed class LearningNaturalTaskCommandTests : IClassFixture<LearningComm
         using var unrelated = Receipt(await deployment.Command("task", "synthetic", Id('b'), "What is tomorrow's weather?"));
         Assert.Equal("abstain", unrelated.RootElement.GetProperty("proposal").GetProperty("Status").GetString());
         foreach (var refused in new[] { "Uppercase U+0000.", "Lowercase codepoint 10.", "Make U+0085 uppercase.",
-            "Lowercase A, then explain the alphabet.", "Could you not capitalize a?" })
+            "Lowercase A, then explain the alphabet.", "Could you not capitalize a?",
+            "Return the capital form of 'a' and sort a list.", "Return the lowercase of 'A' in the Turkish locale." })
         {
             using var denied = Receipt(await deployment.Command("task", "synthetic", Id('2'), refused));
             Assert.Equal("abstain", denied.RootElement.GetProperty("proposal").GetProperty("Status").GetString());
@@ -95,7 +97,11 @@ public sealed class LearningNaturalTaskCommandTests : IClassFixture<LearningComm
             (Id('3'), "Could you give me the capital form of 'µ', please?", 924),
             (Id('4'), "For the character A, give its lowercase form.", 97),
             (Id('5'), "Turn U+00B5 into its capital equivalent.", 924),
-            (Id('6'), "I need decimal codepoint 65 in lower case.", 97) })
+            (Id('6'), "I need decimal codepoint 65 in lower case.", 97),
+            (Id('7'), "May I have the capital-letter form of 'µ'?", 924),
+            (Id('8'), "Return the lowercase equivalent of 'A' for me.", 97),
+            (Id('9'), "Set the case of U+00B5 to uppercase.", 924),
+            (Id('0'), "Write codepoint 65 using lower case.", 97) })
         {
             using var expanded = Receipt(await deployment.Command("task", "synthetic", request, text));
             Assert.Equal("ready", expanded.RootElement.GetProperty("proposal").GetProperty("Status").GetString());

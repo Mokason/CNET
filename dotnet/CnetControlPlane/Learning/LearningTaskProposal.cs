@@ -13,15 +13,20 @@ internal static class LearningTaskParser
     private const RegexOptions Options = RegexOptions.CultureInvariant | RegexOptions.IgnoreCase | RegexOptions.NonBacktracking;
     private const string Case = @"(?<op>upper[ -]?case|lower[ -]?case|capital(?:[ -]letter)?s?|capitali[sz]ed|small[ -]letter)(?: form| version| equivalent| letter)?";
     private const string Input = @"(?<input>.+?)";
+    private const string Alternative = @"(?:(?:the )?(?:single )?(?:character|letter) )?(?:'.'|"".""|U\+[0-9a-f]{1,6}|(?:decimal )?codepoint [0-9]{1,6}|[^\s])";
     private static readonly Regex Canonical = new(@"\Aunicode (?<op>upper|lower) (?<input>[0-9]{1,3})\z", Options);
     private static readonly Regex PolitePrefix = new(@"\A(?:(?:can|could|would|will) you (?:please )?|please )", Options);
     private static readonly Regex PoliteSuffix = new(@"(?: for me(?:,? please)?|,? please)\z", Options);
     private static readonly Regex InputDescription = new(@"\A(?:the )?(?:single )?(?:character|letter) ", Options);
-    private static readonly Regex MissingDirection = new(@"\A(?:(?:change|adjust|set) (?:the )?(?:letter )?case(?: of .+)?|case-convert .+|(?:convert|change) .+ to (?:the )?(?:requested )?case|apply (?:a )?case (?:conversion|operation)(?: to .+)?)\z", Options);
-    // These words cannot be a single literal operand. Do not reject "a and b":
-    // alternatives need clarification, while an additional action must abstain.
-    private static readonly Regex CompoundOrNegated = new(@"\b(?:not|then|also)\b|\band (?:upper[ -]?case|lower[ -]?case|capitali[sz]e|run|execute|add|subtract|multiply|divide|explain|write|send|delete|open|print|translate|convert|change|make|summari[sz]e|reverse|tell|do)\b", Options);
-    private static readonly Regex UnsupportedOperand = new(@"(?:\busing\b|\baccording to\b|;|\A(?:the )?(?:(?:whole|entire) )?(?:string|word)\b)", Options);
+    private static readonly Regex MissingDirection = new(@"\A(?:(?:change|adjust|set) (?:the )?(?:letter )?case(?: of " + Input + @")?|case-convert " + Input
+        + @"|(?:convert|change) " + Input + @" to (?:the )?(?:requested )?case|apply (?:a )?case (?:conversion|operation)(?: to " + Input + @")?)\z", Options);
+    private static readonly Regex MissingOperand = new(@"\A(?:return|write|render|make|give(?: me)?|show(?: me)?|display) an? (?:upper[ -]?case|lower[ -]?case|capital|small)[ -](?:letter|character|form|version|equivalent)(?: form| version| equivalent)?\z", Options);
+    private static readonly Regex CompoundOrNegated = new(@"\b(?:not|then|also)\b", Options);
+    private static readonly Regex AlternativeToken = new(Alternative, Options);
+    private static readonly Regex AlternativeSeparator = new(@", (?:and |or )?| (?:and|or) ", Options);
+    private static readonly Regex HasConjunction = new(@"\b(?:and|or)\b", Options);
+    private static readonly Regex QuotedString = new(@"\A(?:'[^']*'|""[^""]*"")\z", Options);
+    private static readonly Regex UnsupportedOperand = new(@"(?:\b(?:using|locale|rules)\b|\baccording to\b|;|\A(?:the )?(?:(?:whole|entire) )?(?:string|word)\b)", Options);
     private static readonly Regex[] Forms = [
         new(@"\A" + Case + @"(?: " + Input + @")?\z", Options),
         new(@"\A(?<op>capitali[sz]e)(?: " + Input + @")?\z", Options),
@@ -55,13 +60,20 @@ internal static class LearningTaskParser
         text = PolitePrefix.Replace(text, "", 1);
         text = PoliteSuffix.Replace(text, "", 1);
         if (CompoundOrNegated.IsMatch(text)) return Abstain("unsupported_intent");
+        // An indefinite article is not a specified input. Quoted 'a' and explicit
+        // "a as ..." remain literal operands; do not silently guess between them.
+        if (MissingOperand.IsMatch(text)) return Clarify();
         foreach (var form in Forms)
         {
             var match = form.Match(text);
             if (!match.Success) continue;
             return ProposeOperand(match.Groups["op"].Value, match.Groups["input"].Value.Trim());
         }
-        return MissingDirection.IsMatch(text) ? Clarify() : Abstain("unsupported_intent");
+        var missing = MissingDirection.Match(text);
+        if (!missing.Success) return Abstain("unsupported_intent");
+        var operand = missing.Groups["input"].Value;
+        return HasConjunction.IsMatch(operand) && !IsAlternativeList(operand)
+            ? Abstain("unsupported_intent") : Clarify();
     }
 
     private static LearningTaskProposal ProposeOperand(string operation, string token)
@@ -72,10 +84,11 @@ internal static class LearningTaskParser
         if (token.Length == 3 && (token[0] == '\'' && token[2] == '\'' || token[0] == '"' && token[2] == '"'))
             return token[1] <= 255 ? Ready(operation, (byte)token[1]) : Abstain("input_domain");
         if (UnsupportedOperand.IsMatch(token)) return Abstain("unsupported_intent");
-        // Alternatives are ambiguous even when their first operand is explicitly encoded.
-        if (token.Contains(" or ", StringComparison.OrdinalIgnoreCase)) return Clarify();
-        if (token.Length > 3 && (token[0] == '\'' && token[^1] == '\'' || token[0] == '"' && token[^1] == '"'))
-            return Abstain("unsupported_intent"); // A quoted string is not a single character.
+        if (QuotedString.IsMatch(token)) return token.Length == 2 ? Clarify() : Abstain("unsupported_intent");
+        // Only lists of candidate operands are ambiguity. An arbitrary second
+        // clause is unsupported regardless of its verb; no action lexicon needed.
+        if (IsAlternativeList(token)) return Clarify();
+        if (HasConjunction.IsMatch(token)) return Abstain("unsupported_intent");
         if (token.StartsWith("U+", StringComparison.OrdinalIgnoreCase))
             return token.Length is >= 3 and <= 6 && byte.TryParse(token[2..], NumberStyles.AllowHexSpecifier,
                 CultureInfo.InvariantCulture, out var hex) ? Ready(operation, hex) : Abstain("input_domain");
@@ -88,5 +101,27 @@ internal static class LearningTaskParser
         if (token[0] > 255) return Abstain("input_domain");
         // Bare punctuation can be a terminator or an unterminated quote.
         return char.IsLetter(token[0]) ? Ready(operation, (byte)token[0]) : Clarify();
+    }
+
+    private static bool IsAlternativeList(string token)
+    {
+        if (token.StartsWith("either ", StringComparison.OrdinalIgnoreCase)) token = token[7..];
+        else if (token.StartsWith("one of ", StringComparison.OrdinalIgnoreCase)) token = token[7..];
+        var position = 0;
+        var count = 0;
+        // Every token/separator consumes input, and every match must start at the
+        // exact cursor. Split bounded patterns avoid a large combined automaton.
+        while (position < token.Length)
+        {
+            var candidate = AlternativeToken.Match(token, position);
+            if (!candidate.Success || candidate.Index != position) return false;
+            position += candidate.Length;
+            count++;
+            if (position == token.Length) return count >= 2;
+            var separator = AlternativeSeparator.Match(token, position);
+            if (!separator.Success || separator.Index != position) return false;
+            position += separator.Length;
+        }
+        return false;
     }
 }
