@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "suite": "round10",
+  "source_commit": "d343de3bec40ddd58447592cc47ba07e912ee183",
+  "parser_source_sha256": "df8a70fc885360249efc7ae53ac4f6c05d7a48c38a9119255e030708e84a4eca",
+  "runner_source_sha256": "1585c13b33d07656e28e72b586a1412954d4efb96bf2115d07cff409beabe81d",
+  "probe_source_sha256": "2612534d59fee24d4455bc0bdd0761c3a25366f054b2584177e9d79c1ce43cdc",
+  "probe_project_sha256": "5129bfd10e1c88bbc786a509b9fac10f1cff54f71d3afc44e812f76f4ed83142",
+  "assembly_sha256": "1d01084ff00dbd92c83340f5fab82ce07597e7e8bced23eb9e4a2c29022f8e31",
+  "probe_sha256": "c33abb742e2d16729d1eceb3624381c527a7326ea72c877ef3bf408c14bc2bf8",
+  "freeze_sha256": "ac418e0c6b686f957a1e6e982fabf69610efcaa8daa7a8a07b4b09aa9e88b617",
+  "corpus_sha256": "ba3347376a322c3084c2d25996f9a084cce759e5508e792e5b40fb5395d679cb",
+  "build": "dotnet build tools/task_paraphrase_eval/TaskParaphraseProbe.csproj --artifacts-path .artifacts/task-verified --nologo",
+  "sdk_version": "10.0.203",
+  "target_framework": "net8.0",
+  "confirmation_opened_by_implementer_at_freeze": false,
+  "confirmation_executed_before_freeze": false,
+  "boundary_review": "Separate same-Astra implementation review identified double-object recipient ambiguity in corresponding-result frames. Three failures reproduced RED; frame restricted to causative make. All 12 independent correction probes passed. Reviewer had no holdout access.",
+  "regressions": {
+    "focused_parser": 673,
+    "task_filter_including_two_existing_task_tests": 675,
+    "full_managed_native": 1595,
+    "evaluator": 33,
+    "capture_bridge_earlier_this_turn": 148
+  },
+  "development_populations": "All ten exposed collections scored 128/128 on the freshly built committed candidate; all prior reports retained as development-only evidence.",
+  "authoring_limit": "Reused isolated author and custodian contexts; own prior authored sets known, no implementation/results access. Not fresh-context authorship or IID/external validation.",
+  "evaluation_origin": "synthetic",
+  "training_eligible": false,
+  "live_rollout_authorized": false
+}
