@@ -6,6 +6,18 @@ namespace CnetControlPlane.Tests;
 // Exposed third confirmation plus cross-frame safety regressions, not a holdout.
 public sealed class LearningTaskGrammarCompositionTests
 {
+    [Fact]
+    public void QuotedCaseWordsAreRefusedAsTextNotDecodedAsTheInternalMarker()
+    {
+        foreach (var word in new[] { "upper", "uppercase", "lowercase" })
+        {
+            var proposal = LearningTaskParser.Propose($"The character is '{word}'; capitalize it.");
+            Assert.True(proposal.Code == "unsupported_intent", "TASK_DIRECTION_SLOT_RED quoted text became an internal scalar");
+            Assert.Equal("abstain", proposal.Status);
+            Assert.Null(proposal.Dataset); Assert.Null(proposal.Key);
+        }
+    }
+
     [Theory]
     [InlineData("Return a capital.", "clarify", null, null)]
     [InlineData("Make a capital.", "clarify", null, null)]
