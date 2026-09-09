@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "candidate": "candidate.json",
+  "candidate_pin_commit": "26e2efb",
+  "parser_build_source_commit": "0b07a9a22336c3df6cd4777dab1e1aa69a02aa36",
+  "runner_source_commit": "33ed2188627565cdb2f8a47184eef0e5438bce14",
+  "runner_source_sha256": "6ff12db055ec70eb528cccfc7fdc19527aaf0215ea96070eac0da5b162057543",
+  "parser_source_sha256": "a3e29bc328eca0c645baf13619ccd10d503c601045124a1fa69fa6e240986b82",
+  "assembly_sha256": "aa38e43cea9bb599cab88d71cc2559176af299acb62ec80aab8cfef0e8db581e",
+  "probe_sha256": "1931b548b76fd8d7bfc9aabd281ca2f7fca64bd40c1b89d9e7b9a5a19b0b1e28",
+  "freeze_sha256": "e78224298ce97e8fc8cd69088c64a54463934b2d2731030de8146d1c9b65e6b9",
+  "corpus_sha256": "4e0a31349ce0b2fc73a9d2727388a33ee6a08ba56f23cebf9bba818a361ebf46",
+  "reason": "Infrastructure-only correction for immutable round3 nested corpus.sha256 manifest, with schema refusal before corpus read. No scorer floors or parser changes.",
+  "prior_attempt_cases_scored": 0,
+  "prior_attempt_parser_invoked": false,
+  "prior_attempt_corpus_bytes_read": true,
+  "prior_attempt_corpus_decoded": false,
+  "corpus_text_or_labels_seen_by_implementer": false,
+  "corpus_parser_and_binaries_unchanged": true,
+  "evaluator_tests_passed": 26,
+  "boundary_review": "Separate Astra reviewer examined only manifest selection and developer fixtures; no issues found, no corpus access or CNET execution."
+}
