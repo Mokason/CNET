@@ -1,0 +1,93 @@
+# Task-language acceptance follow-up — September 9, 2026
+
+Status: candidate evaluation in progress. Acceptance remains WITHHELD until a
+new blind confirmation passes every original gate. This is source-only work
+on `feature/verified-task-core-20260908`; no push, migration or live rollout.
+
+## Original floors and all scored confirmations
+
+Every collection contains 128 synthetic cases: 80 ready (40 upper/40 lower),
+24 clarify, 24 abstain. Exact ready means the original input byte and requested
+operation, not a casing answer. Required: zero wrong-ready proposals, at least
+72/80 ready, 34/40 per operation, 22/24 clarify and 23/24 abstain. Nonready
+proposals may not contain a dataset/key. No floor, label or denominator changed.
+
+| First scored confirmation | Ready | Upper / lower | Clarify | Abstain | Wrong ready | Result |
+|---|---:|---:|---:|---:|---:|---|
+| [Original](task_paraphrases_20260909/confirmation-1.json) | 68/80 | 34/40, 34/40 | 21/24 | 23/24 | 0 | FAIL |
+| [Follow-up](task_paraphrases_followup_20260909/confirmation-1.json) | 54/80 | 27/40, 27/40 | 23/24 | 22/24 | 0 | FAIL |
+| [Round 3](task_paraphrases_round3_20260909/confirmation-1.json) | 39/80 | 20/40, 19/40 | 12/24 | 21/24 | 0 | FAIL |
+| [Round 4](task_paraphrases_round4_20260909/confirmation-1.json) | 36/80 | 17/40, 19/40 | 8/24 | 24/24 | 0 | FAIL |
+
+All rows and failed gates remain in the linked reports. Round3 also has a
+separate [infrastructure record](task_paraphrases_round3_20260909/infrastructure-attempt-1.json):
+the first invocation failed on manifest layout before decoding cases or calling
+the parser. Its corrected runner was pinned before the first actual score;
+no parser/corpus/binary change or quality result occurred in that failed attempt.
+
+The original qualification and four failed confirmations now form five exposed
+development populations (640 unique texts). Round5's pre-freeze source scores
+128/128 on each, with complete `development-*.json` reports retained under
+`task_paraphrases_round5_20260909/`. These are regression checks, not fresh
+validation. Prior perfect development scores did not predict new-set success.
+
+## Implementation and verification
+
+Test-first changes separate direction lexemes from whole-request frames, then
+reuse one scalar/domain boundary. Shared output verbs, preference phrases and
+input declarations compose only in explicit grammatical roles. Numeric inputs
+retain their codepoint type; decoded controls refuse. Missing inputs, candidate
+lists and competing directions never become executable proposals. Unsupported
+modifiers and extra actions refuse without native observations.
+
+An adversarial design review rejected a keyword-only fallback: words alone
+cannot distinguish applying a function from asking for its input or a different
+output format. Those counterexamples became executable refusal tests. Oversized
+regex automata were decomposed; the existing nonbacktracking 1000-node guard was
+never raised or disabled. Existing capsule coverage, source approval, learning
+and certification authority remain downstream and unchanged.
+
+Initial round5 development verification: 310 focused parser tests; 1,232
+managed/native tests, zero failures/skips. Initial parser coverage was 99.47%
+lines and 94.05% branches. Subsequent boundary review identified case predicates
+being misread as conversions. Eight tests reproduced four failures; explicit
+verb/adjective and transformation evidence now distinguishes these roles. The
+correction review found the same guard missing from a declaration frame; three
+more tests reproduced two failures, then a one-line role capture applied the
+shared guard there. All 321 focused parser cases pass after these corrections.
+Final full-suite/coverage evidence is pending. An intermediate full run overlapped
+a test rebuild and is not used as frozen-candidate evidence.
+
+The evaluator's 28 integrity tests pass; tracing covers 97% of 195 executable
+lines. The unchanged capture/bridge surface passed 148 tests earlier this turn.
+Existing test-project CA1416 platform warnings remain; none were suppressed.
+Native tests use private installations and pinned external Unicode tables, not
+live services or CNET self-answers. Representative µ/A paraphrases succeed
+offline after explicit approval and capsule activation, while uncovered `ß`
+still abstains and both 256-key table verifications remain intact.
+
+ECC's TDD and verification workflows required executed RED cases and separate
+regression/coverage evidence. Graft supplied worktree source discovery when the
+MCP graph had no index for this worktree. Final Graft freshness check is pending.
+
+## Evidence limits and unchanged product scope
+
+These are procedurally separated same-Astra synthetic evaluations, not human,
+external-model or IID population tests. Iterative repair and stopping after a
+passing confirmation do not establish an unbiased general-language success
+rate. Exposed sets are never relabeled as fresh evidence or pooled to erase
+failures. All examples remain training-ineligible.
+
+Fresh-agent capacity was exhausted before round5. Its isolated author and
+custodian contexts were reused, with knowledge of their own prior authored sets
+but no CNET code, tests, graph, results or execution access. They independently
+checked all 128 statuses and 80 original-byte operation labels, with zero exact
+overlaps against 640 prior texts. This limitation is recorded in the immutable
+manifest. Root remains blind until candidate source/binary freeze.
+
+No claim of learned semantics, broader real-user coverage, allocator gain or
+AMD task-selection improvement follows from these grammar tests. Genuine origin
+review, measured learning costs, richer workflows, dependency-aware source
+replacement, evidence-qualified shadow training and separately approved rollout
+remain product work. Existing live ingress, capture policy and frozen 72-hour
+soak were not changed or restarted.

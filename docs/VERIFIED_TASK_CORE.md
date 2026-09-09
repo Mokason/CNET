@@ -108,6 +108,16 @@ oversized combined regex automata without increasing the runtime's guard.
 Numeric input declarations preserve their explicit codepoint type. For example,
 `Input scalar: 'µ'. Case operation: upper.` and `The input code point is decimal
 65. Convert it to lowercase.` still propose only an input and a direction.
+Output verbs and preference phrases compose with those explicit roles: `Please
+supply 'µ' in uppercase.` and `I need 'A' converted to lowercase.` follow the
+same operand checks. Merely mentioning a case function, requesting its input,
+or asking for a hexadecimal output does not select a supported transformation.
+Explicit competing directions such as `Use uppercase or lowercase on 'k'.`
+clarify without selecting either operation.
+Property statements are not transformations: `Show 'R' to be a lowercase
+character.` abstains; `Could 'R' be lowercase?` clarifies. Explicit `Could 'R'
+be converted to lowercase?` and `Could 'R' be lowercased?` can propose the
+transformation. Verb/adjective evidence survives the internal direction marker.
 
 Requests are at most 256 UTF-16 code units; control characters and surrogates
 refuse, including decoded control values in canonical, hexadecimal and decimal

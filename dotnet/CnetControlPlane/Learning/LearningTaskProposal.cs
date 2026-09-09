@@ -15,17 +15,22 @@ internal static class LearningTaskParser
     // Recognize direction once, then compose small whole-request frames without
     // multiplying their automata by the operation vocabulary at every site.
     private const string Case = @"\x1F";
-    private static readonly Regex OperationLexeme = new(@"\b(?<op>upper(?:[ -]?cas(?:e|ing|ed))?|lower(?:[ -]?cas(?:e|ing|ed))?|capital(?:[ -]letter)?s?|capitali[sz]e(?:d)?|small[ -]letter)\b(?<noun> form| version| equivalent| letter| character| conversion)?", Options);
-    private const string OutputVerb = @"(?:make|put|write|render|return)";
+    private static readonly Regex OperationLexeme = new(@"\b(?<op>upper(?:[ -]?cas(?:e|ing|ed))?|lower(?:[ -]?cas(?:e|ing|ed))?|capital(?:[ -]letter)?s?|capitali[sz]e(?:d)?|small[ -]letter)\b(?<noun> form| version| equivalent| letter| character| conversion| casing| rendition| result)?", Options);
+    private const string OutputVerb = @"(?:make|put|write|render|return|show|display|supply|provide|present|express|give(?: me)?)";
+    private const string Desire = @"(?:i (?:need|want|would like|would prefer)|i['’]d (?:like|prefer)|i['’]m asking for)";
+    private const string Manner = @"(?<passive>to be )?(?:(?<transform>converted|changed|put|written|rendered) )?(?:(?:in|as|into|using|with|to) )?(?:an? |its )?";
     private const string Input = @"(?<input>.+?)";
-    private const string InputLabel = @"(?:(?:the |my )?input(?: scalar)?|character(?: supplied)?)";
+    private const string InputLabel = @"(?:(?:here is )?(?:the |my )?input(?: scalar| character)?|(?:the )?(?:chosen |selected |supplied )?character(?: supplied)?)";
     private const string Declaration = InputLabel + @"(?: is |: ?)" + Input;
     private const string NumericDeclaration = @"(?:the |my )?input (?<numeric>code[ -]?point)(?: is |: ?)" + Input;
     private const string Alternative = @"(?:(?:the )?(?:single )?(?:character|letter|scalar) )?(?:'.'|"".""|(?:(?:the )?code[ -]?point )?(?:U\+|0x)[0-9a-f]{1,6}|(?:decimal )?code[ -]?point [0-9]{1,6}|[0-9]+(?:\.[0-9]+)?|[^\s])";
     private static readonly Regex Canonical = new(@"\Aunicode (?<op>upper|lower) (?<input>[0-9]{1,3})\z", Options);
-    private static readonly Regex PolitePrefix = new(@"\A(?:(?:can|could|would|will) you (?:please )?|(?:i would|i'd|i’d) like you to |for me, (?:please )?|please |kindly )", Options);
+    private static readonly Regex ContextPrefix = new(@"\Afor this (?:request|task), ", Options);
+    private static readonly Regex PolitePrefix = new(@"\A(?:(?:can|could|would|will) you (?:be able to )?(?:please )?|how (?:would|do) you |(?:i would|i'd|i’d) like you to |my request is to |for me, (?:please )?|please |kindly )", Options);
     private static readonly Regex PoliteSuffix = new(@"(?: for me(?:,? please)?|,? please)\z", Options);
-    private static readonly Regex InputDescription = new(@"\A(?:the |an? )?(?:single )?(?:character|letter|scalar) ", Options);
+    private static readonly Regex PreferenceSuffix = new(@" is (?:what i (?:need|want)|the one i want|what i'm after|what i’m after)\z", Options);
+    private static readonly Regex AmbiguitySuffix = new(@"(?:, whichever|; i haven['’]t chosen which input yet)\z", Options);
+    private static readonly Regex InputDescription = new(@"\A(?:the |an? |this |that )?(?:single |supplied |chosen |selected )?(?:character|letter|scalar)(?:: ?| )", Options);
     private static readonly Regex CodepointRelation = new(@"\A(?:with|at|represented by|whose) (?<input>(?:decimal )?code[ -]?point .+|U\+.+|0x.+)\z", Options);
     private static readonly Regex DecimalInput = new(@"\A(?:the )?(?:decimal )?code[ -]?point (?:is )?(?:decimal )?(?<number>[0-9]+)(?: in decimal)?\z", Options);
     private static readonly Regex HexInput = new(@"\A(?:(?:the )?code[ -]?point (?:is )?)?(?:U\+|0x)(?<number>[0-9a-f]{1,6})\z", Options);
@@ -42,22 +47,34 @@ internal static class LearningTaskParser
     private static readonly Regex QuotedString = new(@"\A(?:'[^']*'|""[^""]*"")\z", Options);
     private static readonly Regex UnsupportedOperand = new(@"(?:\b(?:using|locale|rules|string|word|sentence|paragraph|text)\b|\baccording to\b|;)", Options);
     private static readonly Regex[] Forms = [
+        // Predicate and output relationships are explicit. Numeric descriptions
+        // are consumed only inside operands, never silently as output modifiers.
+        new(@"\A" + Case + @" is (?:requested|desired) for " + Input + @"\z", Options),
+        new(@"\A(?:change|set) (?:the )?case of " + Input + @" to " + Case + @"\z", Options),
+        new(@"\A(?:give(?: me)?|show|return|provide|supply) (?:this|the supplied) character (?:in|as) " + Case + @": " + Input + @"\z", Options),
+        new(@"\Amake the supplied character " + Case + @": " + Input + @"\z", Options),
+        new(@"\Awhat would (?:the )?" + Case + @" of " + Input + @" be\z", Options),
         new(@"\A" + Case + @"(?: " + Input + @")?\z", Options),
-        new(@"\A(?:convert|change|turn) (?:" + Input + @" )?(?:to|into) (?:an? |its )?" + Case + @"\z", Options),
+        new(@"\A(?:convert|change|turn|transform|take) (?:" + Input + @" )?(?:to|into) (?:an? |its )?" + Case + @"\z", Options),
         new(@"\Aset (?:the )?case of " + Input + @" to " + Case + @"\z", Options),
-        new(@"\A" + OutputVerb + @" (?:" + Input + @" (?:(?:in|as|into|using) )?(?:an? |its )?)?" + Case + @"\z", Options),
-        new(@"\A(?:give(?: me)?|show(?: me)?|return|display|use) (?:the |an? )?" + Case + @"(?: (?:of|corresponding to) " + Input + @")?\z", Options),
+        new(@"\A(?<output>" + OutputVerb + @") (?:" + Input + @" " + Manner + @")?" + Case + @"\z", Options),
+        new(@"\A(?:give(?: me)?|show(?: me)?|return|display|use|provide|supply) (?:the |an? )?" + Case + @"(?: (?:of|for|corresponding to) " + Input + @")?\z", Options),
         new(@"\A(?:what is|what's|what’s|(?:may|can|could) i (?:have|get)) (?:the |an? )?" + Case + @"(?: of " + Input + @")?\z", Options),
-        new(@"\A(?:i would like|i'd like|i’d like|i want|my request is) (?:the |an? )?" + Case + @"(?: of " + Input + @")?\z", Options),
-        new(@"\A(?:i need|i want|i would like|i'd like|i’d like) " + Input + @" (?:in|as) (?:an? )?" + Case + @"\z", Options),
-        new(@"\Athe " + Case + @" of " + Input + @"\z", Options),
-        new(@"\Afor " + Input + @", (?:give|show|return|use|perform)(?: me)? (?:its |the )?" + Case + @"\z", Options),
+        new(@"\A(?:" + Desire + @"|my request is) (?:the |an? )?" + Case + @"(?: of " + Input + @")?\z", Options),
+        new(@"\A" + Desire + @" " + Input + @" " + Manner + Case + @"\z", Options),
+        new(@"\A(?:what is|what's|what’s|(?:can|could|may) i (?:have|get|see)) " + Input + @" " + Manner + Case + @"\z", Options),
+        new(@"\A(?:the|an?) " + Case + @"(?: of " + Input + @")?\z", Options),
+        new(@"\Afor " + Input + @", (?:(?:give|show|return|use|perform)(?: me)?|" + Desire + @") (?:its |the )?" + Case + @"\z", Options),
         new(@"\Ahow (?:does|would|will) " + Input + @" look (?:in|as) " + Case + @"\z", Options),
         new(@"\Awith " + Input + @" as (?:the |my )?input, (?:return|give|show)(?: me)? (?:its |the )?" + Case + @"\z", Options),
         // A bounded declaration supplies one operand to one operation, not a
         // substring extracted from arbitrary prose or a second executable step.
         new(@"\Athe (?:character|letter|input) is " + Input + @"[;. ]+ (?:please )?" + Case + @" it\z", Options),
         new(@"\A" + Input + @" is (?:my|the) input[;. ]+ (?:please )?(?:convert|change|turn) it (?:to|into) " + Case + @"\z", Options),
+        new(@"\Alet " + Input + @" be (?:the|my) input; (?<output>" + OutputVerb + @") (?:it|that) " + Manner + Case + @"\z", Options),
+        new(@"\A(?<modal>can|could|would) " + Input + @" be " + Manner + Case + @"\z", Options),
+        new(@"\A" + Input + @" (?:needs to be|should be|must be) " + Case + @"\z", Options),
+        new(@"\Athe (?:case )?operation (?:should|must) be " + Case + @"\z", Options),
         new(@"\A(?:use|apply|perform) (?:the )?" + Case + @"(?: (?:for|to|on) " + Input + @")?\z", Options),
         new(@"\Awhich " + Case + @" corresponds to " + Input + @"\z", Options),
         new(@"\Awhat do i get when i " + Case + @" " + Input + @"\z", Options),
@@ -66,7 +83,10 @@ internal static class LearningTaskParser
         // Compose an explicit input label with a single action or direction
         // label. Numeric declarations retain their codepoint type downstream.
         new(@"\A" + Declaration + @"[;.:] (?:please )?(?:convert|change|turn) (?:it|this(?: one)? character) (?:to|into) " + Case + @"\z", Options),
-        new(@"\A" + Declaration + @"[;.:] (?:please )?(?:apply|perform|use) " + Case + @"\z", Options),
+        new(@"\A" + Declaration + @"[;.:] (?:please )?(?:apply|perform|use) " + Case + @"(?: to it)?\z", Options),
+        new(@"\A" + Declaration + @"[;.:] (?:please )?" + Case + @" it\z", Options),
+        new(@"\A" + Declaration + @"[;.:] i (?:need|want) it " + Manner + Case + @"\z", Options),
+        new(@"\A" + Declaration + @"[;.:] i(?: would|['’]d) (?:like|prefer) it " + Manner + Case + @"\z", Options),
         new(@"\A" + Declaration + @"[;.:] (?:(?:the )?(?:requested )?(?:case )?operation(?: is |: ?)|desired case: ?)" + Case + @"\z", Options),
         new(@"\A" + NumericDeclaration + @"[;.:] (?:please )?(?:convert|change|turn) it (?:to|into) " + Case + @"\z", Options),
         new(@"\A" + NumericDeclaration + @"[;.:] (?:please )?(?:apply|perform|use) " + Case + @"\z", Options)
@@ -76,8 +96,15 @@ internal static class LearningTaskParser
         new(@"\A" + Declaration + @"\z", Options),
         new(@"\A" + NumericDeclaration + @"\z", Options),
         new(@"\Ause " + Input + @"\z", Options),
-        new(@"\Ahere is " + Input + @": (?:please )?change its case\z", Options),
-        new(@"\A(?:should " + Input + @" be made|set " + Input + @" to) (?:upper(?:[ -]?case)?|lower(?:[ -]?case)?) or (?:upper(?:[ -]?case)?|lower(?:[ -]?case)?)\z", Options)
+        new(@"\Aprocess " + Input + @"\z", Options),
+        new(@"\Ai have selected " + Input + @"\z", Options),
+        new(@"\Athe character (?:i'd|i’d|i would) like you to work on is " + Input + @"\z", Options),
+        new(@"\Ahere is " + Input + @": (?:please )?change its case\z", Options)
+    ];
+    private static readonly Regex[] AmbiguousDirectionForms = [
+        new(@"\A(?:should " + Input + @" be made|set " + Input + @" to) (?:upper(?:[ -]?case)?|lower(?:[ -]?case)?) or (?:upper(?:[ -]?case)?|lower(?:[ -]?case)?)\z", Options),
+        new(@"\A(?:use|apply|perform) (?:upper(?:[ -]?case)?|lower(?:[ -]?case)?) or (?:upper(?:[ -]?case)?|lower(?:[ -]?case)?) (?:on|to|for) " + Input + @"\z", Options),
+        new(@"\A" + OutputVerb + @" " + Input + @" (?:in|as) (?:upper(?:[ -]?case)?|lower(?:[ -]?case)?) or (?:upper(?:[ -]?case)?|lower(?:[ -]?case)?)\z", Options)
     ];
 
     private static string OperandText(Match match) => (match.Groups["numeric"].Success ? "code point " : "") + match.Groups["input"].Value.Trim();
@@ -92,6 +119,8 @@ internal static class LearningTaskParser
     {
         if (text.Length is < 1 or > 256 || text.Any(char.IsControl) || text.Any(char.IsSurrogate)) return Abstain("input_bounds");
         text = text.Trim();
+        if (BareNumber.IsMatch(text) || text.Length == 1)
+            return text.Length == 1 && text[0] > 255 ? Abstain("input_domain") : Clarify();
         var exact = Canonical.Match(text);
         if (exact.Success)
         {
@@ -100,9 +129,20 @@ internal static class LearningTaskParser
                 && key.ToString(CultureInfo.InvariantCulture) == value ? Ready(exact.Groups["op"].Value, key) : Abstain("input_domain");
         }
         if (text.EndsWith('?') || text.EndsWith('.')) text = text[..^1].TrimEnd();
+        text = ContextPrefix.Replace(text, "", 1);
         text = PolitePrefix.Replace(text, "", 1);
         text = PoliteSuffix.Replace(text, "", 1);
+        text = PreferenceSuffix.Replace(text, "", 1);
+        var ambiguity = AmbiguitySuffix.Match(text);
+        if (ambiguity.Success) text = text[..ambiguity.Index];
         if (CompoundOrNegated.IsMatch(text)) return Abstain("unsupported_intent");
+        foreach (var form in AmbiguousDirectionForms)
+        {
+            var match = form.Match(text);
+            if (!match.Success) continue;
+            var operand = ProposeOperand("upper", OperandText(match));
+            return operand.Status == "abstain" ? operand : Clarify();
+        }
         foreach (Match operation in OperationLexeme.Matches(text))
         {
             var operationName = operation.Groups["op"].Value;
@@ -120,7 +160,18 @@ internal static class LearningTaskParser
                 // Other case words remain uninterpreted operand text: a frame
                 // cannot turn a description, whole string or extra action into
                 // one scalar merely because it contains an operation word.
-                return ProposeOperand(operationName, OperandText(match));
+                var proposal = ProposeOperand(operationName, OperandText(match));
+                // Preserve verb/adjective evidence lost by the direction marker.
+                // Showing a property is not applying a conversion; a modal
+                // adjective question permits both readings and must clarify.
+                if (proposal.Status == "ready" && !operationName.EndsWith("ed", StringComparison.OrdinalIgnoreCase)
+                    && !match.Groups["transform"].Success)
+                {
+                    if (match.Groups["passive"].Success && match.Groups["output"].Value.Equals("show", StringComparison.OrdinalIgnoreCase))
+                        return Abstain("unsupported_intent");
+                    if (match.Groups["modal"].Success) return Clarify();
+                }
+                return ambiguity.Success && proposal.Status == "ready" ? Clarify() : proposal;
             }
         }
         // Reuse operand refusal even when direction is absent. A hypothetical

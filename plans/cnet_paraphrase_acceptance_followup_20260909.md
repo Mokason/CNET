@@ -131,3 +131,22 @@ external-model validation or population confidence. They independently checked
 previously exposed texts. Root has not opened or executed round5 during repair.
 Its quotas, original contract and all acceptance floors are unchanged. Freeze
 source/binary identities after regression and boundary review, then score once.
+
+The round5 implementation review found a real predicate/conversion role bug:
+`Show 'R' to be a lowercase character` and `Could 'R' be lowercase?` produced
+ready proposals. Eight regression cases were added and run RED (four failed).
+Frames now retain explicit transformation/passive/modal evidence alongside the
+direction marker. Demonstrating a property abstains; the ambiguous modal
+adjective question clarifies. Explicit `converted to` and `lowercased` requests
+remain supported, including declared preferences. All 318 focused cases pass.
+Repeat source-dependent regressions and review this bounded correction before
+freezing; the round5 corpus remains unopened by root.
+
+The correction review found a missing output-role capture in the existing
+`Let ... be the input; show it ...` frame. Three additional tests ran RED
+(two failed); the one-line capture change applies the same predicate guard.
+Review only this omission's correction, then stop the bounded implementation
+review after its third cycle; no broad fourth-cycle review. The earlier
+intermediate full-suite run overlapped a test-project rebuild and is not the
+final frozen-candidate regression evidence. Run a clean no-build suite after
+all source/test builds have completed and keep the assembly stable throughout.
