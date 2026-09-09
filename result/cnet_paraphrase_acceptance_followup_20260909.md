@@ -19,6 +19,7 @@ proposals may not contain a dataset/key. No floor, label or denominator changed.
 | [Round 3](task_paraphrases_round3_20260909/confirmation-1.json) | 39/80 | 20/40, 19/40 | 12/24 | 21/24 | 0 | FAIL |
 | [Round 4](task_paraphrases_round4_20260909/confirmation-1.json) | 36/80 | 17/40, 19/40 | 8/24 | 24/24 | 0 | FAIL |
 | [Round 5](task_paraphrases_round5_20260909/confirmation-1.json) | 13/80 | 8/40, 5/40 | 10/24 | 21/24 | 0 | FAIL |
+| [Round 6](task_paraphrases_round6_20260909/confirmation-1.json) | 33/80 | 15/40, 18/40 | 16/24 | 22/24 | 0 | FAIL |
 
 All rows and failed gates remain in the linked reports. Round3 also has a
 separate [infrastructure record](task_paraphrases_round3_20260909/infrastructure-attempt-1.json):
@@ -26,11 +27,14 @@ the first invocation failed on manifest layout before decoding cases or calling
 the parser. Its corrected runner was pinned before the first actual score;
 no parser/corpus/binary change or quality result occurred in that failed attempt.
 
-The original qualification and four failed confirmations now form five exposed
-development populations (640 unique texts). Round5's pre-freeze source scores
+Before round5, the original qualification and four failed confirmations formed
+five exposed development populations (640 unique texts). Round5's pre-freeze source scored
 128/128 on each, with complete `development-*.json` reports retained under
 `task_paraphrases_round5_20260909/`. These are regression checks, not fresh
 validation. Prior perfect development scores did not predict new-set success.
+Round6's candidate now passes all six exposed collections (768 texts), with
+both development and committed-candidate reports retained under
+`task_paraphrases_round6_20260909/`. These remain development-only checks.
 
 ## Implementation and verification
 
@@ -64,7 +68,21 @@ before the first scored round5 invocation. The final bounded review verified
 eight independent predicate/conversion probes. Its passing regressions did not
 prevent failure of the new confirmation; all rows are retained unchanged.
 
-The evaluator's 28 integrity tests pass; tracing covers 97% of 195 executable
+Round6 composes complete typed input and operation fields in either order;
+separator candidates cannot discard a partial field or an extra action. Its
+design review required explicit radix preservation and refusal to reinterpret
+quoted codepoint strings. The 90 new tests executed RED (86 failed); all 411
+focused tests pass after implementation. A separate bounded implementation
+review passed 32 independently invented probes across field consumption,
+duplicates, actions, radix, quotes, controls and ambiguity. The native fixture
+now includes both field orders and refusal checks before daemon startup.
+The committed round6 candidate passed 1,333 managed/native tests with 99.63%
+parser line and 93.36% branch coverage. Source `70fc455` was freshly built and
+its identities committed in `d34e7f7` before the first blind score. That score
+failed; all 128 rows remain. Round6 is now exposed development evidence, and
+round7 remains blind with zero-overlap checks against 896 prior texts.
+
+The evaluator's 29 integrity tests pass; tracing covers 97% of 198 executable
 lines. The unchanged capture/bridge surface passed 148 tests earlier this turn.
 Existing test-project CA1416 platform warnings remain; none were suppressed.
 Native tests use private installations and pinned external Unicode tables, not

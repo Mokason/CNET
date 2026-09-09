@@ -172,3 +172,12 @@ Separate small regexes avoid Cartesian growth; the 1000-node bound remains
 unchanged. All 411 focused tests and six exposed populations (128/128 each)
 pass on development source. Extend the private native fixture with field-order,
 radix, quote and extra-action checks before freezing the final candidate.
+
+Round6's first blind confirmation failed: 33/80 ready (15 upper, 18 lower),
+16/24 clarify, 22/24 abstain, zero wrong ready. Its pinned source passed 1,333
+managed/native tests, 411 focused tests and 768 exposed requests; those checks
+did not establish new-language acceptance. Retain every row. Round7 extends
+shared request/declaration roles, exact codepoint descriptions and vocabulary
+such as `all caps`, with explicit mixed-radix/output-format refusal tests.
+The next isolated author/custodian pair retains the reused-context limitation
+and checks zero overlaps against all 896 exposed texts; original floors remain.
