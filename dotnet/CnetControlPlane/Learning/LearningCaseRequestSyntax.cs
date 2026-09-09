@@ -27,20 +27,22 @@ internal static class LearningCaseRequestSyntax
         }
         var start = 0;
         Polite(tokens, ref start, end);
+        if (start + 2 < end && tokens[start].Is("go") && tokens[start + 1].Is("ahead") && tokens[start + 2].Is("and")) start += 3;
         if (start + 1 < end && IsAny(tokens[start], "can", "could", "would", "will") && tokens[start + 1].Is("you"))
         {
             start += 2;
             if (start + 2 < end && tokens[start].Is("be") && tokens[start + 1].Is("able") && tokens[start + 2].Is("to")) start += 3;
+            if (start < end && tokens[start].Is("mind")) start++;
         }
         Polite(tokens, ref start, end);
         if (start == end) return null;
         if (tokens.Any(token => IsAny(token, "not", "never", "then", "also"))) return Refuse();
-        if (!IsAny(tokens[start], "uppercase", "lowercase", "capitalize", "capitalise"))
+        if (!IsAny(tokens[start], "uppercase", "lowercase", "capitalize", "capitalise", "upcase", "downcase", "uppercasing", "lowercasing"))
             return Request(tokens, start, end);
         var descriptionNoun = start + 1 < end && IsAny(tokens[start + 1], "character", "letter");
         var nominalRelation = start + 2 < end && IsAny(tokens[start + 2], "of", "for", "from", "to", "on", "is", "when", "should");
         if (LearningTaskParser.HasOperationNounAt(text, tokens[start].Start) && (!descriptionNoun || nominalRelation)) return null;
-        var operation = tokens[start++].Is("lowercase") ? "lower" : "upper";
+        var operation = IsAny(tokens[start++], "lowercase", "lowercasing", "downcase") ? "lower" : "upper";
         // These start nominal, relational or declaration constructions, not
         // the unary command owned here. The existing grammar owns their roles.
         if (start < end && IsAny(tokens[start], "is", "for", "on", "when", "should", "as", "with")) return null;
@@ -54,7 +56,9 @@ internal static class LearningCaseRequestSyntax
         if (question) cursor++;
         else if (cursor + 1 < end && tokens[cursor].Is("what") && tokens[cursor + 1].Is("is")) { cursor += 2; question = true; }
         var output = !question && IsAny(tokens[cursor], "write", "render", "return", "show", "display", "supply", "provide", "produce", "present", "express", "give", "put", "make");
-        var conversion = !question && IsAny(tokens[cursor], "convert", "change", "turn", "switch", "transform");
+        var conversion = !question && IsAny(tokens[cursor], "convert", "change", "turn", "switch", "transform", "map", "fold", "rewrite", "recast", "take");
+        var take = conversion && tokens[cursor].Is("take");
+        var make = output && tokens[cursor].Is("make");
         if (!question && !output && !conversion) return null;
         if (!question) cursor++;
         if (output && cursor < end && tokens[cursor].Is("me")) cursor++;
@@ -70,16 +74,47 @@ internal static class LearningCaseRequestSyntax
             var nominal = Direction(tokens, ref cursor, end);
             if (nominal is not null && cursor < end && IsAny(tokens[cursor], "of", "for"))
                 return Operand(tokens, cursor + 1, end, nominal, bareCapital: tokens[cursor - 1].Is("capital"));
+            // With no following object, A/a may be the original input rather
+            // than an article ("make a uppercase"). Legacy roles own that form.
+            if (nominal is not null && make && cursor < end)
+            {
+                var proposal = Operand(tokens, cursor, end, nominal);
+                // A/a before the direction can itself be an input. A second
+                // operand cannot silently displace it as an inferred article.
+                return tokens[operandStart].Is("a") && proposal.Status != "abstain"
+                    ? LearningTaskParser.Clarify() : proposal;
+            }
         }
         if (question) return null;
         // The complement establishes the target-case role. Its complete tail
         // must match; extra actions or output instructions cannot be discarded.
         for (cursor = operandStart; cursor < end; cursor++)
         {
+            if (conversion && tokens[cursor].Is("so"))
+            {
+                var complement = cursor + 1;
+                if (complement < end && tokens[complement].Is("that")) complement++;
+                if (complement < end && tokens[complement].Is("it")) complement++;
+                else continue;
+                if (complement < end && tokens[complement].Is("is")) complement++;
+                else if (complement + 1 < end && tokens[complement].Is("appears") && tokens[complement + 1].Is("in")) complement += 2;
+                else continue;
+                var caseChoice = Direction(tokens, ref complement, end);
+                if (caseChoice is not null && complement == end) return Operand(tokens, operandStart, cursor, caseChoice);
+            }
             if (!IsAny(tokens[cursor], conversion ? ["to", "into"] : ["in", "as", "into", "using"])) continue;
             var target = cursor + 1;
             var direction = Direction(tokens, ref target, end);
-            if (direction is not null && target == end) return Operand(tokens, operandStart, cursor, direction);
+            if (direction is not null && target == end)
+            {
+                var operandEnd = cursor;
+                string? modifier = null;
+                if (take && operandEnd > operandStart && IsAny(tokens[operandEnd - 1], "up", "down"))
+                    modifier = tokens[--operandEnd].Is("down") ? "lower" : "upper";
+                var proposal = Operand(tokens, operandStart, operandEnd, direction);
+                return modifier is not null && modifier != direction && proposal.Status != "abstain"
+                    ? LearningTaskParser.Clarify() : proposal;
+            }
         }
         return null;
     }

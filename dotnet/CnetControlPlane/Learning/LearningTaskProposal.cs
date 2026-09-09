@@ -15,7 +15,9 @@ internal static class LearningTaskParser
     // Recognize direction once, then compose small whole-request frames without
     // multiplying their automata by the operation vocabulary at every site.
     private const string Case = @"\x1F";
-    private static readonly Regex OperationLexeme = new(@"\b(?<op>upper(?:[ -]?cas(?:e|ing|ed))?|lower(?:[ -]?cas(?:e|ing|ed))?|capital(?:[ -]letter)?s?|capitali[sz](?:e(?:d)?|ation)|small[ -]letters?|all caps)\b(?<noun>[ -](?:form|version|equivalent|lettering|letter|character|case conversion|conversion|casing|rendition|result|operation|transformation|counterpart))?", Options);
+    private static readonly Regex OperationLexeme = new(@"\b(?<op>upper(?:[ -]?cas(?:e|ing|ed))?|lower(?:[ -]?cas(?:e|ing|ed))?|(?:up|down)cas(?:e|ing|ed)|capital(?:[ -]letter)?s?|capitali[sz](?:e(?:d)?|ation)|small[ -]letters?|all caps)\b", Options);
+    // Separate automata avoid the operation × noun state-space product.
+    private static readonly Regex OperationNoun = new(@"(?<noun>[ -](?:form|version|equivalent|lettering|letter|character|case conversion|conversion|casing|rendition|result|operation|transformation|counterpart|mapping))", Options);
     private const string OutputVerb = @"(?:make|put|write|render|return|show(?: me)?|display|supply|provide|produce|present|express|give(?: me)?)";
     private const string Desire = @"(?:i (?:need|want|require|request|am requesting|am asking for|would like|would prefer)|i['’]d (?:like|prefer)|i['’]m (?:asking for|requesting))";
     private const string Manner = @"(?<passive>to be )?(?:(?<transform>converted|changed|put|written|rendered|made|shown|expressed) )?(?:(?:in|as|into|using|with|to) )?(?:an? |its )?";
@@ -45,7 +47,9 @@ internal static class LearningTaskParser
     private static readonly Regex QuotedFullStop = new(@"\A(?:the )?quoted full stop (?<input>'\.'|""\."")\z", Options);
     private static readonly Regex QuotedNonbreakingSpace = new(@"\A(?:the )?quoted nonbreaking space (?<input>'\u00A0'|""\u00A0"")\z", Options);
     private static readonly Regex QuotedSpace = new(@"\A(?:the )?quoted space (?<input>' '|"" "")\z", Options);
-    private static readonly Regex ScalarWritten = new(@"\A(?:written|identified as) (?<input>(?:U\+|0x).+)\z", Options);
+    private static readonly Regex ScalarWritten = new(@"\A(?:written|identified as|specified as) (?<input>(?:U\+|0x).+)\z", Options);
+    private static readonly Regex NamedInput = new(@"\A(?:the |a |an )?(?:quoted |literal )?(?<name>hyphen|asterisk|space|plus sign|semicolon|punctuation)(?: (?<input>.+))?\z", Options);
+    private static readonly Regex PluralInput = new(@"\A(?:the )?(?:letters|characters|scalars) (?<input>.+)\z", Options);
     private static readonly Regex DecimalRelation = new(@"\Awhose decimal value is (?<input>[0-9]+)\z", Options);
     private static readonly Regex ExplicitScalarSuffix = new(@"\A(?<input>(?:U\+|0x)[0-9a-f]{1,6}), interpreted as a Unicode scalar,?\z", Options);
     private static readonly Regex CodepointRelation = new(@"\A(?:with|at|represented by|specified by|encoded by|whose) (?<input>(?:decimal |hexadecimal |hex )?code[ -]?point .+|U\+.+|0x.+)\z", Options);
@@ -120,7 +124,7 @@ internal static class LearningTaskParser
         new(@"\Ai have " + Input + @" as my input\z", Options),
         new(@"\A" + Input + @" as the supplied character\z", Options),
         new(@"\A(?:please )?(?:use|take) " + Input + @" (?:for|as) the (?:input(?: character| scalar)?|character)\z", Options),
-        new(@"\A(?<inputUse>use) " + Input + @"\z", Options),
+        new(@"\A(?<inputUse>use|take) " + Input + @"\z", Options),
         new(@"\Ahere is the input " + Input + @"\z", Options),
         new(@"\Afor the input, i have " + Input + @"\z", Options),
         new(@"\Athe (?<numeric>decimal code point) i am supplying is " + Input + @"\z", Options),
@@ -132,6 +136,10 @@ internal static class LearningTaskParser
         new(@"\Ai am supplying " + Input + @" as the character\z", Options)
     ];
     private static readonly Regex[] Forms = [
+        // Explicitly unresolved slots remain non-executable. The candidate list
+        // still traverses the shared operand/domain validator.
+        new(@"\Aconvert to " + Case + @" (?<unresolved>whichever) (?:single )?(?:letter|character) is intended, " + Input + @"\z", Options),
+        new(@"\Ai (?:still )?need " + Case + @" applied, yet no (?:letter|character|input) has been given\z", Options),
         new(@"\Awhich (?<alias>capital letter|small letter) is the " + Case + @" of " + Input + @"\z", Options),
         new(@"\A(?:the |my )?(?:case transformation|requested operation) for " + Input + @" (?:should be|is) " + Case + @"\z", Options),
         new(@"\Athe " + Case + @" i am requesting uses " + Input + @"\z", Options),
@@ -241,6 +249,8 @@ internal static class LearningTaskParser
     ];
     private static readonly Regex[] DirectionlessForms = [
         MissingDirection,
+        new(@"\A" + Input + @" should undergo case (?:conversion|change)\z", Options),
+        new(@"\A" + Desire + @" a case (?:change|conversion) for " + Input + @"\z", Options),
         new(@"\A" + Declaration + @"\z", Options),
         new(@"\A" + NumericDeclaration + @"\z", Options),
         new(@"\Ause " + Input + @"\z", Options),
@@ -294,11 +304,17 @@ internal static class LearningTaskParser
         "Specify uppercase or lowercase and one quoted Latin-1 character, or an explicit codepoint (for example U+00B5).");
     private static LearningTaskProposal Abstain(string code) => new("abstain", code);
     private static bool IsLowerOperation(string operation) => operation.StartsWith("lower", StringComparison.OrdinalIgnoreCase)
+        || operation.StartsWith("down", StringComparison.OrdinalIgnoreCase)
         || operation.StartsWith("small", StringComparison.OrdinalIgnoreCase);
     internal static bool HasOperationNounAt(string text, int position)
     {
         var match = OperationLexeme.Match(text, position);
-        return match.Success && match.Index == position && match.Groups["noun"].Success;
+        return match.Success && match.Index == position && OperationNounAt(text, match.Index + match.Length).Success;
+    }
+    private static Match OperationNounAt(string text, int position)
+    {
+        var match = OperationNoun.Match(text, position);
+        return match.Success && match.Index == position ? match : Match.Empty;
     }
     private static LearningTaskProposal Ready(string operation, byte key) => char.IsControl((char)key) ? Abstain("input_domain") : new("ready", "typed_case_change",
         IsLowerOperation(operation) ? "unicode17_lower_latin1" : "unicode17_upper_latin1", key);
@@ -350,14 +366,15 @@ internal static class LearningTaskParser
         foreach (Match operation in OperationLexeme.Matches(text))
         {
             var operationName = operation.Groups["op"].Value;
-            var framed = text[..operation.Index] + '\u001f' + text[(operation.Index + operation.Length)..];
+            var operationNoun = OperationNounAt(text, operation.Index + operation.Length);
+            var framed = text[..operation.Index] + '\u001f' + text[(operation.Index + operation.Length + operationNoun.Length)..];
             if (binding is null && ProposeFields(operationName, framed) is { } fields)
                 return ambiguity.Success && fields.Status == "ready" ? Clarify() : fields;
             if (binding is not null && IsOperationField(framed))
                 return ambiguity.Success ? Clarify() : BoundOperation(operationName, binding);
             // An indefinite article is not an input. Quoted 'a' and explicit
             // "a as ..." remain operands; preserve the lexeme's noun evidence.
-            if (MissingOperand.IsMatch(framed) && (operation.Groups["noun"].Success
+            if (MissingOperand.IsMatch(framed) && (operationNoun.Success
                 || operationName.Contains("letter", StringComparison.OrdinalIgnoreCase)
                 || operationName.Equals("capital", StringComparison.OrdinalIgnoreCase)
                 || operationName.Equals("capitals", StringComparison.OrdinalIgnoreCase))) return Clarify();
@@ -379,13 +396,13 @@ internal static class LearningTaskParser
                 // A result sent "to" someone does not identify an operand.
                 // Only the explicit counterpart relation has that meaning here.
                 if (typedOperand && match.Groups["counterpartTo"].Success
-                    && !operation.Groups["noun"].Value.TrimStart(' ', '-').Equals("counterpart", StringComparison.OrdinalIgnoreCase))
+                    && !operationNoun.Value.TrimStart(' ', '-').Equals("counterpart", StringComparison.OrdinalIgnoreCase))
                     return Abstain("unsupported_intent");
                 // An input's case describes its current state, not a requested
                 // conversion. This frame needs an explicit operation noun.
                 if (typedOperand && match.Groups["inputCase"].Success)
                 {
-                    var noun = operation.Groups["noun"].Value.TrimStart(' ', '-');
+                    var noun = operationNoun.Value.TrimStart(' ', '-');
                     if (!new[] { "conversion", "operation", "transformation", "case conversion" }
                         .Contains(noun, StringComparer.OrdinalIgnoreCase)) return Clarify();
                 }
@@ -399,7 +416,7 @@ internal static class LearningTaskParser
                         return Abstain("unsupported_intent");
                     if (match.Groups["modal"].Success) return Clarify();
                 }
-                return ambiguity.Success && proposal.Status == "ready" ? Clarify() : proposal;
+                return (ambiguity.Success || match.Groups["unresolved"].Success) && proposal.Status == "ready" ? Clarify() : proposal;
             }
         }
         // Reuse operand refusal even when direction is absent. A hypothetical
@@ -509,6 +526,34 @@ internal static class LearningTaskParser
     }
 
     internal static LearningTaskProposal ProposeOperand(string operation, string token, bool allowAlternatives = true)
+    {
+        var plural = PluralInput.Match(token);
+        if (plural.Success)
+        {
+            var candidates = ProposeOperandCore(operation, plural.Groups["input"].Value, allowAlternatives);
+            return candidates.Status == "abstain" ? candidates : Clarify();
+        }
+        var named = NamedInput.Match(token);
+        if (!named.Success) return ProposeOperandCore(operation, token, allowAlternatives);
+        var proposal = ProposeOperandCore(operation, named.Groups["input"].Value, allowAlternatives);
+        if (proposal.Status != "ready") return proposal;
+        // A name constrains an explicit operand; it never supplies its byte.
+        // Domain refusal precedes descriptor disagreement.
+        var value = (char)proposal.Key!.Value;
+        var agrees = named.Groups["name"].Value.ToLowerInvariant() switch
+        {
+            "hyphen" => value == '-',
+            "asterisk" => value == '*',
+            "space" => value == ' ',
+            "plus sign" => value == '+',
+            "semicolon" => value == ';',
+            "punctuation" => char.IsPunctuation(value) || char.IsSymbol(value),
+            _ => false
+        };
+        return agrees ? proposal : Clarify();
+    }
+
+    private static LearningTaskProposal ProposeOperandCore(string operation, string token, bool allowAlternatives)
     {
         // Strip only the bounded operand description, never normalize the scalar.
         var description = InputDescription.Match(token);

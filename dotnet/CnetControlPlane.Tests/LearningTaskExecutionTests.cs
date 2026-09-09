@@ -11,10 +11,12 @@ public sealed class LearningTaskExecutionTests : IClassFixture<LearningCommandIn
     private readonly LearningCommandInstallation installation;
     public LearningTaskExecutionTests(LearningCommandInstallation installation) => this.installation = installation;
 
-    [Fact]
-    public async Task ConstituentProposalStillRequiresPolicyAndExternalEvidence()
+    [Theory]
+    [InlineData("Could you kindly write 'µ' in caps!", 181)]
+    [InlineData("Map the hyphen '-' to uppercase.", 45)]
+    [InlineData("Go ahead and upcase 'µ'.", 181)]
+    public async Task ConstituentProposalStillRequiresPolicyAndExternalEvidence(string request, byte originalByte)
     {
-        const string request = "Could you kindly write 'µ' in caps!";
         Assert.True(LearningTaskParser.Propose(request).Status == "ready", "TASK_CONSTITUENT_RED execution route not recognized");
         using var deployment = installation.Deploy();
         var policyBytes = Encoding.UTF8.GetBytes(LearningPolicyTests.Valid.Replace("calibration", "unicode17_upper_latin1"));
@@ -30,7 +32,7 @@ public sealed class LearningTaskExecutionTests : IClassFixture<LearningCommandIn
         await deployment.StartDaemon();
         Assert.Equal(0, Execute('b', request));
         Assert.Equal("awaiting_evidence", Assert.Single(ledger.Experiences(0, 100)).State);
-        Assert.Equal((0L, 0L), ledger.Demand("unicode17_upper_latin1", 181));
+        Assert.Equal((0L, 0L), ledger.Demand("unicode17_upper_latin1", originalByte));
         Assert.Equal(0, ledger.JobCount);
     }
 

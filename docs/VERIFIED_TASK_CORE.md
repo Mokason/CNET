@@ -162,6 +162,19 @@ result format cannot be ignored. Contextual refusal is final, without falling
 through to legacy interpretation. This extends combinations of supported
 components, not arbitrary English vocabulary.
 
+The single-clause constituent parser also composes bounded polite wrappers,
+case verbs and explicit scalar descriptions: `Go ahead and upcase 'µ'.`,
+`Would you mind lowercasing Q?`, `Map the hyphen '-' to uppercase.`, and
+`Rewrite the letter k so that it is uppercase.` The operation and noun lexicons
+use separate bounded automata. Named descriptions constrain an explicitly
+supplied character; `the hyphen` alone does not infer `'-'`, and `the hyphen '+'`
+clarifies the disagreement. Missing direction, plural candidates and unresolved
+selection remain non-executable. `Make A uppercase 'b'` clarifies instead of
+silently treating A as an article and choosing the second character.
+These source additions do not change policy, source approval, native coverage,
+training eligibility or deployment. See the [Herdr experiment record](../plans/cnet_herdr_three_heads_20260909.md)
+for the separately measured synthetic acceptance and benchmark limits.
+
 Input declaration labels and request verbs are shared across these components:
 `My input character for this task is 'A'; could you produce its lowercase
 version?` is one supported combination. Equivalence questions such as `Which
