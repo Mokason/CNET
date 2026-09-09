@@ -38,7 +38,7 @@ internal static class LearningTaskParser
     private static readonly Regex PoliteSuffix = new(@"(?: for me(?:,? please)?|,? please)\z", Options);
     private static readonly Regex ResultSuffix = new(@" for my result\z", Options);
     private static readonly Regex PreferenceSuffix = new(@" is (?:requested|what i (?:need|want)|the one i want|what i'm after|what i’m after)\z", Options);
-    private static readonly Regex AmbiguitySuffix = new(@"(?:, whichever(?: i meant)?|; i haven['’]t chosen which input yet|; either is a possible input)\z", Options);
+    private static readonly Regex AmbiguitySuffix = new(@"(?:, whichever(?: i meant| you (?:prefer|choose))?|; i haven['’]t chosen which input yet|; either is a possible input)\z", Options);
     private static readonly Regex InputDescription = new(@"\A(?:only )?(?:the |my |an? |this |that )?(?:single |single-character |one-character |supplied |provided |chosen |selected |quoted |literal )?(?:(?:unicode|latin1|currency) )?(?:character|letter|scalar|digit|symbol|input(?: scalar| character| letter)?)(?:: ?| )", Options);
     private static readonly Regex LeadingModifier = new(@"\A(?:only )?(?:the |an? |this |that )?(?:single|single-character|one-character|supplied|provided|chosen|selected|quoted|literal) ", Options);
     private static readonly Regex QuotedDescription = new(@"\A(?:the )?quoted literal (?<input>.+)\z", Options);
@@ -48,6 +48,8 @@ internal static class LearningTaskParser
     private static readonly Regex QuotedNonbreakingSpace = new(@"\A(?:the )?quoted nonbreaking space (?<input>'\u00A0'|""\u00A0"")\z", Options);
     private static readonly Regex QuotedSpace = new(@"\A(?:the )?quoted space (?<input>' '|"" "")\z", Options);
     private static readonly Regex ScalarWritten = new(@"\A(?:written|identified as|specified as) (?<input>(?:U\+|0x).+)\z", Options);
+    private static readonly Regex ShownInput = new(@"\Ashown as (?<input>.+)\z", Options);
+    private static readonly Regex ByteInput = new(@"\A(?:the |my |an? |this |that )?(?:single |quoted |literal |supplied |provided )?byte(?: (?<input>.+))?\z", Options);
     private static readonly Regex NamedInput = new(@"\A(?:the |a |an )?(?:quoted |literal )?(?<name>hyphen|asterisk|space|plus sign|semicolon|punctuation)(?: (?<input>.+))?\z", Options);
     private static readonly Regex PluralInput = new(@"\A(?:the )?(?:letters|characters|scalars) (?<input>.+)\z", Options);
     private static readonly Regex DecimalRelation = new(@"\Awhose decimal value is (?<input>[0-9]+)\z", Options);
@@ -67,7 +69,7 @@ internal static class LearningTaskParser
     private static readonly Regex MissingOperand = new(@"\A(?:" + OutputVerb + @"|give(?: me)?|show(?: me)?|display) an? " + Case + @"\z", Options);
     private static readonly Regex CompoundOrNegated = new(@"\b(?:not|then|also)\b", Options);
     private static readonly Regex AlternativeToken = new(Alternative, Options);
-    private static readonly Regex AlternativeSeparator = new(@" *, *(?:(?:and|or) +)?| +(?:(?:and|or) +)?", Options);
+    private static readonly Regex AlternativeSeparator = new(@" *, *(?:(?:and|or) +)?(?:as +)?| +(?:(?:and|or) +)?(?:as +)?", Options);
     private static readonly Regex HasConjunction = new(@"\b(?:and|or)\b", Options);
     private static readonly Regex QuotedString = new(@"\A(?:'[^']*'|""[^""]*"")\z", Options);
     private static readonly Regex UnsupportedOperand = new(@"(?:\b(?:using|locale|rules|string|word|name|sentence|paragraph|text|phrase|sequence|pair|control)\b|\bboth letters\b|\baccording to\b|\bspecific\b|;)", Options);
@@ -229,7 +231,7 @@ internal static class LearningTaskParser
         new(@"\A(?<modal>can|could|would) " + Input + @" be " + Manner + Case + @"\z", Options),
         new(@"\A" + Input + @" (?:needs to be|should be|must be) " + Case + @"\z", Options),
         new(@"\Athe (?:case )?operation (?:should|must) be " + Case + @"\z", Options),
-        new(@"\A(?:use|apply|perform|run|do|carry out) (?:the |an? )?" + Case + @"(?: (?:for|to|on) " + Input + @")?\z", Options),
+        new(@"\A(?:use|apply|perform|run|do|carry out|force) (?:the |an? )?" + Case + @"(?: (?:for|to|on) " + Input + @")?\z", Options),
         new(@"\Awhich " + Case + @" corresponds to " + Input + @"\z", Options),
         new(@"\Awhat do i get when i " + Case + @" " + Input + @"\z", Options),
         new(@"\Ause " + Input + @" as input for " + Case + @"\z", Options),
@@ -250,7 +252,7 @@ internal static class LearningTaskParser
     private static readonly Regex[] DirectionlessForms = [
         MissingDirection,
         new(@"\A" + Input + @" should undergo case (?:conversion|change)\z", Options),
-        new(@"\A" + Desire + @" a case (?:change|conversion) for " + Input + @"\z", Options),
+        new(@"\A" + Desire + @" a case (?:change|conversion) (?:for|applied to|on|of) " + Input + @"\z", Options),
         new(@"\A" + Declaration + @"\z", Options),
         new(@"\A" + NumericDeclaration + @"\z", Options),
         new(@"\Ause " + Input + @"\z", Options),
@@ -318,6 +320,8 @@ internal static class LearningTaskParser
     }
     private static LearningTaskProposal Ready(string operation, byte key) => char.IsControl((char)key) ? Abstain("input_domain") : new("ready", "typed_case_change",
         IsLowerOperation(operation) ? "unicode17_lower_latin1" : "unicode17_upper_latin1", key);
+    private static bool IsQuotedScalar(string token) => token.Length == 3
+        && (token[0] == '\'' && token[2] == '\'' || token[0] == '"' && token[2] == '"');
 
     internal static LearningTaskProposal Propose(string text) => ProposeRequest(text, null);
 
@@ -525,17 +529,27 @@ internal static class LearningTaskParser
         return IsOperationField(text) ? Clarify() : null;
     }
 
-    internal static LearningTaskProposal ProposeOperand(string operation, string token, bool allowAlternatives = true)
+    internal static LearningTaskProposal ProposeOperand(string operation, string token, bool allowAlternatives = true, bool declaredScalar = false)
     {
+        var encoded = ByteInput.Match(token);
+        if (encoded.Success)
+        {
+            var input = encoded.Groups["input"].Value;
+            var encodedProposal = ProposeOperandCore(operation, input, allowAlternatives, true);
+            // Byte spelling must be explicit. Bare A–F cannot silently choose
+            // ASCII or hexadecimal; controls/OOD still refuse before ambiguity.
+            return encodedProposal.Status == "ready" && !IsQuotedScalar(input) && !HexInput.IsMatch(input) && !DecimalInput.IsMatch(input)
+                ? Clarify() : encodedProposal;
+        }
         var plural = PluralInput.Match(token);
         if (plural.Success)
         {
-            var candidates = ProposeOperandCore(operation, plural.Groups["input"].Value, allowAlternatives);
+            var candidates = ProposeOperandCore(operation, plural.Groups["input"].Value, allowAlternatives, true);
             return candidates.Status == "abstain" ? candidates : Clarify();
         }
         var named = NamedInput.Match(token);
-        if (!named.Success) return ProposeOperandCore(operation, token, allowAlternatives);
-        var proposal = ProposeOperandCore(operation, named.Groups["input"].Value, allowAlternatives);
+        if (!named.Success) return ProposeOperandCore(operation, token, allowAlternatives, declaredScalar);
+        var proposal = ProposeOperandCore(operation, named.Groups["input"].Value, allowAlternatives, true);
         if (proposal.Status != "ready") return proposal;
         // A name constrains an explicit operand; it never supplies its byte.
         // Domain refusal precedes descriptor disagreement.
@@ -553,11 +567,11 @@ internal static class LearningTaskParser
         return agrees ? proposal : Clarify();
     }
 
-    private static LearningTaskProposal ProposeOperandCore(string operation, string token, bool allowAlternatives)
+    private static LearningTaskProposal ProposeOperandCore(string operation, string token, bool allowAlternatives, bool declaredScalar)
     {
         // Strip only the bounded operand description, never normalize the scalar.
         var description = InputDescription.Match(token);
-        if (description.Success) token = token[description.Length..];
+        if (description.Success) { token = token[description.Length..]; declaredScalar = true; }
         else
         {
             // Compose at most one additional modifier, only if the remaining
@@ -566,7 +580,7 @@ internal static class LearningTaskParser
             if (leading.Success)
             {
                 var nested = InputDescription.Match(token[leading.Length..]);
-                if (nested.Success) token = token[(leading.Length + nested.Length)..];
+                if (nested.Success) { token = token[(leading.Length + nested.Length)..]; declaredScalar = true; }
             }
         }
         var shortDescription = ShortDescription.Match(token);
@@ -583,6 +597,10 @@ internal static class LearningTaskParser
         if (space.Success) token = space.Groups["input"].Value;
         var written = ScalarWritten.Match(token);
         if (written.Success) token = written.Groups["input"].Value;
+        var shown = ShownInput.Match(token);
+        // "Shown as" describes an already established input noun. Without
+        // that role it could be an output instruction, not a supplied scalar.
+        if (shown.Success && declaredScalar) token = shown.Groups["input"].Value;
         var explicitScalar = ExplicitScalarSuffix.Match(token);
         if (explicitScalar.Success) token = explicitScalar.Groups["input"].Value;
         var decimalRelation = DecimalRelation.Match(token);
@@ -594,7 +612,7 @@ internal static class LearningTaskParser
         var relation = CodepointRelation.Match(token);
         if (relation.Success) token = relation.Groups["input"].Value;
         if (token.Length == 0 || MissingScalar.IsMatch(token) || UnspecifiedReference.IsMatch(token)) return Clarify();
-        if (token.Length == 3 && (token[0] == '\'' && token[2] == '\'' || token[0] == '"' && token[2] == '"'))
+        if (IsQuotedScalar(token))
             return token[1] <= 255 ? Ready(operation, (byte)token[1]) : Abstain("input_domain");
         if (QuotedString.IsMatch(token)) return token.Length == 2 ? Clarify() : Abstain("unsupported_intent");
         if (token.Length == 1 && token[0] <= 255 && !char.IsLetter(token[0])) return Clarify();

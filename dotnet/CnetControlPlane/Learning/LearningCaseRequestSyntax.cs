@@ -27,6 +27,8 @@ internal static class LearningCaseRequestSyntax
         }
         var start = 0;
         Polite(tokens, ref start, end);
+        if (start + 5 < end && tokens[start].Is("if") && tokens[start + 1].Is("you") && tokens[start + 2].Is("have")
+            && tokens[start + 3].Is("a") && tokens[start + 4].Is("moment") && tokens[start + 5].Is(",")) start += 6;
         if (start + 2 < end && tokens[start].Is("go") && tokens[start + 1].Is("ahead") && tokens[start + 2].Is("and")) start += 3;
         if (start + 1 < end && IsAny(tokens[start], "can", "could", "would", "will") && tokens[start + 1].Is("you"))
         {
@@ -46,6 +48,7 @@ internal static class LearningCaseRequestSyntax
         // These start nominal, relational or declaration constructions, not
         // the unary command owned here. The existing grammar owns their roles.
         if (start < end && IsAny(tokens[start], "is", "for", "on", "when", "should", "as", "with")) return null;
+        if (start < end && tokens[start].Is(":")) start++;
         return Operand(tokens, start, end, operation);
     }
 
@@ -55,9 +58,10 @@ internal static class LearningCaseRequestSyntax
         var question = tokens[cursor].Is("what's") || tokens[cursor].Is("what’s");
         if (question) cursor++;
         else if (cursor + 1 < end && tokens[cursor].Is("what") && tokens[cursor + 1].Is("is")) { cursor += 2; question = true; }
-        var output = !question && IsAny(tokens[cursor], "write", "render", "return", "show", "display", "supply", "provide", "produce", "present", "express", "give", "put", "make");
-        var conversion = !question && IsAny(tokens[cursor], "convert", "change", "turn", "switch", "transform", "map", "fold", "rewrite", "recast", "take");
+        var output = !question && IsAny(tokens[cursor], "write", "render", "return", "show", "display", "supply", "provide", "produce", "present", "express", "give", "put", "putting", "make");
+        var conversion = !question && IsAny(tokens[cursor], "convert", "change", "turn", "switch", "transform", "map", "fold", "rewrite", "recast", "take", "raise");
         var take = conversion && tokens[cursor].Is("take");
+        var raise = conversion && tokens[cursor].Is("raise");
         var make = output && tokens[cursor].Is("make");
         if (!question && !output && !conversion) return null;
         if (!question) cursor++;
@@ -78,6 +82,7 @@ internal static class LearningCaseRequestSyntax
             // than an article ("make a uppercase"). Legacy roles own that form.
             if (nominal is not null && make && cursor < end)
             {
+                if (tokens[cursor].Is(":")) cursor++;
                 var proposal = Operand(tokens, cursor, end, nominal);
                 // A/a before the direction can itself be an input. A second
                 // operand cannot silently displace it as an inferred article.
@@ -100,20 +105,24 @@ internal static class LearningCaseRequestSyntax
                 else if (complement + 1 < end && tokens[complement].Is("appears") && tokens[complement + 1].Is("in")) complement += 2;
                 else continue;
                 var caseChoice = Direction(tokens, ref complement, end);
-                if (caseChoice is not null && complement == end) return Operand(tokens, operandStart, cursor, caseChoice);
+                if (caseChoice is not null && complement == end)
+                    return ConstrainedOperand(tokens, operandStart, cursor, caseChoice, raise ? "upper" : null);
             }
             if (!IsAny(tokens[cursor], conversion ? ["to", "into"] : ["in", "as", "into", "using"])) continue;
             var target = cursor + 1;
             var direction = Direction(tokens, ref target, end);
+            // An explicit trailing input slot can resolve this/that/it, but
+            // cannot replace a preceding scalar or silently add a second one.
+            if (direction is not null && target < end && tokens[target].Is(":")
+                && cursor == operandStart + 1 && IsAny(tokens[operandStart], "this", "that", "it"))
+                return ConstrainedOperand(tokens, target + 1, end, direction, raise ? "upper" : null);
             if (direction is not null && target == end)
             {
                 var operandEnd = cursor;
                 string? modifier = null;
                 if (take && operandEnd > operandStart && IsAny(tokens[operandEnd - 1], "up", "down"))
                     modifier = tokens[--operandEnd].Is("down") ? "lower" : "upper";
-                var proposal = Operand(tokens, operandStart, operandEnd, direction);
-                return modifier is not null && modifier != direction && proposal.Status != "abstain"
-                    ? LearningTaskParser.Clarify() : proposal;
+                return ConstrainedOperand(tokens, operandStart, operandEnd, direction, modifier ?? (raise ? "upper" : null));
             }
         }
         return null;
@@ -136,6 +145,13 @@ internal static class LearningCaseRequestSyntax
     }
 
     private static LearningTaskProposal Refuse() => new("abstain", "unsupported_intent");
+
+    private static LearningTaskProposal ConstrainedOperand(List<Token> tokens, int start, int end, string direction, string? constraint)
+    {
+        var proposal = Operand(tokens, start, end, direction);
+        return constraint is not null && constraint != direction && proposal.Status != "abstain"
+            ? LearningTaskParser.Clarify() : proposal;
+    }
 
     private static void Polite(List<Token> tokens, ref int start, int end)
     {
@@ -170,7 +186,7 @@ internal static class LearningCaseRequestSyntax
         var operand = builder.ToString();
         if (start < end && tokens[start].Literal && (tokens[start].Length < 2 || tokens[start].Value[^1] != tokens[start].Value[0]))
             return LearningTaskParser.Clarify();
-        var proposal = LearningTaskParser.ProposeOperand(operation, operand);
+        var proposal = LearningTaskParser.ProposeOperand(operation, operand, declaredScalar: declaredScalar);
         // Unqualified "capital of France" does not establish a casing task.
         // Explicit case phrases with named characters still need clarification.
         if (proposal.Status == "clarify" && bareCapital && !declaredScalar && end - start == 1 && !tokens[start].Literal

@@ -15,6 +15,8 @@ public sealed class LearningTaskExecutionTests : IClassFixture<LearningCommandIn
     [InlineData("Could you kindly write 'µ' in caps!", 181)]
     [InlineData("Map the hyphen '-' to uppercase.", 45)]
     [InlineData("Go ahead and upcase 'µ'.", 181)]
+    [InlineData("Would you mind putting 'µ' in uppercase?", 181)]
+    [InlineData("Change this to uppercase: U+00B5", 181)]
     public async Task ConstituentProposalStillRequiresPolicyAndExternalEvidence(string request, byte originalByte)
     {
         Assert.True(LearningTaskParser.Propose(request).Status == "ready", "TASK_CONSTITUENT_RED execution route not recognized");

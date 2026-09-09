@@ -175,6 +175,16 @@ These source additions do not change policy, source approval, native coverage,
 training eligibility or deployment. See the [Herdr experiment record](../plans/cnet_herdr_three_heads_20260909.md)
 for the separately measured synthetic acceptance and benchmark limits.
 
+Explicit trailing input slots can resolve a pronoun, as in `Change this to
+uppercase: U+00B5`. They cannot replace a preceding scalar: `Change A to uppercase:
+'b'` abstains. Unresolved choices such as `lowercase a or b, whichever you prefer`
+clarify; the parser does not choose a candidate. A `shown as` description needs
+an established input noun. The `byte` descriptor requires a quoted character or
+explicit codepoint representation: `byte E` clarifies, `byte 'E'` and `byte 0x45`
+identify the original input, and `byte 0xE` refuses the control. Polite availability
+phrasing and new case verbs do not authorize general conditional execution or
+bypass policy/evidence checks, including requests using the word `force`.
+
 Input declaration labels and request verbs are shared across these components:
 `My input character for this task is 'A'; could you produce its lowercase
 version?` is one supported combination. Equivalence questions such as `Which
