@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "source_commit": "1730a67096368f68e9cb05c1499dcde46dcaeeb3",
+  "parser_source_sha256": "d1914eca8eb15250ec639431a8388626ddb8863e4b00c6b9bfd4f278c7bb71e0",
+  "runner_source_sha256": "8a22cb41baa45c559e500b3973c0cc453d002c5ffb977f58b3d82dff45724807",
+  "probe_source_sha256": "2612534d59fee24d4455bc0bdd0761c3a25366f054b2584177e9d79c1ce43cdc",
+  "probe_project_sha256": "5129bfd10e1c88bbc786a509b9fac10f1cff54f71d3afc44e812f76f4ed83142",
+  "assembly_sha256": "3498c57d303321a471ffaed736d63af20f2799da1a74b52b4ff3e402c658d6a9",
+  "probe_sha256": "860e7196574877ccdb62f829833af665dc8022da22e6b56f92fa50962e9f3270",
+  "build": "dotnet build tools/task_paraphrase_eval/TaskParaphraseProbe.csproj --artifacts-path .artifacts/task-verified --nologo",
+  "sdk_version": "10.0.203",
+  "target_framework": "net8.0",
+  "confirmation_opened_by_implementer_at_freeze": false,
+  "boundary_review": "Fresh-context Astra; no frozen corpus access. Surrogate transport finding fixed and re-reviewed before freeze.",
+  "evaluation_origin": "synthetic",
+  "training_eligible": false
+}
