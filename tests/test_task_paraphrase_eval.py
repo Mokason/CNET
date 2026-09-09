@@ -266,7 +266,7 @@ class RunnerIntegrity(unittest.TestCase):
         self.args.suite = "round3"
         self.args.collection = "confirmation"
         self.corpus = json.dumps({**fixture(), "name": "confirmation"}).encode()
-        self.frozen = json.dumps({"confirmation_sha256": evaluator.digest(self.corpus)}).encode()
+        self.frozen = json.dumps({"corpus": {"sha256": evaluator.digest(self.corpus)}}).encode()
         visited = []
         def read(path, limit=None):
             visited.append(Path(path))
@@ -277,6 +277,21 @@ class RunnerIntegrity(unittest.TestCase):
         corpus_files = [p for p in visited if p.name in {"freeze.json", "confirmation.json", "qualification.json"}]
         self.assertTrue(all(p.parent.name == "task_paraphrases_round3_20260909" for p in corpus_files))
         self.assertNotIn("qualification.json", [p.name for p in corpus_files])
+
+    def test_invalid_manifest_identity_refuses_before_corpus_read(self):
+        self.args.suite = "round3"
+        self.args.collection = "confirmation"
+        for value in ({"confirmation_sha256": "0" * 64}, {"corpus": []},
+                      {"corpus": {"sha256": 1}}, {"corpus": {"sha256": "bad"}}, []):
+            self.frozen = json.dumps(value).encode()
+            visited = []
+            def read(path, limit=None):
+                visited.append(Path(path).name)
+                return self.read(path, limit)
+            with self.subTest(value=value), patch.object(evaluator, "ROUND3_FREEZE_SHA256", evaluator.digest(self.frozen)):
+                with self.assertRaises(ValueError, msg="PARAPHRASE_MANIFEST_RED invalid corpus identity"):
+                    self.invoke(read=read)
+            self.assertNotIn("confirmation.json", visited, "PARAPHRASE_MANIFEST_RED opened corpus before identity validation")
 
     def test_changed_artifacts_cannot_issue_a_successful_score(self):
         for name in ("freeze.json", "LearningTaskProposal.cs", "assembly.dll", "qualification.json"):

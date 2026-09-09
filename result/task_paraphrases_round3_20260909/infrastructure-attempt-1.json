@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "suite": "round3",
+  "kind": "infrastructure_failure",
+  "candidate_pin_commit": "26e2efb",
+  "error": "KeyError: confirmation_sha256",
+  "cause": "Pinned round3 freeze manifest has corpus.sha256; runner incorrectly assumed the prior flat field layout.",
+  "parser_invoked": false,
+  "cases_scored": 0,
+  "corpus_bytes_read_by_runner": true,
+  "corpus_decoded_by_runner": false,
+  "corpus_text_or_labels_seen_by_implementer": false,
+  "reserved_report_bytes": 0,
+  "reserved_report_retained": "/tmp/cnet-acceptance-followup-sKBAm3/round3-confirmation-1.json",
+  "quality_gate_result": null,
+  "corpus_or_candidate_parser_modified": false
+}
