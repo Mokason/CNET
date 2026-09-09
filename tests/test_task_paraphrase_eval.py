@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import tempfile
 import unittest
 
 MODULE = Path(__file__).resolve().parents[1] / "tools/task_paraphrase_eval/evaluate.py"
@@ -40,6 +41,13 @@ def perfect(cases):
 
 
 class CorpusIntegrity(unittest.TestCase):
+    def test_nonscalar_fields_fail_with_validation_errors(self):
+        for key in ("status", "operation"):
+            value = fixture()
+            value["cases"][0][key] = []
+            with self.assertRaises(ValueError, msg="PARAPHRASE_TYPES_RED invalid scalar shape"):
+                load(value)
+
     def test_valid_fixed_population(self):
         self.assertEqual(len(load(fixture())), 128)
 
@@ -159,6 +167,25 @@ class ActualManagedProbe(unittest.TestCase):
                 result = self.invoke(raw)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertEqual(result.stdout, b"")
+
+
+class EvaluationCommand(unittest.TestCase):
+    def test_missing_pins_do_not_return_success(self):
+        result = subprocess.run(["python3", str(MODULE), "qualification"], capture_output=True, timeout=10)
+        self.assertNotEqual(result.returncode, 0, "PARAPHRASE_CLI_RED missing pins silently succeed")
+
+    def test_bad_parser_pin_and_existing_output_refuse(self):
+        with tempfile.TemporaryDirectory(prefix="cnet-paraphrase-cli-") as temporary:
+            output = Path(temporary) / "report.json"
+            args = ["python3", str(MODULE), "qualification", "--assembly", str(ASSEMBLY),
+                    "--assembly-sha256", hashlib.sha256(ASSEMBLY.read_bytes()).hexdigest(),
+                    "--parser-sha256", "0" * 64, "--output", str(output)]
+            result = subprocess.run(args, capture_output=True, timeout=10)
+            self.assertNotEqual(result.returncode, 0, "PARAPHRASE_CLI_RED wrong parser pin accepted")
+            output.write_bytes(b"retained")
+            result = subprocess.run(args, capture_output=True, timeout=10)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(output.read_bytes(), b"retained")
 
 
 if __name__ == "__main__":
