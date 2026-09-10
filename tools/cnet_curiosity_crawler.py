@@ -51,12 +51,14 @@ ALIEN_BENCHMARK_PROBES = [
 
 def signal_handler(signum, frame):
     global STOP_REQUESTED
-    print(f"\n[!] Signal {signum} received. Gracefully finishing current capsule and saving state...")
+    print(f"\n[!] Signal {signum} received. Gracefully finishing current capsule and saving state...", flush=True)
     STOP_REQUESTED = True
 
 
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
+if hasattr(signal, "SIGHUP"):
+    signal.signal(signal.SIGHUP, signal.SIG_IGN)
 
 
 # Initial foundational seed domains across diverse disciplines
@@ -466,67 +468,118 @@ def run_crawler():
         key = normalize_key(topic)
 
         if key in state.visited:
-            print(f"[*] Skipping already covered domain: '{key}'")
+            print(f"[*] Skipping already covered domain: '{key}'", flush=True)
             continue
 
-        print(f"\n[{iteration}] Exploring Curiosity Frontier: '{topic}' (Depth: {depth}, From: '{parent}')")
-        
-        # 1. Distill, compile, and run 3-stage certification gates
-        res = distill_and_certify(topic, CAPSULES_DIR)
-        
-        if not res or not res.get("ok"):
-            reason = res.get("reason", "unknown failure") if res else "pipeline exception"
-            print(f"[-] Certification Gate FAILED for '{topic}': {reason} [FAIL CLOSED]")
+        print(f"\n[{iteration}] Exploring Curiosity Frontier: '{topic}' (Depth: {depth}, From: '{parent}')", flush=True)
+
+        try:
+            # Check if capsule is already compiled and certified on disk
+            capsule_file = CAPSULES_DIR / f"{key}.gencap"
+            bin_file = Path("bin") / f"{key}.gencap"
+            target_cap = capsule_file if capsule_file.exists() else (bin_file if bin_file.exists() else None)
+            
+            res = None
+            if target_cap and target_cap.exists():
+                cmd_verify = [CNET_CLI, "gencap-verify", str(target_cap)]
+                res_v = subprocess.run(cmd_verify, capture_output=True, text=True)
+                if "CERTIFIED_AUTHENTIC" in res_v.stdout:
+                    print(f"[✓] Existing certified capsule detected for '{key}' ({target_cap}). Adopting directly.", flush=True)
+                    m_digest = re.search(r"Digest:\s+(0x[0-9a-fA-F]+)", res_v.stdout)
+                    digest = m_digest.group(1) if m_digest else "0x0"
+                    m_words = re.search(r"Vocabulary:\s+(\d+)", res_v.stdout)
+                    vocab = int(m_words.group(1)) if m_words else 0
+                    m_trans = re.search(r"Transitions:\s+(\d+)", res_v.stdout)
+                    trans = int(m_trans.group(1)) if m_trans else 0
+                    corpus_file = Path("var/distill") / f"{key}_corpus.txt"
+                    sample_sents = []
+                    if corpus_file.exists():
+                        with open(corpus_file, "r") as cf:
+                            sample_sents = [line.strip() for line in cf if line.strip()][:10]
+                    if not sample_sents:
+                        sample_sents = [topic]
+                    res = {
+                        "ok": True,
+                        "domain_key": key,
+                        "domain_tag": "ADOPTED",
+                        "capsule_file": str(target_cap),
+                        "digest": digest,
+                        "sentences": len(sample_sents),
+                        "vocab": vocab,
+                        "transitions": trans,
+                        "elapsed": 0.1,
+                        "sample_sentences": sample_sents
+                    }
+
+            if not res:
+                # 1. Distill, compile, and run 3-stage certification gates
+                res = distill_and_certify(topic, CAPSULES_DIR)
+
+            if not res or not res.get("ok"):
+                reason = res.get("reason", "unknown failure") if res else "pipeline exception"
+                print(f"[-] Certification Gate FAILED for '{topic}': {reason} [FAIL CLOSED]", flush=True)
+                state.failed.append({
+                    "topic": topic,
+                    "reason": reason,
+                    "time": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
+                })
+                state.save()
+                update_dashboard(state)
+                time.sleep(3)
+                continue
+
+            # 2. Registration into Certified Inventory
+            state.visited[key] = {
+                "topic": topic,
+                "tag": res.get("domain_tag", "GENERAL"),
+                "digest": res["digest"],
+                "statements": res["sentences"],
+                "vocab": res["vocab"],
+                "transitions": res["transitions"],
+                "timestamp": time.time(),
+                "elapsed": res["elapsed"]
+            }
+            print(f"[✓] Certified & Registered: '{key}' ({res['sentences']} stmts, {res['vocab']} words, digest {res['digest']}) in {res['elapsed']:.1f}s", flush=True)
+
+            # 3. Curiosity Branching: Discover adjacent Wikipedia-style topics
+            print(f"[*] Discovering adjacent knowledge branches from '{topic}'...", flush=True)
+            adjacent = discover_adjacent_topics(topic, res["sample_sentences"])
+            added_count = 0
+            for adj in adjacent:
+                adj_key = normalize_key(adj)
+                if adj_key not in state.visited and not any(normalize_key(f["topic"]) == adj_key for f in state.frontier):
+                    state.frontier.append({
+                        "topic": adj,
+                        "parent": key,
+                        "depth": depth + 1
+                    })
+                    state.graph_edges.append({"source": key, "target": adj_key})
+                    added_count += 1
+                    print(f"  -> Curiosity branch discovered: '{adj}'", flush=True)
+
+            print(f"[+] Added {added_count} new branches to curiosity frontier. Current queue size: {len(state.frontier)}", flush=True)
+
+            # 4. Save state & refresh live dashboard
+            state.save()
+            update_dashboard(state)
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f"[-] Unexpected exception processing '{topic}': {e} [RECOVERING]", flush=True)
             state.failed.append({
                 "topic": topic,
-                "reason": reason,
+                "reason": f"Exception: {str(e)}",
                 "time": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
             })
             state.save()
             update_dashboard(state)
-            time.sleep(3)
-            continue
-
-        # 2. Registration into Certified Inventory
-        state.visited[key] = {
-            "topic": topic,
-            "tag": res["domain_tag"],
-            "digest": res["digest"],
-            "statements": res["sentences"],
-            "vocab": res["vocab"],
-            "transitions": res["transitions"],
-            "timestamp": time.time(),
-            "elapsed": res["elapsed"]
-        }
-        print(f"[✓] Certified & Registered: '{key}' ({res['sentences']} stmts, {res['vocab']} words, digest {res['digest']}) in {res['elapsed']:.1f}s")
-
-        # 3. Curiosity Branching: Discover adjacent Wikipedia-style topics
-        print(f"[*] Discovering adjacent knowledge branches from '{topic}'...")
-        adjacent = discover_adjacent_topics(topic, res["sample_sentences"])
-        added_count = 0
-        for adj in adjacent:
-            adj_key = normalize_key(adj)
-            if adj_key not in state.visited and not any(normalize_key(f["topic"]) == adj_key for f in state.frontier):
-                state.frontier.append({
-                    "topic": adj,
-                    "parent": key,
-                    "depth": depth + 1
-                })
-                state.graph_edges.append({"source": key, "target": adj_key})
-                added_count += 1
-                print(f"  -> Curiosity branch discovered: '{adj}'")
-
-        print(f"[+] Added {added_count} new branches to curiosity frontier. Current queue size: {len(state.frontier)}")
-
-        # 4. Save state & refresh live dashboard
-        state.save()
-        update_dashboard(state)
 
         # Thermal pacing
         if not STOP_REQUESTED:
             time.sleep(cooldown_seconds)
 
-    print("\n[+] Curiosity crawler paused. State saved cleanly.")
+    print("\n[+] Curiosity crawler paused. State saved cleanly.", flush=True)
     update_dashboard(state)
 
 

@@ -31,6 +31,7 @@ case "$CMD" in
     export PYTHONUNBUFFERED=1
     nohup python3 tools/cnet_curiosity_crawler.py >> "$LOG_FILE" 2>&1 &
     CRAWLER_PID=$!
+    disown "$CRAWLER_PID" 2>/dev/null || true
     echo "$CRAWLER_PID" > "$PID_FILE"
     echo "[+] Curiosity crawler started successfully with PID $CRAWLER_PID."
     echo "[+] To monitor live: tail -f $LOG_FILE"
