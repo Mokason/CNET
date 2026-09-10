@@ -1,0 +1,20 @@
+[Unit]
+Description=CNET Marble Discord PEER bridge (IO adapter → cnet_peer)
+After=network.target cnetd.service
+Wants=cnetd.service
+PartOf=cnet-marble.target
+
+[Service]
+Type=simple
+EnvironmentFile=-%h/.config/cnet/discord.env
+Environment=PATH=%h/AI/CNET/bin:%h/.local/bin:/usr/bin
+Environment=CNET_DISCORD_TOKEN_FILE=%h/.config/cnet/discord_token
+WorkingDirectory=%h/AI/CNET
+ExecStart=%h/.config/cnet/venv-discord/bin/python %h/.config/cnet/discord_peer_gateway.py
+# Discord opcode 8 reconnect is a clean exit 0 — always restart.
+Restart=always
+RestartSec=3
+Nice=10
+
+[Install]
+WantedBy=cnet-marble.target

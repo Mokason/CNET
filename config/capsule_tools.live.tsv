@@ -1,0 +1,6 @@
+# Live acquisition allowlist, enabled September 6, 2026.
+# INPUT OUTPUT INPUT_BITS OUTPUT_BITS OP OPERAND MIN MAX
+bytes bits 8 11 mul 8 0 255
+u8 masked8 8 8 xor 255 0 255
+minutes seconds 5 11 mul 60 0 31
+seconds frames_24fps 11 16 mul 24 0 1860

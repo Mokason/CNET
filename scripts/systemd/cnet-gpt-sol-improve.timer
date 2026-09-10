@@ -1,0 +1,12 @@
+[Unit]
+Description=Run the CNET gpt-sol improver every 2 hours
+
+[Timer]
+OnBootSec=15min
+OnUnitActiveSec=2h
+AccuracySec=2min
+Persistent=true
+Unit=cnet-gpt-sol-improve.service
+
+[Install]
+WantedBy=timers.target

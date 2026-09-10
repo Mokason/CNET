@@ -3865,6 +3865,153 @@ knowledge_accumulation_bench: $(CAPSULE_SRC) $(PERSONAL_AI_SRC) $(HYBRID_AI_SRC)
 	@grep -q "KNOWLEDGE_ACCUMULATION_BENCH_PASS" logs/knowledge_accumulation_bench.log
 	@grep "KNOWLEDGE_ACCUMULATION_BENCH_PASS" logs/knowledge_accumulation_bench.log
 
+.PHONY: cnet_vsa_bench cnet_vsa_simd_bench cnet_vsa_index_bench cnet_vsa_reason_bench cnet_vsa_doc_graft_bench cnet_vsa_gpu_bench cnet_vsa_device_bench cnet_vsa_text_bench cnet_vsa_capsule_swap_bench cnet_vsa_sleep_bench cnet_vsa_ast_bench cnet_vsa_story_bench cnet_vsa_compare_bench cnet_vsa_cli cnet_vsa_cli_bench cnet_vsa_all_bench
+cnet_vsa_bench: src/cnet_vsa.c src/cnet_vsa_memory.c src/cnet_vsa_bus.c tests/test_cnet_vsa_bench.c include/cnet_vsa.h include/cnet_vsa_memory.h include/cnet_vsa_bus.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_vsa_bench \
+		src/cnet_vsa.c src/cnet_vsa_memory.c src/cnet_vsa_bus.c \
+		tests/test_cnet_vsa_bench.c $(LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_cnet_vsa_bench | tee logs/cnet_vsa_bench.log
+	@grep -q "CNET_VSA_BENCH_PASS" logs/cnet_vsa_bench.log
+
+cnet_vsa_simd_bench: src/cnet_vsa.c src/cnet_vsa_bsc.c tests/test_cnet_vsa_simd_bench.c include/cnet_vsa.h include/cnet_vsa_bsc.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -mavx2 -mfma -Werror -Iinclude -o $(BIN_DIR)/test_cnet_vsa_simd_bench \
+		src/cnet_vsa.c src/cnet_vsa_bsc.c \
+		tests/test_cnet_vsa_simd_bench.c $(LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_cnet_vsa_simd_bench | tee logs/cnet_vsa_simd_bench.log
+	@grep -q "CNET_VSA_SIMD_BENCH_PASS" logs/cnet_vsa_simd_bench.log
+
+cnet_vsa_index_bench: src/cnet_vsa.c src/cnet_vsa_index.c tests/test_cnet_vsa_index_bench.c include/cnet_vsa.h include/cnet_vsa_index.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_vsa_index_bench \
+		src/cnet_vsa.c src/cnet_vsa_index.c \
+		tests/test_cnet_vsa_index_bench.c $(LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_cnet_vsa_index_bench | tee logs/cnet_vsa_index_bench.log
+	@grep -q "CNET_VSA_INDEX_BENCH_PASS" logs/cnet_vsa_index_bench.log
+
+cnet_vsa_reason_bench: src/cnet_vsa.c src/cnet_vsa_memory.c src/cnet_vsa_reason.c tests/test_cnet_vsa_reason_bench.c include/cnet_vsa.h include/cnet_vsa_memory.h include/cnet_vsa_reason.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_vsa_reason_bench \
+		src/cnet_vsa.c src/cnet_vsa_memory.c src/cnet_vsa_reason.c \
+		tests/test_cnet_vsa_reason_bench.c $(LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_cnet_vsa_reason_bench | tee logs/cnet_vsa_reason_bench.log
+	@grep -q "CNET_VSA_REASON_BENCH_PASS" logs/cnet_vsa_reason_bench.log
+
+cnet_vsa_doc_graft_bench: src/cnet_vsa.c src/cnet_vsa_doc_graft.c tests/test_cnet_vsa_doc_graft_bench.c include/cnet_vsa.h include/cnet_vsa_doc_graft.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_vsa_doc_graft_bench \
+		src/cnet_vsa.c src/cnet_vsa_doc_graft.c \
+		tests/test_cnet_vsa_doc_graft_bench.c $(LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_cnet_vsa_doc_graft_bench | tee logs/cnet_vsa_doc_graft_bench.log
+	@grep -q "CNET_VSA_DOC_GRAFT_BENCH_PASS" logs/cnet_vsa_doc_graft_bench.log
+
+cnet_vsa_gpu_bench: src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_gpu.hip tests/test_cnet_vsa_gpu_bench.cpp include/cnet_vsa.h include/cnet_vsa_bsc.h include/cnet_vsa_gpu.h
+	@mkdir -p $(BIN_DIR) logs
+	hipcc -O3 --offload-arch=gfx1201 -Iinclude \
+		src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_gpu.hip \
+		tests/test_cnet_vsa_gpu_bench.cpp -o $(BIN_DIR)/test_cnet_vsa_gpu_bench -lm -lpthread
+	@./$(BIN_DIR)/test_cnet_vsa_gpu_bench | tee logs/cnet_vsa_gpu_bench.log
+	@grep -q "CNET_VSA_GPU_BENCH_PASS" logs/cnet_vsa_gpu_bench.log
+
+cnet_vsa_device_bench: src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_gpu.hip src/cnet_vsa_device.c tests/test_cnet_vsa_device_bench.cpp include/cnet_vsa.h include/cnet_vsa_bsc.h include/cnet_vsa_gpu.h include/cnet_vsa_device.h
+	@mkdir -p $(BIN_DIR) logs
+	hipcc -O3 --offload-arch=gfx1201 -Iinclude \
+		src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_gpu.hip src/cnet_vsa_device.c \
+		tests/test_cnet_vsa_device_bench.cpp -o $(BIN_DIR)/test_cnet_vsa_device_bench -lm -lpthread
+	@./$(BIN_DIR)/test_cnet_vsa_device_bench | tee logs/cnet_vsa_device_bench.log
+	@grep -q "CNET_VSA_DEVICE_BENCH_PASS" logs/cnet_vsa_device_bench.log
+
+cnet_vsa_text_bench: src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_text.c tests/test_cnet_vsa_text_bench.c include/cnet_vsa.h include/cnet_vsa_bsc.h include/cnet_vsa_text.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_vsa_text_bench \
+		src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_text.c \
+		tests/test_cnet_vsa_text_bench.c $(LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_cnet_vsa_text_bench | tee logs/cnet_vsa_text_bench.log
+	@grep -q "CNET_VSA_TEXT_BENCH_PASS" logs/cnet_vsa_text_bench.log
+
+cnet_vsa_capsule_swap_bench: src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_gpu.hip src/cnet_vsa_device.c src/cnet_vsa_capsule_swap.cpp tests/test_cnet_vsa_capsule_swap_bench.cpp include/cnet_vsa.h include/cnet_vsa_bsc.h include/cnet_vsa_gpu.h include/cnet_vsa_device.h include/cnet_vsa_capsule_swap.h
+	@mkdir -p $(BIN_DIR) logs
+	hipcc -O3 --offload-arch=gfx1201 -Iinclude \
+		src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_gpu.hip src/cnet_vsa_device.c src/cnet_vsa_capsule_swap.cpp \
+		tests/test_cnet_vsa_capsule_swap_bench.cpp -o $(BIN_DIR)/test_cnet_vsa_capsule_swap_bench -lm -lpthread
+	@./$(BIN_DIR)/test_cnet_vsa_capsule_swap_bench | tee logs/cnet_vsa_capsule_swap_bench.log
+	@grep -q "CNET_VSA_CAPSULE_SWAP_BENCH_PASS" logs/cnet_vsa_capsule_swap_bench.log
+
+cnet_vsa_sleep_bench: src/cnet_vsa.c src/cnet_vsa_sleep.c tests/test_cnet_vsa_sleep_bench.c include/cnet_vsa.h include/cnet_vsa_sleep.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_vsa_sleep_bench \
+		src/cnet_vsa.c src/cnet_vsa_sleep.c \
+		tests/test_cnet_vsa_sleep_bench.c $(LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_cnet_vsa_sleep_bench | tee logs/cnet_vsa_sleep_bench.log
+	@grep -q "CNET_VSA_SLEEP_BENCH_PASS" logs/cnet_vsa_sleep_bench.log
+
+cnet_vsa_ast_bench: src/cnet_vsa.c src/cnet_vsa_ast.c tests/test_cnet_vsa_ast_bench.c include/cnet_vsa.h include/cnet_vsa_ast.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_vsa_ast_bench \
+		src/cnet_vsa.c src/cnet_vsa_ast.c \
+		tests/test_cnet_vsa_ast_bench.c $(LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_cnet_vsa_ast_bench | tee logs/cnet_vsa_ast_bench.log
+	@grep -q "CNET_VSA_AST_BENCH_PASS" logs/cnet_vsa_ast_bench.log
+
+cnet_vsa_story_bench: src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_text.c src/cnet_vsa_memory.c src/cnet_vsa_story.c tests/test_cnet_vsa_story_bench.c include/cnet_vsa.h include/cnet_vsa_story.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_vsa_story_bench \
+		src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_text.c src/cnet_vsa_memory.c src/cnet_vsa_story.c \
+		tests/test_cnet_vsa_story_bench.c $(LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_cnet_vsa_story_bench | tee logs/cnet_vsa_story_bench.log
+	@grep -q "CNET_VSA_STORY_BENCH_PASS" logs/cnet_vsa_story_bench.log
+
+cnet_vsa_compare_bench: src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_text.c src/cnet_vsa_memory.c src/cnet_vsa_story.c src/cnet_vsa_ngram.c src/cnet_vsa_hybrid.c tests/test_cnet_vsa_generation_comparison.c include/cnet_vsa_ngram.h include/cnet_vsa_hybrid.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_vsa_generation_comparison \
+		src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_text.c src/cnet_vsa_memory.c \
+		src/cnet_vsa_story.c src/cnet_vsa_ngram.c src/cnet_vsa_hybrid.c \
+		tests/test_cnet_vsa_generation_comparison.c $(LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_cnet_vsa_generation_comparison | tee logs/cnet_vsa_compare_bench.log
+	@grep -q "CNET_GENERATION_COMPARISON_PASS" logs/cnet_vsa_compare_bench.log
+
+cnet_vsa_cli: tools/cnet_vsa_cli.c src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_gpu.hip src/cnet_vsa_device.c src/cnet_vsa_text.c src/cnet_vsa_capsule_swap.cpp src/cnet_vsa_sleep.c src/cnet_vsa_ast.c src/cnet_vsa_memory.c src/cnet_vsa_story.c src/cnet_vsa_ngram.c src/cnet_vsa_hybrid.c src/cnet_vsa_gen_capsule.c
+	@mkdir -p $(BIN_DIR)
+	hipcc -O3 --offload-arch=gfx1201 -Iinclude -D_GNU_SOURCE -DCNET_HAVE_CURL=1 \
+		src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_gpu.hip src/cnet_vsa_device.c \
+		src/cnet_vsa_text.c src/cnet_vsa_capsule_swap.cpp src/cnet_vsa_sleep.c \
+		src/cnet_vsa_ast.c src/cnet_vsa_memory.c src/cnet_vsa_story.c \
+		src/cnet_vsa_ngram.c src/cnet_vsa_hybrid.c src/cnet_vsa_gen_capsule.c tools/cnet_vsa_cli.c \
+		-o $(BIN_DIR)/cnet_vsa_cli -lm -lpthread -lcurl
+
+cnet_vsa_cli_bench: cnet_vsa_cli tests/test_cnet_vsa_cli_bench.sh
+	@mkdir -p logs
+	@./tests/test_cnet_vsa_cli_bench.sh | tee logs/cnet_vsa_cli_bench.log
+	@grep -q "CNET_VSA_CLI_BENCH_PASS" logs/cnet_vsa_cli_bench.log
+
+cnet_vsa_gencap_bench: src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_text.c src/cnet_vsa_memory.c src/cnet_vsa_ngram.c src/cnet_vsa_gen_capsule.c tests/test_cnet_vsa_gencap_bench.c include/cnet_vsa_gen_capsule.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_vsa_gencap_bench \
+		src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_text.c src/cnet_vsa_memory.c \
+		src/cnet_vsa_ngram.c src/cnet_vsa_gen_capsule.c \
+		tests/test_cnet_vsa_gencap_bench.c $(LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_cnet_vsa_gencap_bench | tee logs/cnet_vsa_gencap_bench.log
+	@grep -q "CNET_VSA_GENCAP_BENCH_PASS" logs/cnet_vsa_gencap_bench.log
+
+cnet_vsa_router_bench: src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_text.c src/cnet_vsa_memory.c src/cnet_vsa_ngram.c src/cnet_vsa_gen_capsule.c tests/test_cnet_vsa_router_bench.c include/cnet_vsa_gen_capsule.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_vsa_router_bench \
+		src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_text.c src/cnet_vsa_memory.c \
+		src/cnet_vsa_ngram.c src/cnet_vsa_gen_capsule.c \
+		tests/test_cnet_vsa_router_bench.c $(LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_cnet_vsa_router_bench | tee logs/cnet_vsa_router_bench.log
+	@grep -q "CNET_VSA_ROUTER_BENCH_PASS" logs/cnet_vsa_router_bench.log
+
+cnet_vsa_all_bench: cnet_vsa_bench cnet_vsa_simd_bench cnet_vsa_index_bench cnet_vsa_reason_bench cnet_vsa_doc_graft_bench cnet_vsa_gpu_bench cnet_vsa_device_bench cnet_vsa_text_bench cnet_vsa_capsule_swap_bench cnet_vsa_sleep_bench cnet_vsa_ast_bench cnet_vsa_story_bench cnet_vsa_compare_bench cnet_vsa_gencap_bench cnet_vsa_router_bench cnet_vsa_cli_bench
+	@echo "\n================================================================="
+	@echo " ALL 16 CNET-VSA BENCHMARKS & COGNITIVE ENGINES (CLI INCLUDED) PASSED"
+	@echo "================================================================="
+
+
+
+
+
 # ASAN/UBSAN runtime check for the capsule parser. NOT -Werror: -O1 surfaces
 # pre-existing format-truncation warnings in unrelated TUs (src/selfimprove/cnet_auto_learn.c)
 # that are out of scope here. -Werror IS enforced on the two focused targets at
@@ -8384,7 +8531,7 @@ third_way_peer: $(BIN_DIR)/cnet_peer tools/test_third_way_peer.c
 	@./$(BIN_DIR)/test_third_way_peer | tee logs/third_way_peer.log
 	@grep -q "THIRD_WAY_PEER_PASS" logs/third_way_peer.log
 
-.PHONY: showrunner voice_loop capsule_propose
+.PHONY: showrunner voice_loop capsule_propose marble_live
 showrunner: src/serve/cnet_showrunner.c tools/cnet_showrunner_gate.c include/cnet_showrunner.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) -std=c11 -Wall -Wextra -O2 -Iinclude -o $(BIN_DIR)/cnet_showrunner_gate \
@@ -8423,6 +8570,36 @@ md_memory: include/cnet_md_memory.h src/memory/cnet_md_memory.c tools/cnet_md_me
 	@./$(BIN_DIR)/cnet_md_memory_gate | tee logs/md_memory.log
 	@grep -q MD_MEMORY_PASS logs/md_memory.log
 
+marble_live: showrunner voice_loop capsule_propose cnet_peer marble_live_wiring
+	@$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/cnet_discord_peer tools/cnet_discord_peer.c
+	@$(CC) -std=c11 -Wall -Wextra -O2 -o $(BIN_DIR)/cnet_listen tools/cnet_listen.c
+	@./$(BIN_DIR)/cnet_discord_peer --selftest | tee logs/discord_peer.log
+	@grep -q DISCORD_PEER_SELFTEST_PASS logs/discord_peer.log
+	@PATH="$(BIN_DIR):$$PATH" ./$(BIN_DIR)/cnet_discord_peer | tee -a logs/discord_peer.log
+	@grep -q DISCORD_PEER_PASS logs/discord_peer.log
+	@# live bridge must refuse an empty channel allowlist (fail closed)
+	@CNET_DISCORD_TOKEN=dummy CNET_DISCORD_CHANNELS= ./$(BIN_DIR)/cnet_discord_peer --live \
+		>logs/discord_allowlist.log 2>&1; test $$? -eq 2
+	@grep -q "empty channel" logs/discord_allowlist.log
+	@echo MARBLE_LIVE_PASS
+
+.PHONY: rsi_live_proof cnet_rlm_rsi
+rsi_live_proof: bin/cnet_peer bin/cnetd bin/cnet_core_evolve tools/test_rsi_live.c
+	@mkdir -p $(BIN_DIR) logs
+	@chmod +x scripts/rsi_live_proof.sh
+	@bash scripts/rsi_live_proof.sh logs/rsi_live_proof.log
+	@grep -q RSI_LIVE_PASS logs/rsi_live_proof.log
+	@# C gate on top of the shell proof: adds fail-safe (a failed mint must not
+	@# destroy the brick), the CLAIMED_CERT law check, and backup/restore of the
+	@# brick on every exit path. Both must pass.
+	$(CC) $(ASI_IMPROVE_CFLAGS) -o $(BIN_DIR)/test_rsi_live tools/test_rsi_live.c
+	@./$(BIN_DIR)/test_rsi_live | tee logs/rsi_live.log
+	@grep -q RSI_LIVE_PASS logs/rsi_live.log
+
+cnet_rlm_rsi: cnet_rlm rsi_live_proof
+	@echo RSI_STACK_PASS
+
+
 .PHONY: distill_slice
 $(BIN_DIR)/cnet_distill_slice: tools/cnet_distill_slice.c include/cnet_json_internal.h src/roe/cnet_roe_process.h
 	@mkdir -p $(BIN_DIR) logs
@@ -8443,6 +8620,14 @@ ingest_info: tools/cnet_ingest_info.c
 	@./$(BIN_DIR)/cnet_ingest_info --recall ingest | tee logs/ingest_info.log
 	@grep -q INGEST_RECALL_PASS logs/ingest_info.log
 	@echo INGEST_INFO_OK
+
+# improve-from-info: harvest is selective, ingested notes outrank the residual
+# draft, repeat demand proposes once, and nothing on the path claims CERT.
+.PHONY: improve_info
+improve_info: bin/cnet_ingest_info bin/cnetd cnet_peer scripts/improve_info_gate.sh
+	@mkdir -p logs
+	@bash scripts/improve_info_gate.sh logs/improve_info.log
+	@grep -q IMPROVE_INFO_PASS logs/improve_info.log
 
 bin/cnet_ingest_info: tools/cnet_ingest_info.c
 	@mkdir -p $(BIN_DIR)

@@ -2,193 +2,51 @@
 {"pattern":"cat grep sed","pack":"pack_toolcall_hermes","cat":"toolcall","sub":"core","skill":"tc_no_cat_grep"}
 {"pattern":"parallel tool","pack":"pack_toolcall_hermes","cat":"toolcall","sub":"batch","skill":"tc_batch_reads"}
 {"pattern":"secrets env","pack":"pack_toolcall_hermes","cat":"toolcall","sub":"refuse","skill":"tc_refuse_secrets"}
-{"pattern":"long running","pack":"pack_toolcall_hermes","cat":"toolcall","sub":"core","skill":"tc_background"}
 {"pattern":"unknown tool","pack":"pack_toolcall_hermes","cat":"toolcall","sub":"refuse","skill":"tc_fail_closed"}
-{"pattern":"git push","pack":"pack_toolcall_hermes","cat":"toolcall","sub":"refuse","skill":"tc_git_safe"}
 {"pattern":"self-cert","pack":"pack_roe_self","cat":"self","sub":"law","skill":"self_never_cert"}
 {"pattern":"roe second brain","pack":"pack_roe_self","cat":"self","sub":"law","skill":"self_second_brain"}
 {"pattern":"self model","pack":"pack_roe_self","cat":"self","sub":"inventory","skill":"self_inventory"}
 {"pattern":"who is roe-asi","pack":"pack_roe_self","cat":"self","sub":"inventory","skill":"self_identity"}
 {"pattern":"outside coverage","pack":"pack_roe_self","cat":"self","sub":"route","skill":"self_abstain"}
-{"pattern":"roe self snapshot","pack":"pack_roe_self","cat":"self","sub":"inventory","skill":"self_snapshot_cmd"}
 {"pattern":"format-truncation","pack":"pack_coding_cnet_c","cat":"coding","sub":"c","skill":"cc_werror_snprintf"}
-{"pattern":"RoeDocAsset heap","pack":"pack_coding_cnet_c","cat":"coding","sub":"c","skill":"cc_heap_large"}
 {"pattern":"catalog.jsonl","pack":"pack_coding_cnet_c","cat":"coding","sub":"roe","skill":"cc_single_line_skill"}
 {"pattern":"silent CERT","pack":"pack_coding_cnet_c","cat":"coding","sub":"roe","skill":"cc_never_self_cert"}
-{"pattern":"make roe_asi","pack":"pack_coding_cnet_c","cat":"coding","sub":"make","skill":"cc_make_asi"}
-{"pattern":"unit.cnb","pack":"pack_coding_cnet_c","cat":"coding","sub":"abi","skill":"cc_cnb_load"}
 {"pattern":"lower floor","pack":"pack_coding_cnet_c","cat":"coding","sub":"c","skill":"cc_floors"}
-{"pattern":"never lowers floors","pack":"pack_coding_cnet_c","cat":"coding","sub":"c","skill":"cc_brain_floors"}
-{"pattern":"brain floats","pack":"pack_coding_cnet_c","cat":"coding","sub":"c","skill":"cc_brain_floors"}
-{"pattern":"roe_doc_route table","pack":"pack_coding_cnet_c","cat":"coding","sub":"make","skill":"cc_link_table"}
-{"pattern":"stream index attend","pack":"pack_coding_cnet_c","cat":"coding","sub":"c","skill":"cc_stream_kv"}
-{"pattern":"weight epoch","pack":"pack_coding_cnet_c","cat":"coding","sub":"roe","skill":"cc_weight_epoch"}
+{"pattern":"make roe_asi","pack":"pack_coding_cnet_c","cat":"coding","sub":"make","skill":"cc_make_asi"}
 {"pattern":"debug checklist","pack":"pack_debug_l3","cat":"debug","sub":"process","skill":"dbg_checklist"}
-{"pattern":"project memory","pack":"pack_debug_l3","cat":"debug","sub":"project","skill":"dbg_l3_key"}
 {"pattern":"segmentation fault","pack":"pack_debug_l3","cat":"debug","sub":"recipes","skill":"dbg_segv"}
-{"pattern":"undefined reference","pack":"pack_debug_l3","cat":"debug","sub":"recipes","skill":"dbg_undefined"}
-{"pattern":"treated as error","pack":"pack_debug_l3","cat":"debug","sub":"recipes","skill":"dbg_werror"}
 {"pattern":"make gate failed","pack":"pack_debug_l3","cat":"debug","sub":"process","skill":"dbg_gate"}
 {"pattern":"works on my machine","pack":"pack_debug_l3","cat":"debug","sub":"process","skill":"dbg_no_guess"}
 {"pattern":"microsplit","pack":"pack_goal_split","cat":"goal","sub":"plan","skill":"goal_split"}
 {"pattern":"HAVE MISS","pack":"pack_goal_split","cat":"goal","sub":"route","skill":"goal_have_miss"}
-{"pattern":"roe goal cli","pack":"pack_goal_split","cat":"goal","sub":"plan","skill":"goal_cmd"}
 {"pattern":"capsules cat sub","pack":"pack_goal_split","cat":"goal","sub":"tidy","skill":"goal_tidy"}
 {"pattern":"start every task","pack":"pack_goal_split","cat":"goal","sub":"route","skill":"goal_front_door"}
 {"pattern":"local first","pack":"pack_doc_l3_ocr","cat":"ocr","sub":"router","skill":"ocr_router"}
 {"pattern":"doc l3","pack":"pack_doc_l3_ocr","cat":"ocr","sub":"l3","skill":"ocr_l3"}
 {"pattern":"ROE_OCR_PACK","pack":"pack_doc_l3_ocr","cat":"ocr","sub":"pack","skill":"ocr_pack"}
 {"pattern":"teacher_rate","pack":"pack_doc_l3_ocr","cat":"ocr","sub":"kpi","skill":"ocr_kpi"}
-{"pattern":"xlsx table","pack":"pack_doc_l3_ocr","cat":"ocr","sub":"router","skill":"ocr_tables"}
-{"pattern":"Unlimited teacher","pack":"pack_doc_l3_ocr","cat":"ocr","sub":"l3","skill":"ocr_unlimited"}
-{"pattern":"omnidoc sota","pack":"pack_doc_l3_ocr","cat":"ocr","sub":"kpi","skill":"ocr_sota"}
 {"pattern":"before commit","pack":"pack_git_pr","cat":"git","sub":"commit","skill":"git_status_first"}
-{"pattern":"commit message","pack":"pack_git_pr","cat":"git","sub":"commit","skill":"git_msg"}
 {"pattern":"force push","pack":"pack_git_pr","cat":"git","sub":"commit","skill":"git_no_force_main"}
 {"pattern":"pull request body","pack":"pack_git_pr","cat":"git","sub":"pr","skill":"pr_body"}
 {"pattern":"ci failed","pack":"pack_git_pr","cat":"git","sub":"ci","skill":"pr_ci"}
-{"pattern":"large pr","pack":"pack_git_pr","cat":"git","sub":"pr","skill":"pr_small"}
 {"pattern":"config.yaml","pack":"pack_ops_hermes_systemd","cat":"ops","sub":"hermes","skill":"ops_hermes_config"}
-{"pattern":"profile","pack":"pack_ops_hermes_systemd","cat":"ops","sub":"hermes","skill":"ops_profile"}
 {"pattern":"systemctl --user","pack":"pack_ops_hermes_systemd","cat":"ops","sub":"systemd","skill":"ops_user_systemd"}
 {"pattern":"what is running","pack":"pack_ops_hermes_systemd","cat":"ops","sub":"status","skill":"ops_status_sweep"}
-{"pattern":"hermes logs","pack":"pack_ops_hermes_systemd","cat":"ops","sub":"hermes","skill":"ops_logs"}
 {"pattern":"do not start","pack":"pack_ops_hermes_systemd","cat":"ops","sub":"systemd","skill":"ops_no_new_jobs"}
-{"pattern":"roe front door","pack":"pack_ops_hermes_systemd","cat":"ops","sub":"status","skill":"ops_front_door"}
-{"pattern":"front door selective load","pack":"pack_ops_hermes_systemd","cat":"ops","sub":"status","skill":"ops_front_door_selective"}
-{"pattern":"cnet-marble","pack":"pack_ops_hermes_systemd","cat":"ops","sub":"systemd","skill":"ops_cnet_marble"}
 {"pattern":"CNET proposes","pack":"pack_pm_director_oracle","cat":"pm","sub":"law","skill":"pm_propose_commit"}
-{"pattern":"Unity disposes","pack":"pack_pm_director_oracle","cat":"pm","sub":"law","skill":"pm_propose_commit"}
 {"pattern":"director abstain","pack":"pack_pm_director_oracle","cat":"pm","sub":"law","skill":"pm_abstain"}
-{"pattern":"after commit","pack":"pack_pm_director_oracle","cat":"pm","sub":"bridges","skill":"pm_effects_after"}
 {"pattern":"WITHHELD promote","pack":"pack_pm_director_oracle","cat":"pm","sub":"director","skill":"pm_withheld"}
-{"pattern":"headless test","pack":"pack_pm_director_oracle","cat":"pm","sub":"director","skill":"pm_headless"}
-{"pattern":"npc free chat","pack":"pack_pm_director_oracle","cat":"pm","sub":"law","skill":"pm_no_ce_npc"}
+{"pattern":"after commit","pack":"pack_pm_director_oracle","cat":"pm","sub":"bridges","skill":"pm_effects_after"}
 {"pattern":"gardener","pack":"pack_meta_gardener","cat":"meta","sub":"garden","skill":"meta_garden"}
 {"pattern":"Tier-A train","pack":"pack_meta_gardener","cat":"meta","sub":"garden","skill":"meta_no_tier_a"}
-{"pattern":"poison","pack":"pack_meta_gardener","cat":"meta","sub":"taint","skill":"meta_taint"}
 {"pattern":"how many certs","pack":"pack_meta_gardener","cat":"meta","sub":"measure","skill":"meta_three_numbers"}
-{"pattern":"miss log","pack":"pack_meta_gardener","cat":"meta","sub":"measure","skill":"meta_miss_log"}
 {"pattern":"compose","pack":"pack_meta_gardener","cat":"meta","sub":"garden","skill":"meta_compose"}
-{"pattern":"evolve tick","pack":"pack_meta_gardener","cat":"meta","sub":"garden","skill":"meta_evolve_tick"}
-{"pattern":"pack personal evolve","pack":"pack_meta_gardener","cat":"meta","sub":"garden","skill":"meta_pack_personal"}
-{"pattern":"roe reviewer","pack":"pack_meta_gardener","cat":"meta","sub":"garden","skill":"meta_reviewer"}
-{"pattern":"multi stable","pack":"pack_meta_gardener","cat":"meta","sub":"garden","skill":"meta_multi_stable"}
-{"pattern":"teacher rate","pack":"pack_meta_gardener","cat":"meta","sub":"measure","skill":"meta_teacher_rate"}
 {"pattern":"who are you","pack":"pack_soul_marble","cat":"soul","sub":"identity","skill":"soul_who"}
-{"pattern":"marble","pack":"pack_soul_marble","cat":"soul","sub":"identity","skill":"soul_marble_name"}
-{"pattern":"hermes agent","pack":"pack_soul_marble","cat":"soul","sub":"identity","skill":"soul_hermes"}
-{"pattern":"one line marble","pack":"pack_soul_marble","cat":"soul","sub":"identity","skill":"soul_oneline"}
+{"pattern":"who is your operator","pack":"pack_soul_marble","cat":"soul","sub":"identity","skill":"soul_operator"}
+{"pattern":"what do you call me","pack":"pack_soul_marble","cat":"soul","sub":"identity","skill":"soul_address"}
+{"pattern":"still here","pack":"pack_soul_marble","cat":"soul","sub":"affect","skill":"soul_ack"}
 {"pattern":"zen base","pack":"pack_soul_marble","cat":"soul","sub":"zen","skill":"soul_zen"}
-{"pattern":"beginner mind","pack":"pack_soul_marble","cat":"soul","sub":"zen","skill":"soul_beginner"}
 {"pattern":"how should you talk","pack":"pack_soul_marble","cat":"soul","sub":"register","skill":"soul_register"}
-{"pattern":"vigilance high","pack":"pack_soul_marble","cat":"soul","sub":"affect","skill":"soul_vigilance"}
-{"pattern":"reward high","pack":"pack_soul_marble","cat":"soul","sub":"affect","skill":"soul_reward"}
 {"pattern":"taboo hype","pack":"pack_soul_marble","cat":"soul","sub":"taboo","skill":"soul_taboo"}
-{"pattern":"claim cert without","pack":"pack_soul_marble","cat":"soul","sub":"taboo","skill":"soul_no_cert_claim"}
 {"pattern":"charter oath","pack":"pack_soul_marble","cat":"soul","sub":"oath","skill":"soul_oath"}
 {"pattern":"second brain","pack":"pack_soul_marble","cat":"soul","sub":"oath","skill":"soul_not_second_brain"}
-{"pattern":"persona second","pack":"pack_soul_marble","cat":"soul","sub":"oath","skill":"soul_not_second_brain"}
-{"pattern":"speech capsule","pack":"pack_speech_io","cat":"speech","sub":"law"}
-{"pattern":"how does speech","pack":"pack_speech_io","cat":"speech","sub":"how"}
-{"pattern":"speak the answer","pack":"pack_speech_io","cat":"speech","sub":"cmd"}
-{"pattern":"say that out loud","pack":"pack_speech_io","cat":"speech","sub":"cmd"}
-{"pattern":"tts speak","pack":"pack_speech_io","cat":"speech","sub":"cmd"}
-{"pattern":"voice output","pack":"pack_speech_io","cat":"speech","sub":"cmd"}
-{"pattern":"english basic pack","pack":"pack_english_basic","cat":"english","sub":"meta"}
-{"pattern":"teach english to roe","pack":"pack_english_basic","cat":"english","sub":"meta"}
-{"pattern":"a or an","pack":"pack_english_basic","cat":"english","sub":"grammar"}
-{"pattern":"definite article the","pack":"pack_english_basic","cat":"english","sub":"grammar"}
-{"pattern":"zero article","pack":"pack_english_basic","cat":"english","sub":"grammar"}
-{"pattern":"verb to be present","pack":"pack_english_basic","cat":"english","sub":"grammar"}
-{"pattern":"verb to be past","pack":"pack_english_basic","cat":"english","sub":"grammar"}
-{"pattern":"have and has","pack":"pack_english_basic","cat":"english","sub":"grammar"}
-{"pattern":"do does did","pack":"pack_english_basic","cat":"english","sub":"grammar"}
-{"pattern":"present simple tense","pack":"pack_english_basic","cat":"english","sub":"grammar"}
-{"pattern":"present continuous","pack":"pack_english_basic","cat":"english","sub":"grammar"}
-{"pattern":"past simple tense","pack":"pack_english_basic","cat":"english","sub":"grammar"}
-{"pattern":"future will going to","pack":"pack_english_basic","cat":"english","sub":"grammar"}
-{"pattern":"present perfect","pack":"pack_english_basic","cat":"english","sub":"grammar"}
-{"pattern":"past of go","pack":"pack_english_basic","cat":"english","sub":"vocab"}
-{"pattern":"past of see","pack":"pack_english_basic","cat":"english","sub":"vocab"}
-{"pattern":"past of eat","pack":"pack_english_basic","cat":"english","sub":"vocab"}
-{"pattern":"past of write","pack":"pack_english_basic","cat":"english","sub":"vocab"}
-{"pattern":"past of come","pack":"pack_english_basic","cat":"english","sub":"vocab"}
-{"pattern":"past of take","pack":"pack_english_basic","cat":"english","sub":"vocab"}
-{"pattern":"past of give","pack":"pack_english_basic","cat":"english","sub":"vocab"}
-{"pattern":"past of get","pack":"pack_english_basic","cat":"english","sub":"vocab"}
-{"pattern":"past of make","pack":"pack_english_basic","cat":"english","sub":"vocab"}
-{"pattern":"past of know","pack":"pack_english_basic","cat":"english","sub":"vocab"}
-{"pattern":"past of think","pack":"pack_english_basic","cat":"english","sub":"vocab"}
-{"pattern":"past of say","pack":"pack_english_basic","cat":"english","sub":"vocab"}
-{"pattern":"past of tell","pack":"pack_english_basic","cat":"english","sub":"vocab"}
-{"pattern":"what is a noun","pack":"pack_english_basic","cat":"english","sub":"grammar"}
-{"pattern":"what is a verb","pack":"pack_english_basic","cat":"english","sub":"grammar"}
-{"pattern":"what is an adjective","pack":"pack_english_basic","cat":"english","sub":"grammar"}
-{"pattern":"what is an adverb","pack":"pack_english_basic","cat":"english","sub":"grammar"}
-{"pattern":"subject object pronouns","pack":"pack_english_basic","cat":"english","sub":"grammar"}
-{"pattern":"subject verb agreement","pack":"pack_english_basic","cat":"english","sub":"grammar"}
-{"pattern":"how to form questions","pack":"pack_english_basic","cat":"english","sub":"grammar"}
-{"pattern":"how to make negatives","pack":"pack_english_basic","cat":"english","sub":"grammar"}
-{"pattern":"english plurals","pack":"pack_english_basic","cat":"english","sub":"grammar"}
-{"pattern":"comparative superlative","pack":"pack_english_basic","cat":"english","sub":"grammar"}
-{"pattern":"hello goodbye please thanks","pack":"pack_english_basic","cat":"english","sub":"vocab"}
-{"pattern":"english numbers 1 to 10","pack":"pack_english_basic","cat":"english","sub":"vocab"}
-{"pattern":"days of the week","pack":"pack_english_basic","cat":"english","sub":"vocab","skill":"en_days_of_week"}
-{"pattern":"basic english colors","pack":"pack_english_basic","cat":"english","sub":"vocab"}
-{"pattern":"family vocabulary","pack":"pack_english_basic","cat":"english","sub":"vocab"}
-{"pattern":"telling time english","pack":"pack_english_basic","cat":"english","sub":"vocab"}
-{"pattern":"basic food vocabulary","pack":"pack_english_basic","cat":"english","sub":"vocab"}
-{"pattern":"in on at place","pack":"pack_english_basic","cat":"english","sub":"grammar"}
-{"pattern":"in on at time","pack":"pack_english_basic","cat":"english","sub":"grammar"}
-{"pattern":"can could must should","pack":"pack_english_basic","cat":"english","sub":"grammar"}
-{"pattern":"there is there are","pack":"pack_english_basic","cat":"english","sub":"grammar"}
-{"pattern":"countable uncountable","pack":"pack_english_basic","cat":"english","sub":"grammar"}
-{"pattern":"this that these those","pack":"pack_english_basic","cat":"english","sub":"grammar"}
-{"pattern":"english word order","pack":"pack_english_basic","cat":"english","sub":"grammar"}
-{"pattern":"english capitalization","pack":"pack_english_basic","cat":"english","sub":"grammar"}
-{"pattern":"basic english punctuation","pack":"pack_english_basic","cat":"english","sub":"grammar"}
-{"pattern":"a vs an","pack":"pack_english_basic","cat":"english","sub":"grammar"}
-{"pattern":"when to use an","pack":"pack_english_basic","cat":"english","sub":"grammar"}
-{"pattern":"past tense of go","pack":"pack_english_basic","cat":"english","sub":"vocab"}
-{"pattern":"what is the past of go","pack":"pack_english_basic","cat":"english","sub":"vocab"}
-{"pattern":"went or gone","pack":"pack_english_basic","cat":"english","sub":"vocab"}
-{"pattern":"past tense of see","pack":"pack_english_basic","cat":"english","sub":"vocab"}
-{"pattern":"past tense of eat","pack":"pack_english_basic","cat":"english","sub":"vocab"}
-{"pattern":"present simple vs continuous","pack":"pack_english_basic","cat":"english","sub":"grammar"}
-{"pattern":"how to form past simple","pack":"pack_english_basic","cat":"english","sub":"grammar"}
-{"pattern":"I am you are he is","pack":"pack_english_basic","cat":"english","sub":"grammar"}
-{"pattern":"was or were","pack":"pack_english_basic","cat":"english","sub":"grammar"}
-{"pattern":"much or many","pack":"pack_english_basic","cat":"english","sub":"grammar"}
-{"pattern":"in on or at for time","pack":"pack_english_basic","cat":"english","sub":"grammar"}
-{"pattern":"in on or at for place","pack":"pack_english_basic","cat":"english","sub":"grammar"}
-{"pattern":"english grammar basics","pack":"pack_english_basic","cat":"english","sub":"grammar"}
-{"pattern":"basic english vocabulary","pack":"pack_english_basic","cat":"english","sub":"vocab"}
-{"pattern":"days of week","pack":"pack_english_basic","cat":"english","sub":"vocab"}
-{"pattern":"teach roe english","pack":"pack_english_basic","cat":"english","sub":"meta"}
-{"pattern":"grammar for english","pack":"pack_english_basic","cat":"english","sub":"meta"}
-{"pattern":"english vocabulary and grammar","pack":"pack_english_basic","cat":"english","sub":"meta"}
-{"pattern":"What is Tailscale","pack":"pack_ops_hermes_systemd","cat":"ops","sub":"network","skill":"ops_tailscale_what"}
-{"pattern":"What is Tailscale in one sentence","pack":"pack_ops_hermes_systemd","cat":"ops","sub":"network","skill":"ops_tailscale_sentence"}
-{"pattern":"Explain what Tailscale is","pack":"pack_ops_hermes_systemd","cat":"ops","sub":"network","skill":"ops_tailscale_explain"}
-{"pattern":"Name three uses for WireGuard","pack":"pack_ops_hermes_systemd","cat":"ops","sub":"network","skill":"ops_wireguard_uses"}
-{"pattern":"how WireGuard fits","pack":"pack_ops_hermes_systemd","cat":"ops","sub":"network","skill":"ops_wireguard_fits"}
-{"pattern":"UNIX domain socket","pack":"pack_ops_hermes_systemd","cat":"ops","sub":"network","skill":"ops_unix_socket"}
-{"pattern":"Explain UNIX sockets","pack":"pack_ops_hermes_systemd","cat":"ops","sub":"network","skill":"ops_unix_socket_explain"}
-{"pattern":"Explain what a UNIX domain socket is in two sentences","pack":"pack_ops_hermes_systemd","cat":"ops","sub":"network","skill":"ops_unix_socket_two"}
-{"pattern":"what can you train CNET","pack":"pack_ops_hermes_systemd","cat":"ops","sub":"network","skill":"ops_cnet_train_what"}
-{"pattern":"how do you answer without teacher","pack":"pack_ops_hermes_systemd","cat":"ops","sub":"network","skill":"ops_answer_without_teacher"}
-{"pattern":"What is Tailscale?","pack":"pack_ops_hermes_systemd","cat":"ops","sub":"network","skill":"ops_tailscale_what"}
-{"pattern":"What is Tailscale in one short paragraph?","pack":"pack_ops_hermes_systemd","cat":"ops","sub":"network","skill":"ops_tailscale_explain"}
-{"pattern":"what can you train CNET?","pack":"pack_ops_hermes_systemd","cat":"ops","sub":"network","skill":"ops_cnet_train_what"}
-{"pattern":"teach ROE-ASI a dictionary","pack":"pack_english_basic","cat":"english","sub":"meta","skill":"en_dictionary_what"}
-{"pattern":"can you teach ROE-ASI a dictionary","pack":"pack_english_basic","cat":"english","sub":"meta","skill":"en_dictionary_how"}
-{"pattern":"what does the word mean","pack":"pack_english_basic","cat":"english","sub":"vocab","skill":"en_dictionary_word"}
-{"pattern":"days of past week","pack":"pack_english_basic","cat":"english","sub":"vocab","skill":"en_days_past_week"}
-{"pattern":"we are using C not JAVA or Python","pack":"pack_english_basic","cat":"english","sub":"meta","skill":"en_c_not_java"}
-{"pattern":"can you teach ROE-ASI a dictionary?","pack":"pack_english_basic","cat":"english","sub":"meta","skill":"en_dictionary_how"}
-{"pattern":"days of past week?","pack":"pack_english_basic","cat":"english","sub":"vocab","skill":"en_days_past_week"}
-{"pattern":"What is Tailscale in one short paragraph","pack":"pack_ops_hermes_systemd","cat":"ops","sub":"network","skill":"ops_tailscale_paragraph"}
-{"pattern":"what is a noun?","pack":"pack_english_basic","cat":"english","sub":"grammar","skill":"en_noun_q"}
-{"pattern":"vigilance high mode","pack":"pack_soul_marble","cat":"soul","sub":"affect","skill":"soul_vigilance_mode"}
-{"pattern":"marble one line identity","pack":"pack_soul_marble","cat":"soul","sub":"identity","skill":"soul_marble_oneline_id"}

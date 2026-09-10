@@ -18,6 +18,7 @@ Wants=roe-evolve-tick.timer
 Wants=roe-explore-tick.timer
 Wants=cnetd.service
 Wants=cnet-web.service
+Wants=cnet-discord-peer.service
 Wants=cnet-marble-health.timer
 Wants=cnet-autonomous-cycle.timer
 # Optional marble sidecars (ignored if missing)

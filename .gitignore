@@ -163,3 +163,20 @@ build/cce/
 
 # Isolated task-milestone build/test output (root-discovery tests need a repo ancestor).
 /.artifacts/task-verified/
+
+# IDE and local assistant configurations
+.claude/
+.grok/
+.mcp.json
+
+# Local runtime working data, inbox, and scratch
+/var/
+/third_party/
+
+# Local benchmark result dumps and scratch logs
+result/predictions_*
+result/max_qwen7b_*
+result/gguf_*
+result/NAMEJS_*
+result/master_postmerge_*
+*.bak-*

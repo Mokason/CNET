@@ -28,6 +28,7 @@ COPY_UNITS=(
   roe-evolve-tick.timer
   cnet-autonomous-cycle.service
   cnet-autonomous-cycle.timer
+  cnet-discord-peer.service
 )
 
 # Existing user units we enable into the target (already installed elsewhere)
@@ -43,6 +44,7 @@ ENABLE_TIMERS=(
 ENABLE_SERVICES=(
   cnet-personal-ai-lane.service
   bonsai-server.service
+  cnet-discord-peer.service
 )
 
 info() { echo "cnet_marble_24_7: $*"; }

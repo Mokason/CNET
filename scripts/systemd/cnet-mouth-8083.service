@@ -1,0 +1,22 @@
+[Unit]
+Description=CNET residual student mouth (Qwen2.5-1.5B LoRA) on :8083
+Documentation=file:///home/marble/AI/CNET/scripts/mouth_sft/serve_mouth.py
+After=network.target
+# Candidate only — cnetd still uses Bonsai :8081 until a measured swap.
+
+[Service]
+Type=simple
+WorkingDirectory=%h/AI/CNET
+Environment=HIP_VISIBLE_DEVICES=0
+Environment=CUDA_VISIBLE_DEVICES=0
+Environment=HF_HUB_OFFLINE=1
+Environment=PYTHONUNBUFFERED=1
+Environment=CNET_MOUTH_HOST=127.0.0.1
+Environment=CNET_MOUTH_PORT=8083
+ExecStart=%h/.cache/cnet-rocm-lane/venv-unsloth/bin/python %h/AI/CNET/scripts/mouth_sft/serve_mouth.py
+Restart=on-failure
+RestartSec=5
+Nice=8
+
+[Install]
+WantedBy=cnet-marble.target
