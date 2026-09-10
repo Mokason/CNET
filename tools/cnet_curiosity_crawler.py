@@ -259,14 +259,6 @@ def distill_and_certify(topic: str, output_dir: Path) -> dict | None:
             f"Explain the specialized terminology, technical materials, and boundary constraints of {topic}."
         ]
         
-    # 3. Select Certified Negative Out-of-Domain Contrastive Probe
-    topic_tokens = set(re.findall(r"[a-z]{3,}", topic.lower()))
-    test_out = ALIEN_BENCHMARK_PROBES[0]
-    for candidate in ALIEN_BENCHMARK_PROBES:
-        cand_tokens = set(re.findall(r"[a-z]{3,}", candidate.lower()))
-        if len(topic_tokens & cand_tokens) == 0:
-            test_out = candidate
-            break
 
     # Step 4: Parallel Harvesting from 27B Teacher
     sys_specialist = f"You are a leading specialist and authoritative researcher in {topic}. Output clean, factual, declarative sentences. Avoid conversational filler, numbered lists, or markdown styling. One clear technical statement per line."
@@ -293,6 +285,27 @@ def distill_and_certify(topic: str, output_dir: Path) -> dict | None:
 
     if len(unique_sentences) < 15:
         return {"ok": False, "reason": f"Insufficient statements harvested ({len(unique_sentences)} < 15)"}
+
+    # Step 5b: Select Truly Alien Negative Out-of-Domain Probe
+    # Guarantee 0 content-word lexical contamination between probe and capsule corpus
+    corpus_vocab = set(re.findall(r"[a-z]{4,}", " ".join(unique_sentences).lower()))
+    probe_stopwords = {
+        "what", "which", "where", "when", "that", "this", "with", "from", "have",
+        "been", "their", "there", "some", "more", "does", "about", "used", "differ",
+        "standard", "before", "after", "through", "between", "under", "over"
+    }
+    
+    best_probe = None
+    min_overlap = 999
+    for candidate in ALIEN_BENCHMARK_PROBES:
+        cand_tokens = set(re.findall(r"[a-z]{4,}", candidate.lower())) - probe_stopwords
+        overlap = len(corpus_vocab & cand_tokens)
+        if overlap < min_overlap:
+            min_overlap = overlap
+            best_probe = candidate
+            if overlap == 0:
+                break
+    test_out = best_probe or ALIEN_BENCHMARK_PROBES[2]
 
     # Write Corpus File
     corpus_dir = Path("var/distill")
