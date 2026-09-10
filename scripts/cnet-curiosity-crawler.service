@@ -1,0 +1,18 @@
+[Unit]
+Description=CNET Overnight Autonomous Curiosity Knowledge Crawler
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/marble/AI/CNET
+Environment="PYTHONUNBUFFERED=1"
+Environment="CNET_TEACHER_URL=http://127.0.0.1:8081/v1/chat/completions"
+Environment="CNET_CLI=./bin/cnet_vsa_cli"
+ExecStart=/usr/bin/python3 -u tools/cnet_curiosity_crawler.py
+StandardOutput=append:/home/marble/AI/CNET/var/curiosity_crawler/crawler.log
+StandardError=append:/home/marble/AI/CNET/var/curiosity_crawler/crawler.log
+Restart=on-failure
+RestartSec=10s
+
+[Install]
+WantedBy=default.target
