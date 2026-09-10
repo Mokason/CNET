@@ -37,6 +37,17 @@ UNITY_CAPSULES_DIR = Path("/home/marble/AI/AliveValleyDemo-puppet-master/Assets/
 
 STOP_REQUESTED = False
 
+ALIEN_BENCHMARK_PROBES = [
+    "What is the optimal temperature and hydration ratio for proofing sourdough starter in artisan bread baking?",
+    "How do quantum qubits maintain coherent superposition on a Bloch sphere before decoherence?",
+    "What are the traditional stitch patterns and tension techniques used in Fair Isle wool sweater knitting?",
+    "How are deep-sea coral reef ecosystems affected by ocean acidification and thermal bleaching?",
+    "What are the astrological interpretations of planetary transits through the twelfth zodiac house?",
+    "How does high-fashion haute couture draping differ from standard ready-to-wear pattern drafting?",
+    "What excavation techniques are used to preserve fragile fossilized dinosaur skull specimens in sandstone?",
+    "What are the specific chemical flavor notes and oak barrel aging requirements of Kentucky bourbon whiskey?"
+]
+
 
 def signal_handler(signum, frame):
     global STOP_REQUESTED
@@ -246,13 +257,14 @@ def distill_and_certify(topic: str, output_dir: Path) -> dict | None:
             f"Explain the specialized terminology, technical materials, and boundary constraints of {topic}."
         ]
         
-    # 3. Generate Negative Out-of-Domain Contrastive Question
-    sys_ood = (
-        "Output one realistic technical inquiry question about a completely unrelated alien topic "
-        "(e.g. quantum computing, sourdough baking, or haute couture fashion) to test fail-closed abstention."
-    )
-    raw_ood = query_teacher(f"Domain: {topic}", sys_ood, max_tokens=100, temperature=0.3)
-    test_out = raw_ood.strip().splitlines()[0] if raw_ood.strip() else "What is the optimal temperature for proofing sourdough bread?"
+    # 3. Select Certified Negative Out-of-Domain Contrastive Probe
+    topic_tokens = set(re.findall(r"[a-z]{3,}", topic.lower()))
+    test_out = ALIEN_BENCHMARK_PROBES[0]
+    for candidate in ALIEN_BENCHMARK_PROBES:
+        cand_tokens = set(re.findall(r"[a-z]{3,}", candidate.lower()))
+        if len(topic_tokens & cand_tokens) == 0:
+            test_out = candidate
+            break
 
     # Step 4: Parallel Harvesting from 27B Teacher
     sys_specialist = f"You are a leading specialist and authoritative researcher in {topic}. Output clean, factual, declarative sentences. Avoid conversational filler, numbered lists, or markdown styling. One clear technical statement per line."
