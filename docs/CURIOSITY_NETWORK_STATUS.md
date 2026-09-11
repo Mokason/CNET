@@ -3,11 +3,11 @@
 > **Compounding General Knowledge Through Certified Specialized VSA Kernels.**
 > **Anti-Collapse Guaranteed**: Trained purely from 27B external teacher model on ROCm (:8081). Zero CNET self-training.
 
-* **Uptime**: 8h 10m
-* **Total Certified Capsules**: `752`
-* **Curiosity Frontier Backlog**: `1802` unexplored concepts
-* **Certification Fail-Closed Refusals**: `225` rejected candidates
-* **Last Updated**: `2026-09-11 05:45:24 UTC`
+* **Uptime**: 8h 53m
+* **Total Certified Capsules**: `816`
+* **Curiosity Frontier Backlog**: `1951` unexplored concepts
+* **Certification Fail-Closed Refusals**: `239` rejected candidates
+* **Last Updated**: `2026-09-11 06:27:57 UTC`
 
 ---
 
@@ -15,38 +15,38 @@
 
 | Domain Name | Tag | Digest | Statements | Vocabulary | Transitions |
 |---|---|---|---|---|---|
-| `perceptual_color_mapping` | `PERCEPTION` | `0xb1af71cb4b13c457` | 43 | 333 words | 847 |
-| `d_printing_post_processing` | `MANUFACTURING` | `0xbedf254f624befcb` | 54 | 428 words | 818 |
-| `computer_graphics_rendering` | `COMPUTER_GRAPHICS` | `0x45f0b31947e0394e` | 65 | 405 words | 957 |
-| `surface_reconstruction_techniques` | `COMPUTER_VISION` | `0xeee2d741c05edc04` | 57 | 382 words | 711 |
-| `geometric_processing` | `COMPUTER_VISION` | `0xb8bf416ad6f31a24` | 54 | 452 words | 862 |
-| `topological_data_analysis` | `MATH` | `0xf22c1ff1db659bb3` | 53 | 394 words | 1009 |
-| `geographic_information_systems` | `GEOGRAPHICS` | `0x4f73be63588e83e0` | 48 | 405 words | 751 |
-| `computational_geometry_algorithms` | `COMPUTATIONAL_GEOMETRY` | `0x37258519ab16dd10` | 48 | 345 words | 995 |
-| `graph_subdivision_and_contraction` | `GRAPH_THEORY` | `0x2ac4380c791f2495` | 70 | 324 words | 1083 |
-| `forbidden_minor_theory` | `GRAPH_THEORY` | `0xd8d780548dcce961` | 61 | 288 words | 1020 |
-| `planar_graph_embedding` | `GRAPH_THEORY` | `0x0fe36fc995e86a3d` | 67 | 328 words | 1111 |
-| `kuratowski_s_theorem` | `MATH` | `0xf16e51968e19e33c` | 66 | 260 words | 907 |
-| `computer_graphics` | `COMPUTER_GRAPHICS` | `0x61e6bf6018b250d1` | 66 | 423 words | 863 |
-| `photogrammetry` | `ADOPTED` | `0xac2b8533da2611a5` | 10 | 436 words | 1013 |
-| `pattern_recognition` | `COMPUTER_VISION` | `0x347dcbb1eadccc98` | 63 | 467 words | 981 |
+| `thermal_shock_engineering` | `ENGINEERING` | `0x781229bf63046bc1` | 54 | 374 words | 887 |
+| `ceramic_kiln_design` | `MATERIALS_AND_MANUFACTURING` | `0x5fae22f0ec5c35a7` | 54 | 443 words | 1050 |
+| `ceramic_kiln_operation` | `MANUFACTURING` | `0x3e3aeab9cc53083d` | 63 | 487 words | 1075 |
+| `iron_oxide_color_theory` | `CHEMISTRY` | `0x934104aea9516e56` | 55 | 377 words | 785 |
+| `furnace_atmosphere_control` | `METALLURGY` | `0x85b7684ab4263d8a` | 50 | 340 words | 638 |
+| `kiln_insulation_system_optimization` | `MATERIALS_AND_MANUFACTURING` | `0xb2e9eaed0d6fd57c` | 57 | 504 words | 1060 |
+| `ceramic_fiber_manufacturing` | `MANUFACTURING` | `0x5827c47731aac036` | 61 | 452 words | 880 |
+| `thermal_insulation_design` | `ENGINEERING` | `0xaad6cc3a289abec8` | 55 | 369 words | 847 |
+| `refractory_material_engineering` | `MATERIALS_SCI` | `0x83e7099b78f2cf54` | 56 | 403 words | 884 |
+| `refractory_composite_formulation` | `MATERIALS_SCI` | `0xdac8e84a2beed039` | 56 | 444 words | 928 |
+| `high_temperature_material_design` | `MATERIALS_SCIENCE` | `0xaf1cfe204c45caea` | 60 | 475 words | 873 |
+| `thermal_expansion_coefficient_measurement` | `MATERIALS_SCIENCE` | `0x93e0158fb3b5029d` | 67 | 419 words | 948 |
+| `ceramic_sintering_and_phase_transformation` | `MATERIALS_SCIENCE` | `0x4f8210e6b59b45ae` | 67 | 410 words | 961 |
+| `ceramic_fracture_mechanics` | `MATERIALS_SCIENCE` | `0xcfbd148e96752574` | 60 | 363 words | 802 |
+| `microstructural_stress_mapping` | `MATERIALS_SCIENCE` | `0xde70dd0fd29ff60a` | 52 | 440 words | 851 |
 
 ---
 
 ## Active Curiosity Frontier (Next in Queue)
 
-* **map projection geometry** *(branch depth: 3, linked from: `digital_cartography_and_map_design`)*
-* **spatial data encoding** *(branch depth: 3, linked from: `digital_cartography_and_map_design`)*
-* **spectral line analysis** *(branch depth: 3, linked from: `spectroscopy`)*
-* **spectral calibration** *(branch depth: 3, linked from: `spectroscopy`)*
-* **spectral deconvolution** *(branch depth: 3, linked from: `spectroscopy`)*
-* **spectral resolution enhancement** *(branch depth: 3, linked from: `spectroscopy`)*
-* **spectral interference reduction** *(branch depth: 3, linked from: `spectroscopy`)*
-* **statistical mechanics** *(branch depth: 3, linked from: `landau_theory_of_phase_transitions`)*
-* **quantum field theory** *(branch depth: 3, linked from: `landau_theory_of_phase_transitions`)*
-* **critical phenomena** *(branch depth: 3, linked from: `landau_theory_of_phase_transitions`)*
-* **phase transitions** *(branch depth: 3, linked from: `landau_theory_of_phase_transitions`)*
-* **conformal field theory** *(branch depth: 3, linked from: `renormalization_group_theory`)*
+* **high-fire glazing techniques** *(branch depth: 3, linked from: `kilnware_arrangement`)*
+* **dimensional tolerance manufacturing** *(branch depth: 3, linked from: `kilnware_arrangement`)*
+* **porcelain vitrification processes** *(branch depth: 3, linked from: `kilnware_arrangement`)*
+* **fracture mechanics and crack propagation modeling** *(branch depth: 3, linked from: `thermal_stress_analysis_in_ceramics`)*
+* **thermo-mechanical finite element analysis** *(branch depth: 3, linked from: `thermal_stress_analysis_in_ceramics`)*
+* **ceramic microstructure-property relationships** *(branch depth: 3, linked from: `thermal_stress_analysis_in_ceramics`)*
+* **thermal shock resistance engineering** *(branch depth: 3, linked from: `thermal_stress_analysis_in_ceramics`)*
+* **residual stress management in multilayer systems** *(branch depth: 3, linked from: `thermal_stress_analysis_in_ceramics`)*
+* **laser scanning profilometry** *(branch depth: 3, linked from: `anisotropic_shrinkage_compensation_in_ceramic_processing`)*
+* **full-field strain measurement** *(branch depth: 3, linked from: `anisotropic_shrinkage_compensation_in_ceramic_processing`)*
+* **eigenvalue decomposition** *(branch depth: 3, linked from: `anisotropic_shrinkage_compensation_in_ceramic_processing`)*
+* **thermal gradient control** *(branch depth: 3, linked from: `anisotropic_shrinkage_compensation_in_ceramic_processing`)*
 
 ---
 
@@ -54,18 +54,18 @@
 
 | Rejected Domain | Refusal Reason | Timestamp |
 |---|---|---|
-| `rotordynamic analysis` | In-domain verification abstained | 2026-09-11 05:28:18 |
-| `image processing` | OOD abstention gate failed on query: 'What are the astrological interpretations of planetary transits through the twelfth zodiac house?' | 2026-09-11 05:35:31 |
-| `geospatial database systems` | OOD abstention gate failed on query: 'How are deep-sea coral reef ecosystems affected by ocean acidification and thermal bleaching?' | 2026-09-11 05:39:24 |
-| `spatial data structures` | OOD abstention gate failed on query: 'How are deep-sea coral reef ecosystems affected by ocean acidification and thermal bleaching?' | 2026-09-11 05:40:27 |
-| `computational geometry` | OOD abstention gate failed on query: 'How are deep-sea coral reef ecosystems affected by ocean acidification and thermal bleaching?' | 2026-09-11 05:41:15 |
-| `mesh-based modeling` | OOD abstention gate failed on query: 'How are deep-sea coral reef ecosystems affected by ocean acidification and thermal bleaching?' | 2026-09-11 05:43:02 |
-| `digital surface reconstruction` | OOD abstention gate failed on query: 'How are deep-sea coral reef ecosystems affected by ocean acidification and thermal bleaching?' | 2026-09-11 05:44:23 |
-| `visual information design` | OOD abstention gate failed on query: 'How are deep-sea coral reef ecosystems affected by ocean acidification and thermal bleaching?' | 2026-09-11 05:45:00 |
+| `calphad thermodynamic modeling` | OOD abstention gate failed on query: 'How are deep-sea coral reef ecosystems affected by ocean acidification and thermal bleaching?' | 2026-09-11 06:00:25 |
+| `non-equilibrium phase diagram calculation` | OOD abstention gate failed on query: 'How are deep-sea coral reef ecosystems affected by ocean acidification and thermal bleaching?' | 2026-09-11 06:01:49 |
+| `fiber blending and composition` | OOD abstention gate failed on query: 'What are the astrological interpretations of planetary transits through the twelfth zodiac house?' | 2026-09-11 06:04:04 |
+| `aerodynamic boundary layer theory` | OOD abstention gate failed on query: 'What are the astrological interpretations of planetary transits through the twelfth zodiac house?' | 2026-09-11 06:06:50 |
+| `solid mechanics` | OOD abstention gate failed on query: 'What are the astrological interpretations of planetary transits through the twelfth zodiac house?' | 2026-09-11 06:08:33 |
+| `composite densification techniques` | OOD abstention gate failed on query: 'How do quantum qubits maintain coherent superposition on a Bloch sphere before decoherence?' | 2026-09-11 06:11:07 |
+| `textile engineering` | OOD abstention gate failed on query: 'How do quantum qubits maintain coherent superposition on a Bloch sphere before decoherence?' | 2026-09-11 06:15:30 |
+| `reduction oxidation firing techniques` | OOD abstention gate failed on query: 'How do quantum qubits maintain coherent superposition on a Bloch sphere before decoherence?' | 2026-09-11 06:26:13 |
 
 ---
 
 ## Knowledge Graph Topology
-* Total semantic edge connections mapped: `2719`
+* Total semantic edge connections mapped: `2946`
 * Unity StreamingAssets sync: `Active` (/home/marble/AI/AliveValleyDemo-puppet-master/Assets/StreamingAssets/PuppetMaster/gencap_capsules)
 * Zero-Inference Runtime Latency: `< 2.0 ms` per response via pure VSA algebraic unbinding.

@@ -177,6 +177,17 @@ float cnet_vsa_text_sequence_similarity(const char *text_a, const char *text_b, 
 
 int cnet_vsa_text_is_stopword(const char *token) {
     if (!token || !*token) return 1;
+
+    /* Punctuation and non-alphanumeric tokens are purely syntactic delimiters, not topical content */
+    int has_alnum = 0;
+    for (const char *p = token; *p; ++p) {
+        if (isalnum((unsigned char)*p)) {
+            has_alnum = 1;
+            break;
+        }
+    }
+    if (!has_alnum) return 1;
+
     static const char * const stopwords[] = {
         "the", "a", "an", "is", "was", "are", "were", "to", "in", "on",
         "of", "and", "or", "for", "with", "from", "at", "by", "this",
