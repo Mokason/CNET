@@ -180,3 +180,6 @@ result/gguf_*
 result/NAMEJS_*
 result/master_postmerge_*
 *.bak-*
+
+# live-generated crawler status snapshot
+docs/ISEKAI_RPG_NETWORK_STATUS.md
