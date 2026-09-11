@@ -965,10 +965,14 @@ static void cmd_gencap_gen(const char *capsule_path, const char *prompt, const c
 }
 
 static void cmd_route(const char *dir_path, const char *prompt) {
-    CnetVsaGenRegistry reg;
-    cnet_vsa_registry_init(&reg, CNET_VSA_DEFAULT_DIM);
+    CnetVsaGenRegistry *reg = (CnetVsaGenRegistry *)calloc(1, sizeof(CnetVsaGenRegistry));
+    if (!reg) {
+        fprintf(stderr, "Error: out of memory allocating registry.\n");
+        return;
+    }
+    cnet_vsa_registry_init(reg, CNET_VSA_DEFAULT_DIM);
     const char *dir = (dir_path && *dir_path) ? dir_path : "bin";
-    int n = cnet_vsa_registry_load_dir(&reg, dir);
+    int n = cnet_vsa_registry_load_dir(reg, dir);
 
     printf("=================================================================\n");
     printf(" CNET Multi-Capsule Intent Router\n");
@@ -978,41 +982,47 @@ static void cmd_route(const char *dir_path, const char *prompt) {
 
     if (n == 0) {
         printf("  [!] No certified .gencap files found in '%s'.\n", dir);
+        free(reg);
         return;
     }
 
     float query_vec[CNET_VSA_DEFAULT_DIM];
-    cnet_vsa_gencap_encode_intent(prompt, query_vec, reg.dim);
+    cnet_vsa_gencap_encode_intent(prompt, query_vec, reg->dim);
 
     printf("  Capsule Domain Match Scores (Topical Cosine Distance):\n");
     printf("  ---------------------------------------------------------------\n");
     int best_idx = -1;
     float best_dist = 1.0f;
-    int winner = cnet_vsa_registry_route(&reg, query_vec, &best_idx, &best_dist);
+    int winner = cnet_vsa_registry_route(reg, query_vec, &best_idx, &best_dist);
 
-    for (size_t i = 0; i < reg.count; ++i) {
-        float sim = cnet_vsa_similarity(query_vec, reg.capsules[i].header.centroid, reg.dim);
+    for (size_t i = 0; i < reg->count; ++i) {
+        float sim = cnet_vsa_similarity(query_vec, reg->capsules[i].header.centroid, reg->dim);
         float d = 1.0f - sim;
         const char *marker = ((int)i == winner) ? "--> [WINNER]" : "   ";
         printf("  %s %-26s | Domain: %-14s | Dist: %.4f (Limit: %.3f)\n",
-               marker, reg.capsules[i].header.name, reg.capsules[i].header.domain, d, reg.capsules[i].header.safe_radius);
+               marker, reg->capsules[i].header.name, reg->capsules[i].header.domain, d, reg->capsules[i].header.safe_radius);
     }
 
     printf("  ---------------------------------------------------------------\n");
     if (winner >= 0) {
         printf("  Routing Decision: DISPATCH TO '%s' (dist=%.4f <= %.3f) [IN-DOMAIN]\n\n",
-               reg.capsules[winner].header.name, best_dist, reg.capsules[winner].header.safe_radius);
+               reg->capsules[winner].header.name, best_dist, reg->capsules[winner].header.safe_radius);
     } else {
         printf("  Routing Decision: FAIL-CLOSED ABSTAIN (closest='%s', dist=%.4f > limit) [OUT-OF-DOMAIN]\n\n",
-               (best_idx >= 0) ? reg.capsules[best_idx].header.name : "none", best_dist);
+               (best_idx >= 0) ? reg->capsules[best_idx].header.name : "none", best_dist);
     }
+    free(reg);
 }
 
 static void cmd_auto(const char *dir_path, const char *prompt) {
-    CnetVsaGenRegistry reg;
-    cnet_vsa_registry_init(&reg, CNET_VSA_DEFAULT_DIM);
+    CnetVsaGenRegistry *reg = (CnetVsaGenRegistry *)calloc(1, sizeof(CnetVsaGenRegistry));
+    if (!reg) {
+        fprintf(stderr, "Error: out of memory allocating registry.\n");
+        return;
+    }
+    cnet_vsa_registry_init(reg, CNET_VSA_DEFAULT_DIM);
     const char *dir = (dir_path && *dir_path) ? dir_path : "bin";
-    int n = cnet_vsa_registry_load_dir(&reg, dir);
+    int n = cnet_vsa_registry_load_dir(reg, dir);
 
     printf("=================================================================\n");
     printf(" CNET Autonomous Multi-Capsule Dispatcher (Zero LLM)\n");
@@ -1024,11 +1034,12 @@ static void cmd_auto(const char *dir_path, const char *prompt) {
     char cap_name[64] = {0};
     float dist = 0.0f;
 
-    int rc = cnet_vsa_registry_dispatch(&reg, prompt, out_text, sizeof(out_text), cap_name, &dist);
+    int rc = cnet_vsa_registry_dispatch(reg, prompt, out_text, sizeof(out_text), cap_name, &dist);
 
     printf("  Routed Capsule:  %s (dist=%.4f)\n", cap_name[0] ? cap_name : "none", dist);
     printf("  Verdict:         %s\n", (rc == 0) ? "SUCCESS (In-Domain)" : "REFUSED / ABSTAIN");
     printf("  Generated Response:\n  \"%s\"\n\n", out_text);
+    free(reg);
 }
 
 static int parse_args(char *line, char *argv[], int max_args) {

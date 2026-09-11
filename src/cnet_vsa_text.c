@@ -182,6 +182,9 @@ int cnet_vsa_text_is_stopword(const char *token) {
         "of", "and", "or", "for", "with", "from", "at", "by", "this",
         "that", "it", "its", "as", "be", "than", "there", "all", "so",
         "if", "into", "up", "out", "he", "she", "they", "we", "i", "you",
+        "how", "what", "which", "where", "when", "why", "who", "do", "does",
+        "did", "can", "could", "would", "should", "have", "has", "had",
+        "will", "may", "might", "differ", "between",
         NULL
     };
     for (int i = 0; stopwords[i]; ++i) {

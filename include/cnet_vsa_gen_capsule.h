@@ -95,7 +95,7 @@ int cnet_vsa_gencap_generate(const CnetVsaGenCapsule *cap,
 /* -------------------------------------------------------------
  * Multi-Capsule Registry & Intent Router
  * ------------------------------------------------------------- */
-#define CNET_VSA_REGISTRY_MAX_CAPSULES 64
+#define CNET_VSA_REGISTRY_MAX_CAPSULES 4096
 
 typedef struct {
     uint32_t magic;
