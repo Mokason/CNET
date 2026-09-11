@@ -3971,14 +3971,23 @@ cnet_vsa_compare_bench: src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_text.c sr
 	@./$(BIN_DIR)/test_cnet_vsa_generation_comparison | tee logs/cnet_vsa_compare_bench.log
 	@grep -q "CNET_GENERATION_COMPARISON_PASS" logs/cnet_vsa_compare_bench.log
 
-cnet_vsa_cli: tools/cnet_vsa_cli.c src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_gpu.hip src/cnet_vsa_device.c src/cnet_vsa_text.c src/cnet_vsa_capsule_swap.cpp src/cnet_vsa_sleep.c src/cnet_vsa_ast.c src/cnet_vsa_memory.c src/cnet_vsa_story.c src/cnet_vsa_ngram.c src/cnet_vsa_hybrid.c src/cnet_vsa_gen_capsule.c
+cnet_vsa_cli: src/cnet_vsa_evidence.c include/cnet_vsa_evidence.h tools/cnet_vsa_cli.c src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_gpu.hip src/cnet_vsa_device.c src/cnet_vsa_text.c src/cnet_vsa_capsule_swap.cpp src/cnet_vsa_sleep.c src/cnet_vsa_ast.c src/cnet_vsa_memory.c src/cnet_vsa_story.c src/cnet_vsa_ngram.c src/cnet_vsa_hybrid.c src/cnet_vsa_gen_capsule.c
 	@mkdir -p $(BIN_DIR)
 	hipcc -O3 --offload-arch=gfx1201 -Iinclude -D_GNU_SOURCE -DCNET_HAVE_CURL=1 \
 		src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_gpu.hip src/cnet_vsa_device.c \
 		src/cnet_vsa_text.c src/cnet_vsa_capsule_swap.cpp src/cnet_vsa_sleep.c \
 		src/cnet_vsa_ast.c src/cnet_vsa_memory.c src/cnet_vsa_story.c \
-		src/cnet_vsa_ngram.c src/cnet_vsa_hybrid.c src/cnet_vsa_gen_capsule.c tools/cnet_vsa_cli.c \
+		src/cnet_vsa_ngram.c src/cnet_vsa_hybrid.c src/cnet_vsa_gen_capsule.c src/cnet_vsa_evidence.c tools/cnet_vsa_cli.c \
 		-o $(BIN_DIR)/cnet_vsa_cli -lm -lpthread -lcurl
+
+# Bounded signed-fact response operator; correctness and CLI refusal checks.
+.PHONY: cnet_vsa_evidence_bench
+cnet_vsa_evidence_bench: cnet_vsa_cli src/cnet_vsa_evidence.c tests/test_cnet_vsa_evidence.c include/cnet_vsa_evidence.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_vsa_evidence src/cnet_vsa_evidence.c tests/test_cnet_vsa_evidence.c
+	@./$(BIN_DIR)/test_cnet_vsa_evidence
+	@python3 tests/test_cnet_vsa_evidence_cli.py
+	@python3 tests/test_cnet_vsa_evidence_property.py
 
 cnet_vsa_cli_bench: cnet_vsa_cli tests/test_cnet_vsa_cli_bench.sh
 	@mkdir -p logs
@@ -4003,9 +4012,9 @@ cnet_vsa_router_bench: src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_text.c src
 	@./$(BIN_DIR)/test_cnet_vsa_router_bench | tee logs/cnet_vsa_router_bench.log
 	@grep -q "CNET_VSA_ROUTER_BENCH_PASS" logs/cnet_vsa_router_bench.log
 
-cnet_vsa_all_bench: cnet_vsa_bench cnet_vsa_simd_bench cnet_vsa_index_bench cnet_vsa_reason_bench cnet_vsa_doc_graft_bench cnet_vsa_gpu_bench cnet_vsa_device_bench cnet_vsa_text_bench cnet_vsa_capsule_swap_bench cnet_vsa_sleep_bench cnet_vsa_ast_bench cnet_vsa_story_bench cnet_vsa_compare_bench cnet_vsa_gencap_bench cnet_vsa_router_bench cnet_vsa_cli_bench
+cnet_vsa_all_bench: cnet_vsa_evidence_bench cnet_vsa_bench cnet_vsa_simd_bench cnet_vsa_index_bench cnet_vsa_reason_bench cnet_vsa_doc_graft_bench cnet_vsa_gpu_bench cnet_vsa_device_bench cnet_vsa_text_bench cnet_vsa_capsule_swap_bench cnet_vsa_sleep_bench cnet_vsa_ast_bench cnet_vsa_story_bench cnet_vsa_compare_bench cnet_vsa_gencap_bench cnet_vsa_router_bench cnet_vsa_cli_bench
 	@echo "\n================================================================="
-	@echo " ALL 16 CNET-VSA BENCHMARKS & COGNITIVE ENGINES (CLI INCLUDED) PASSED"
+	@echo " ALL CNET-VSA BENCHMARKS (CLI INCLUDED) PASSED"
 	@echo "================================================================="
 
 

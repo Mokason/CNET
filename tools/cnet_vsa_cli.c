@@ -34,6 +34,7 @@
 #include "cnet_vsa_ngram.h"
 #include "cnet_vsa_hybrid.h"
 #include "cnet_vsa_gen_capsule.h"
+#include "cnet_vsa_evidence.h"
 
 #define CLI_MAX_LINE 1024
 #define CLI_MAX_DOC_NODES 1024
@@ -78,6 +79,7 @@ static void print_usage(const char *prog) {
     printf("  gencap-gen <cap> [prm] [sd]  Autonomous generation from capsule steered by intent (zero LLM)\n");
     printf("  route <dir> <prompt>       Rank all capsules in directory against prompt intent\n");
     printf("  auto <prompt> [dir]        Auto-route prompt to best matching capsule and generate response\n");
+    printf("  explain-facts <file> <start> <rel>...  Answer a typed path with evidence from supplied facts\n");
     printf("  device-status              Display detected hardware backends (GPU ROCm / CPU AVX2)\n");
     printf("  repl                       Start interactive command-line session (default if no args)\n\n");
     printf("Options:\n");
@@ -1042,6 +1044,62 @@ static void cmd_auto(const char *dir_path, const char *prompt) {
     free(reg);
 }
 
+/* Explicit evidence operation: accepts only bounded IDs and signed fact rows. */
+static int evidence_id(const char *text, const char *prefix, int limit, int *out) {
+    size_t n=strlen(prefix);
+    if(strncmp(text,prefix,n))return -1;
+    text+=n;n=strlen(text);
+    if(!n||n>3)return -1;
+    int value=0;
+    for(size_t i=0;i<n;++i) {
+        if(text[i]<'0'||text[i]>'9')return -1;
+        value=value*10+(text[i]-'0');
+    }
+    if(value>=limit)return -1;
+    *out=value;return 0;
+}
+static int cmd_explain_facts(int argc, char **argv) {
+    if(argc<3||argc>2+CNET_VSA_EVIDENCE_HOPS) {
+        fprintf(stderr,"Usage: explain-facts <facts.txt> <start-id> <relation-id>...\n");return 2;
+    }
+    int start,relations[CNET_VSA_EVIDENCE_HOPS];
+    if(evidence_id(argv[1],"",CNET_VSA_EVIDENCE_ENTITIES,&start))return 2;
+    for(int i=2;i<argc;++i)
+        if(evidence_id(argv[i],"",CNET_VSA_EVIDENCE_RELATIONS,&relations[i-2]))return 2;
+    FILE *file=fopen(argv[0],"r");
+    if(!file){fprintf(stderr,"ERROR: cannot read evidence file\n");return 2;}
+    CnetVsaEvidenceFact facts[CNET_VSA_EVIDENCE_FACTS];size_t count=0,lines=0;
+    char line[128];int invalid=0;
+    for(;;) {
+        size_t length=0;int ch;
+        while((ch=fgetc(file))!=EOF&&ch!='\n') {
+            if(ch==0||length+1>=sizeof line){invalid=1;break;}
+            line[length++]=(char)ch;
+        }
+        if(invalid||(!length&&ch==EOF))break;
+        line[length]=0;
+        if(++lines>2048){invalid=1;break;}
+        const char *p=line;while(isspace((unsigned char)*p))p++;
+        if(!*p)continue;
+        char a[16],b[16],c[16],d[16],extra;
+        int tokens=sscanf(p,"%15s %15s %15s %15s %c",a,b,c,d,&extra);
+        if(count==CNET_VSA_EVIDENCE_FACTS||(tokens!=3&&tokens!=4)) {invalid=1;break;}
+        CnetVsaEvidenceFact *fact=&facts[count];fact->sign=tokens==4?-1:1;
+        if((tokens==4&&strcmp(b,"not"))||
+           evidence_id(a,"node",CNET_VSA_EVIDENCE_ENTITIES,&fact->subject)||
+           evidence_id(tokens==4?c:b,"rel",CNET_VSA_EVIDENCE_RELATIONS,&fact->relation)||
+           evidence_id(tokens==4?d:c,"node",CNET_VSA_EVIDENCE_ENTITIES,&fact->object)) {invalid=1;break;}
+        count++;
+    }
+    if(ferror(file))invalid=1;
+    fclose(file);
+    if(invalid){fprintf(stderr,"ERROR: invalid or oversized evidence file\n");return 2;}
+    char out[CNET_VSA_EVIDENCE_OUTPUT];
+    int rc=cnet_vsa_evidence_response(facts,count,start,relations,(size_t)(argc-2),-1,out,sizeof out);
+    if(rc<0){fprintf(stderr,"ERROR: evidence response failed (%d)\n",rc);return 2;}
+    puts(out);return rc==CNET_VSA_EVIDENCE_OK?0:1;
+}
+
 static int parse_args(char *line, char *argv[], int max_args) {
     int argc = 0;
     char *p = line;
@@ -1181,6 +1239,8 @@ static void run_repl(CliState *s) {
             } else {
                 printf("Usage: route [dir] <prompt>\n");
             }
+        } else if (strcmp(cmd, "explain-facts") == 0) {
+            (void)cmd_explain_facts(r_argc-1,r_argv+1);
         } else if (strcmp(cmd, "auto") == 0) {
             if (r_argc >= 3) {
                 cmd_auto(r_argv[2], r_argv[1]);
@@ -1196,6 +1256,8 @@ static void run_repl(CliState *s) {
 }
 
 int main(int argc, char **argv) {
+    /* This CPU-only operator needs no GPU, document store, or capsule allocation. */
+    if(argc>1&&!strcmp(argv[1],"explain-facts"))return cmd_explain_facts(argc-2,argv+2);
     const char *dev_override = NULL;
     int arg_offset = 1;
 
@@ -1315,6 +1377,10 @@ int main(int argc, char **argv) {
         } else {
             fprintf(stderr, "Usage: %s auto <prompt> [dir]\n", argv[0]);
         }
+    } else if (strcmp(cmd, "explain-facts") == 0) {
+        int rc=cmd_explain_facts(argc-arg_offset-1,argv+arg_offset+1);
+        free_cli_state(&state);
+        return rc;
     } else if (strcmp(cmd, "repl") == 0 || strcmp(cmd, "interactive") == 0) {
         print_banner();
         run_repl(&state);
