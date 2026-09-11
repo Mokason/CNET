@@ -1,0 +1,42 @@
+[
+  {
+    "file": "rocm_gpu_compute.gencap",
+    "sha256": "9abbf3df9de706262f1b73f01b018b1d245b156aaf50e42032d1da36d5acc70d"
+  },
+  {
+    "file": "linux_kernel_internals.gencap",
+    "sha256": "ce0c13080b6c4ef0283604fececb3f6fc6226e24cce4cee09c20f007071e9797"
+  },
+  {
+    "file": "compiler_optimization.gencap",
+    "sha256": "af49e72f343dac26f775fc19376d4501e83138cc1cb35279df7686eb5bfd07b8"
+  },
+  {
+    "file": "cryptography_foundations.gencap",
+    "sha256": "248d17a0909a39663496c30ee17c8d751b4a4418b71cd707c7a593813028b87c"
+  },
+  {
+    "file": "hardware_embedded.gencap",
+    "sha256": "86e3386f6ea3bda4a9840cb7f497ddaeeddc8239fad30720b7161ad1e9c7f1bf"
+  },
+  {
+    "file": "database_indexing_algorithms.gencap",
+    "sha256": "9f05839454d44f7221a509761f115e3474f77bf53884c4f3507b02697ea66c13"
+  },
+  {
+    "file": "database_internals.gencap",
+    "sha256": "45f98a21866aaaba518e98c085cd97f564460ac4303e8bbfdb0bf4e563420d15"
+  },
+  {
+    "file": "distributed_consensus_algorithms.gencap",
+    "sha256": "92a160cab5454d7462a80e1cd60bc05f4f9ddaf8e243efe4c34e49a6690bad95"
+  },
+  {
+    "file": "distributed_ledger_technology.gencap",
+    "sha256": "407524433b559b848843c20b8540a69ce868b1754ff2f1cd00f91ca6a493749d"
+  },
+  {
+    "file": "distributed_systems.gencap",
+    "sha256": "de08a953f09a4f0a71b7c223bb8b35ebfb6c975f4567279b3a08e4f4c7a834ae"
+  }
+]
