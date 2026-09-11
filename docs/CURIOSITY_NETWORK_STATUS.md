@@ -3,11 +3,11 @@
 > **Compounding General Knowledge Through Certified Specialized VSA Kernels.**
 > **Anti-Collapse Guaranteed**: Trained purely from 27B external teacher model on ROCm (:8081). Zero CNET self-training.
 
-* **Uptime**: 8h 53m
-* **Total Certified Capsules**: `816`
-* **Curiosity Frontier Backlog**: `1951` unexplored concepts
+* **Uptime**: 9h 2m
+* **Total Certified Capsules**: `832`
+* **Curiosity Frontier Backlog**: `1999` unexplored concepts
 * **Certification Fail-Closed Refusals**: `239` rejected candidates
-* **Last Updated**: `2026-09-11 06:27:57 UTC`
+* **Last Updated**: `2026-09-11 06:36:56 UTC`
 
 ---
 
@@ -15,38 +15,38 @@
 
 | Domain Name | Tag | Digest | Statements | Vocabulary | Transitions |
 |---|---|---|---|---|---|
-| `thermal_shock_engineering` | `ENGINEERING` | `0x781229bf63046bc1` | 54 | 374 words | 887 |
-| `ceramic_kiln_design` | `MATERIALS_AND_MANUFACTURING` | `0x5fae22f0ec5c35a7` | 54 | 443 words | 1050 |
-| `ceramic_kiln_operation` | `MANUFACTURING` | `0x3e3aeab9cc53083d` | 63 | 487 words | 1075 |
-| `iron_oxide_color_theory` | `CHEMISTRY` | `0x934104aea9516e56` | 55 | 377 words | 785 |
-| `furnace_atmosphere_control` | `METALLURGY` | `0x85b7684ab4263d8a` | 50 | 340 words | 638 |
-| `kiln_insulation_system_optimization` | `MATERIALS_AND_MANUFACTURING` | `0xb2e9eaed0d6fd57c` | 57 | 504 words | 1060 |
-| `ceramic_fiber_manufacturing` | `MANUFACTURING` | `0x5827c47731aac036` | 61 | 452 words | 880 |
-| `thermal_insulation_design` | `ENGINEERING` | `0xaad6cc3a289abec8` | 55 | 369 words | 847 |
-| `refractory_material_engineering` | `MATERIALS_SCI` | `0x83e7099b78f2cf54` | 56 | 403 words | 884 |
-| `refractory_composite_formulation` | `MATERIALS_SCI` | `0xdac8e84a2beed039` | 56 | 444 words | 928 |
-| `high_temperature_material_design` | `MATERIALS_SCIENCE` | `0xaf1cfe204c45caea` | 60 | 475 words | 873 |
-| `thermal_expansion_coefficient_measurement` | `MATERIALS_SCIENCE` | `0x93e0158fb3b5029d` | 67 | 419 words | 948 |
-| `ceramic_sintering_and_phase_transformation` | `MATERIALS_SCIENCE` | `0x4f8210e6b59b45ae` | 67 | 410 words | 961 |
-| `ceramic_fracture_mechanics` | `MATERIALS_SCIENCE` | `0xcfbd148e96752574` | 60 | 363 words | 802 |
-| `microstructural_stress_mapping` | `MATERIALS_SCIENCE` | `0xde70dd0fd29ff60a` | 52 | 440 words | 851 |
+| `chemical_reactor_design_and_scale_up` | `CHEMICAL_ENGINEERING` | `0xf86c6c50178d09dd` | 61 | 468 words | 1037 |
+| `mass_transfer_and_interfacial_phenomena` | `CHEMICAL_ENGINEERING` | `0xd7dcd60809f060cb` | 67 | 433 words | 1011 |
+| `ceramic_thermal_shock_resistance` | `MATERIALS_SCI` | `0x74cb0698c14bc1f3` | 61 | 360 words | 911 |
+| `microstructural_stability_modeling` | `MATERIALS_SCIENCE` | `0xd0bb79da29b37025` | 53 | 448 words | 863 |
+| `thermal_gradient_control` | `THERMAL_CONTROL` | `0x74270e75fe1e8df3` | 52 | 428 words | 883 |
+| `eigenvalue_decomposition` | `MATH` | `0xc76cafe30d25f2f1` | 52 | 310 words | 804 |
+| `full_field_strain_measurement` | `MECHANICS` | `0x1e53ca5bcc787306` | 72 | 409 words | 1064 |
+| `laser_scanning_profilometry` | `METROLOGY` | `0xd369b2d4fab450b5` | 50 | 441 words | 927 |
+| `residual_stress_management_in_multilayer_systems` | `MATERIALS_SCIENCE` | `0x086f2c4e2ac41809` | 56 | 413 words | 924 |
+| `thermal_shock_resistance_engineering` | `MATERIALS_SCI` | `0x1aff9324a98b7d23` | 64 | 410 words | 956 |
+| `ceramic_microstructure_property_relationships` | `MATERIALS_SCI` | `0x329c12fb6c07a063` | 55 | 372 words | 895 |
+| `thermo_mechanical_finite_element_analysis` | `ENGINEERING` | `0x2bc3ef6b2cff82b8` | 61 | 373 words | 926 |
+| `fracture_mechanics_and_crack_propagation_modeling` | `MATERIALS_SCIENCE` | `0x908094ac98e37629` | 68 | 453 words | 1013 |
+| `porcelain_vitrification_processes` | `MATERIALS_SCIENCE` | `0x03fa1230aa9a2291` | 57 | 377 words | 997 |
+| `dimensional_tolerance_manufacturing` | `MANUFACTURING` | `0xcac7a59f4728065c` | 54 | 370 words | 803 |
 
 ---
 
 ## Active Curiosity Frontier (Next in Queue)
 
-* **high-fire glazing techniques** *(branch depth: 3, linked from: `kilnware_arrangement`)*
-* **dimensional tolerance manufacturing** *(branch depth: 3, linked from: `kilnware_arrangement`)*
-* **porcelain vitrification processes** *(branch depth: 3, linked from: `kilnware_arrangement`)*
-* **fracture mechanics and crack propagation modeling** *(branch depth: 3, linked from: `thermal_stress_analysis_in_ceramics`)*
-* **thermo-mechanical finite element analysis** *(branch depth: 3, linked from: `thermal_stress_analysis_in_ceramics`)*
-* **ceramic microstructure-property relationships** *(branch depth: 3, linked from: `thermal_stress_analysis_in_ceramics`)*
-* **thermal shock resistance engineering** *(branch depth: 3, linked from: `thermal_stress_analysis_in_ceramics`)*
-* **residual stress management in multilayer systems** *(branch depth: 3, linked from: `thermal_stress_analysis_in_ceramics`)*
-* **laser scanning profilometry** *(branch depth: 3, linked from: `anisotropic_shrinkage_compensation_in_ceramic_processing`)*
-* **full-field strain measurement** *(branch depth: 3, linked from: `anisotropic_shrinkage_compensation_in_ceramic_processing`)*
-* **eigenvalue decomposition** *(branch depth: 3, linked from: `anisotropic_shrinkage_compensation_in_ceramic_processing`)*
-* **thermal gradient control** *(branch depth: 3, linked from: `anisotropic_shrinkage_compensation_in_ceramic_processing`)*
+* **fluid dynamics and multiphase flow** *(branch depth: 3, linked from: `solvent_extraction_engineering`)*
+* **separation processes and unit operations** *(branch depth: 3, linked from: `solvent_extraction_engineering`)*
+* **column internals and packing design** *(branch depth: 3, linked from: `solvent_extraction_engineering`)*
+* **reactor design and engineering** *(branch depth: 3, linked from: `phase_transfer_catalysis`)*
+* **continuous flow chemistry** *(branch depth: 3, linked from: `phase_transfer_catalysis`)*
+* **microfluidic systems and lab-on-a-chip** *(branch depth: 3, linked from: `phase_transfer_catalysis`)*
+* **electrokinetic separation** *(branch depth: 3, linked from: `microfluidic_separation_systems`)*
+* **microfluidic chip fabrication** *(branch depth: 3, linked from: `microfluidic_separation_systems`)*
+* **lab-on-a-chip diagnostics** *(branch depth: 3, linked from: `microfluidic_separation_systems`)*
+* **piezoelectric fluidic actuation** *(branch depth: 3, linked from: `microfluidic_separation_systems`)*
+* **biochemical fractionation** *(branch depth: 3, linked from: `density_gradient_centrifugation`)*
+* **isopycnic centrifugation** *(branch depth: 3, linked from: `density_gradient_centrifugation`)*
 
 ---
 
@@ -66,6 +66,6 @@
 ---
 
 ## Knowledge Graph Topology
-* Total semantic edge connections mapped: `2946`
+* Total semantic edge connections mapped: `3010`
 * Unity StreamingAssets sync: `Active` (/home/marble/AI/AliveValleyDemo-puppet-master/Assets/StreamingAssets/PuppetMaster/gencap_capsules)
 * Zero-Inference Runtime Latency: `< 2.0 ms` per response via pure VSA algebraic unbinding.
