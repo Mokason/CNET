@@ -496,3 +496,29 @@ Evidence: result/cnet_vsa_generation_coherence_20260912.md.
    stone dressing). Cost on frozen questions: correct 32.9 -> 29.4, wrong 1.7 -> 1.2, aliens 1/12 -> 0/12.
 
 Evidence: result/cnet_vsa_registry_reseal_20260912.md.
+
+
+---
+
+## Decision 2026-09-12 (answer path): capsule format v4 with certified passages
+
+1. v4 adds the sealed sentences (<= 128 / 32 KB, +33 KB per file, digest-covered) and a within-capsule answer
+   floor calibrated from negatives (best-passage z >= 90% quantile of off-topic queries' best-passage z).
+2. `cnet_vsa_registry_answer`: route, rank the winner's passages in the int8 space, return top k, refuse below
+   the floor. 57 to 61 us per answer warm on 812 capsules. CLI `answer`, `answer-batch`.
+3. Measured on 400 never-probed questions: answered 19.8%, 76% of those judged correct, 4.8% wrong, floor at the
+   knee of the z/correctness curve. Generation remains 0% and is not the answer path.
+4. Coverage is bounded by route refusals (67% of single questions): the operating-point step.
+
+Evidence: result/cnet_vsa_answer_path_20260912.md. Gate: `make cnet_vsa_answer_bench`.
+
+Operating point (step 2, same day): refusals by gate showed the ambiguity constant k = 2 was refusing half of all
+in-domain questions, 61% of them with the right capsule on top. Sweep on 3,994 never-probed questions: k = 1 with
+the term gate scores +1341 (accept 48.0, correct 43.2, wrong 4.8, aliens 0/12) against +1077 at k = 2; compiled
+default set to 1.0. Calibration targets are not a lever (radius refuses 0.6%; higher accept targets refuse
+122 to 345 capsules). Answer level: 26% of single questions answered correctly, 8% wrongly, 66% refused.
+
+Step 5 (Isekai epoch, same day): two epochs measured (result/cnet_vsa_isekai_epoch_20260912.md). Under the
+technical table the Isekai block scores negative at every k (top-1 self 32%); a combined epoch routes Isekai
+more but 25% wrongly and costs the technical block 6 points. Nothing ships; bin/ stays epoch 1. Needs Isekai
+question pairs and sibling-trope handling at the frontier first.

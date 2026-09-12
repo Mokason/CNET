@@ -5,7 +5,7 @@
 #include <ctype.h>
 #include <math.h>
 
-#if defined(CNET_HAVE_CURL) && CNET_HAVE_CURL
+#if CNET_HAVE_CURL
 #include <curl/curl.h>
 #endif
 
@@ -80,7 +80,7 @@ static void parse_prose_from_json(const char *json_str, char *out_prose, size_t 
     }
 }
 
-#if defined(CNET_HAVE_CURL) && CNET_HAVE_CURL
+#if CNET_HAVE_CURL
 struct CurlMemoryBuffer {
     char *data;
     size_t size;
@@ -194,7 +194,7 @@ int cnet_vsa_hybrid_generate_and_audit(CnetVsaStoryEngine *story_eng,
     char raw_json[8192] = {0};
     int status = -1;
 
-#if defined(CNET_HAVE_CURL) && CNET_HAVE_CURL
+#if CNET_HAVE_CURL
     /* Attempt 1: High-speed warm microservice on port 8084 */
     status = query_warm_mouth_service(frame->hero, frame->setting, frame->artifact,
                                       style_to_name(frame->style), max_tokens,

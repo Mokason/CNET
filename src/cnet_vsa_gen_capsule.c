@@ -47,8 +47,11 @@ static uint64_t compute_capsule_digest(const CnetVsaGenCapsule *cap) {
         h = fnv1a_update(h, &cap->version, sizeof(cap->version));
         h = fnv1a_update(h, &cap->calib, sizeof(cap->calib));
     }
-    if (cap->version >= CNET_VSA_GENCAP_VERSION) {
+    if (cap->version >= CNET_VSA_GENCAP_VERSION_V3) {
         h = fnv1a_update(h, &cap->topical, sizeof(cap->topical));
+    }
+    if (cap->version >= CNET_VSA_GENCAP_VERSION) {
+        h = fnv1a_update(h, &cap->passages, sizeof(cap->passages));
     }
     return h;
 }
@@ -138,6 +141,15 @@ int cnet_vsa_gencap_ingest(CnetVsaGenCapsule *cap, const char *text) {
             for (int d = 0; d < CNET_VSA_TOPICAL_DIM; ++d) cap->wide_sum[d] += wide[d];
             cap->wide_count++;
             cap->wide_hash += fnv1a_update(FNV_OFFSET_BASIS, text, strlen(text)); /* order-free multiset */
+            /* and kept verbatim as a certified passage while the block has room */
+            size_t len = strlen(text);
+            cap->passages.ingested++;
+            if (cap->passages.count < CNET_VSA_PASSAGE_MAX && cap->passages.bytes + len + 1 <= CNET_VSA_PASSAGE_BYTES) {
+                cap->passages.offset[cap->passages.count] = cap->passages.bytes;
+                memcpy(cap->passages.text + cap->passages.bytes, text, len + 1);
+                cap->passages.bytes += (uint32_t)(len + 1);
+                cap->passages.count++;
+            }
         }
     }
 
@@ -443,7 +455,7 @@ static int seal_common(CnetVsaGenCapsule *cap, uint32_t version) {
     if (!cap) return -1;
     if (cap->certified) return -1;  /* sealed (or loaded) capsules are immutable: rebuild from corpus */
     if (cap->ngram.vocab_count == 0) return -2;
-    if (version >= CNET_VSA_GENCAP_VERSION && cap->wide_count == 0) return -7; /* no wide evidence */
+    if (version >= CNET_VSA_GENCAP_VERSION_V3 && cap->wide_count == 0) return -7; /* no wide evidence */
 
     /* A calibration that was attempted and failed is a refusal, not a fallback */
     if (!cap->calib.calibrated && cap->calib.negative_count > 0) {
@@ -464,6 +476,12 @@ static int seal_common(CnetVsaGenCapsule *cap, uint32_t version) {
     if (version == CNET_VSA_GENCAP_VERSION_V1) memset(&cap->calib, 0, sizeof(cap->calib));
 
     if (version >= CNET_VSA_GENCAP_VERSION) {
+        cap->passages.present = cap->passages.count > 0 ? 1u : 0u;
+        if (cap->passages.z_min <= 0.0f) cap->passages.z_min = 1.0f;
+    } else {
+        memset(&cap->passages, 0, sizeof(cap->passages));
+    }
+    if (version >= CNET_VSA_GENCAP_VERSION_V3) {
         /* wide int8 topical block from the build-time accumulator */
         cap->topical.present = 1;
         cap->topical.width = CNET_VSA_TOPICAL_DIM;
@@ -499,6 +517,83 @@ int cnet_vsa_gencap_seal_legacy_v1(CnetVsaGenCapsule *cap) {
 
 int cnet_vsa_gencap_seal_legacy_v2(CnetVsaGenCapsule *cap) {
     return seal_common(cap, CNET_VSA_GENCAP_VERSION_V2);
+}
+
+int cnet_vsa_gencap_seal_legacy_v3(CnetVsaGenCapsule *cap) {
+    return seal_common(cap, CNET_VSA_GENCAP_VERSION_V3);
+}
+
+/* build side: encode the passages once, then score queries against them */
+static int8_t *passages_q8(const CnetVsaGenCapsule *cap, float **out_norm) {
+    uint32_t n = cap->passages.count;
+    int8_t *pq = (int8_t *)malloc((size_t)n * CNET_VSA_TOPICAL_DIM);
+    float *pn = (float *)malloc(sizeof(float) * n);
+    if (!pq || !pn) { free(pq); free(pn); return NULL; }
+    for (uint32_t i = 0; i < n; ++i) {
+        int8_t *v = pq + (size_t)i * CNET_VSA_TOPICAL_DIM;
+        if (cnet_vsa_gencap_encode_intent_q8(cap->passages.text + cap->passages.offset[i], v, cap->calib.reserved0) != 0) memset(v, 0, CNET_VSA_TOPICAL_DIM);
+        pn[i] = cnet_vsa_text_q8_norm(v);
+    }
+    *out_norm = pn;
+    return pq;
+}
+
+/* z of the best passage for one query: best vs mean/sd of the other passages. 0 when not scorable. */
+static int passage_best_z(const CnetVsaGenCapsule *cap, const int8_t *pq, const float *pn, const char *query, float *out_z) {
+    uint32_t n = cap->passages.count;
+    if (n < 3) return 0;
+    int8_t qv[CNET_VSA_TOPICAL_DIM];
+    if (cnet_vsa_gencap_encode_intent_q8(query, qv, cap->calib.reserved0) != 0) return 0;
+    float qn = cnet_vsa_text_q8_norm(qv);
+    double sum = 0.0, sq = 0.0; float best = -2.0f;
+    for (uint32_t i = 0; i < n; ++i) {
+        float sim = cnet_vsa_text_q8_similarity_n(qv, qn, pq + (size_t)i * CNET_VSA_TOPICAL_DIM, pn[i]);
+        sum += sim; sq += (double)sim * sim;
+        if (sim > best) best = sim;
+    }
+    double mean = (sum - best) / (n - 1);
+    double var = ((sq - (double)best * best) - (n - 1) * mean * mean) / (n - 2);
+    if (var < 1e-12) var = 1e-12;
+    if (out_z) *out_z = (float)((best - mean) / sqrt(var));
+    return (int)n;
+}
+
+int cnet_vsa_gencap_calibrate_passages(CnetVsaGenCapsule *cap,
+                                       const char *const *probes, size_t probe_count,
+                                       const char *const *negatives, size_t neg_count,
+                                       float target_reject) {
+    if (!cap) return -1;
+    if (cap->certified) return -1;
+    cap->passages.calibrated = 0;
+    cap->passages.probe_count = 0;
+    cap->passages.neg_count = 0;
+    cap->passages.probe_z_median = 0.0f;
+    cap->passages.probe_accept = 0.0f;
+    cap->passages.z_min = 1.0f;
+    if (target_reject <= 0.0f || target_reject > 1.0f) return -1;
+    if (!negatives || neg_count < 8 || cap->passages.count < 3) return 0;
+    float *pn = NULL; int8_t *pq = passages_q8(cap, &pn);
+    if (!pq) return -4;
+    float *zs = (float *)malloc(sizeof(float) * (neg_count + (probes ? probe_count : 0) + 1));
+    if (!zs) { free(pq); free(pn); return -4; }
+    size_t n = 0;
+    for (size_t i = 0; i < neg_count; ++i) { float z; if (negatives[i] && passage_best_z(cap, pq, pn, negatives[i], &z) > 0) zs[n++] = z; }
+    if (n >= 8) {
+        qsort(zs, n, sizeof(float), cmp_float_asc);
+        size_t k = (size_t)((double)n * target_reject); if (k >= n) k = n - 1;
+        float q = zs[k];
+        cap->passages.z_min = q > 1.0f ? q : 1.0f;
+        cap->passages.neg_count = (uint32_t)n;
+        cap->passages.calibrated = 1;
+        /* probes against the floor (recorded, not enforced) */
+        size_t m = 0, acc = 0;
+        for (size_t i = 0; probes && i < probe_count; ++i) {
+            float z; if (probes[i] && passage_best_z(cap, pq, pn, probes[i], &z) > 0) { zs[m++] = z; acc += z >= cap->passages.z_min; }
+        }
+        if (m) { qsort(zs, m, sizeof(float), cmp_float_asc); cap->passages.probe_z_median = zs[m / 2]; cap->passages.probe_count = (uint32_t)m; cap->passages.probe_accept = (float)acc / (float)m; }
+    }
+    free(zs); free(pq); free(pn);
+    return 0;
 }
 
 int cnet_vsa_gencap_save(const CnetVsaGenCapsule *cap, const char *filepath) {
@@ -545,16 +640,31 @@ int cnet_vsa_gencap_load(CnetVsaGenCapsule *cap, const char *filepath) {
     /* Each older version is an exact prefix of the next: v1 has no receipt,
      * v2 no topical block. Missing tails stay zeroed. Any other length is corrupt. */
     if (cap->version == CNET_VSA_GENCAP_VERSION) {
-        if (got != CNET_VSA_GENCAP_V3_SIZE || extra != EOF) return -3;
+        if (got != CNET_VSA_GENCAP_V4_SIZE || extra != EOF) return -3;
+    } else if (cap->version == CNET_VSA_GENCAP_VERSION_V3) {
+        if (got != CNET_VSA_GENCAP_V3_SIZE) return -3;
+        memset(&cap->passages, 0, sizeof(cap->passages));
     } else if (cap->version == CNET_VSA_GENCAP_VERSION_V2) {
         if (got != CNET_VSA_GENCAP_V2_SIZE) return -3;
         memset(&cap->topical, 0, sizeof(cap->topical));
+        memset(&cap->passages, 0, sizeof(cap->passages));
     } else if (cap->version == CNET_VSA_GENCAP_VERSION_V1) {
         if (got != CNET_VSA_GENCAP_V1_SIZE) return -3;
         memset(&cap->calib, 0, sizeof(cap->calib));
         memset(&cap->topical, 0, sizeof(cap->topical));
+        memset(&cap->passages, 0, sizeof(cap->passages));
     } else {
         return -4; /* Incompatible capsule version */
+    }
+    /* passage block bounds: counts, byte span, and every passage NUL-terminated inside it */
+    if (cap->passages.present) {
+        if (cap->passages.count == 0 || cap->passages.count > CNET_VSA_PASSAGE_MAX ||
+            cap->passages.bytes == 0 || cap->passages.bytes > CNET_VSA_PASSAGE_BYTES) { cap->certified = 0; return -4; }
+        for (uint32_t i = 0; i < cap->passages.count; ++i) {
+            uint32_t off = cap->passages.offset[i];
+            if (off >= cap->passages.bytes) { cap->certified = 0; return -4; }
+            if (!memchr(cap->passages.text + off, 0, cap->passages.bytes - off)) { cap->certified = 0; return -4; }
+        }
     }
 
     /* Structural bounds come from the file and size every later loop and
@@ -705,6 +815,7 @@ int cnet_vsa_registry_add_header(CnetVsaGenRegistry *reg, const CnetVsaCapsuleHe
     if (reg->count >= CNET_VSA_REGISTRY_MAX_CAPSULES) return -2;
     if (header->magic != CNET_VSA_GENCAP_MAGIC ||
         (header->version != CNET_VSA_GENCAP_VERSION &&
+         header->version != CNET_VSA_GENCAP_VERSION_V3 &&
          header->version != CNET_VSA_GENCAP_VERSION_V2 &&
          header->version != CNET_VSA_GENCAP_VERSION_V1)) {
         return -5;
@@ -737,15 +848,102 @@ int cnet_vsa_registry_add_capsule_mem(CnetVsaGenRegistry *reg, const CnetVsaGenC
     memcpy(&entry->header, cap, sizeof(CnetVsaCapsuleHeader)); /* header is the capsule prefix */
     if (filepath) snprintf(entry->filepath, sizeof(entry->filepath), "%s", filepath);
     entry->encoder_id = cnet_vsa_encoder_valid(cap->calib.reserved0) ? cap->calib.reserved0 : CNET_VSA_ENCODER_BAG;
-    if (cap->version >= CNET_VSA_GENCAP_VERSION && cap->topical.present &&
+    if (cap->version >= CNET_VSA_GENCAP_VERSION_V3 && cap->topical.present &&
         cap->topical.width == CNET_VSA_TOPICAL_DIM && cap->topical.kind == CNET_VSA_TOPICAL_KIND_Q8) {
         entry->has_topical = 1;
         entry->topical_radius = cap->topical.safe_radius;
         entry->topical_norm = cap->topical.q8_norm;
         memcpy(entry->topical, cap->topical.q8, sizeof(entry->topical));
     }
+    if (cap->version >= CNET_VSA_GENCAP_VERSION && cap->passages.present && cap->passages.count > 0) {
+        entry->passage_text = (char *)malloc(cap->passages.bytes);
+        if (!entry->passage_text) return -7;
+        memcpy(entry->passage_text, cap->passages.text, cap->passages.bytes);
+        memcpy(entry->passage_off, cap->passages.offset, sizeof(entry->passage_off));
+        entry->passage_count = cap->passages.count;
+        entry->passage_zmin = cap->passages.z_min > 0.0f ? cap->passages.z_min : 1.0f;
+    }
     reg->count++;
     return 0;
+}
+
+void cnet_vsa_registry_release(CnetVsaGenRegistry *reg) {
+    if (!reg) return;
+    for (size_t i = 0; i < reg->count; ++i) {
+        CnetVsaRegisteredCap *e = &reg->capsules[i];
+        free(e->passage_text); free(e->passage_q8); free(e->passage_norm);
+        e->passage_text = NULL; e->passage_q8 = NULL; e->passage_norm = NULL; e->passage_count = 0;
+    }
+}
+
+const char *cnet_vsa_registry_passage(const CnetVsaGenRegistry *reg, int cap_idx, int passage_idx) {
+    if (!reg || cap_idx < 0 || (size_t)cap_idx >= reg->count) return NULL;
+    const CnetVsaRegisteredCap *e = &reg->capsules[cap_idx];
+    if (!e->passage_text || passage_idx < 0 || (uint32_t)passage_idx >= e->passage_count) return NULL;
+    return e->passage_text + e->passage_off[passage_idx];
+}
+
+static double answer_now_us(void) { struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts); return ts.tv_sec * 1e6 + ts.tv_nsec / 1e3; }
+
+int cnet_vsa_registry_answer(CnetVsaGenRegistry *reg, const char *prompt, int k, CnetVsaAnswer *out) {
+    if (!out) return -1;
+    memset(out, 0, sizeof(*out));
+    out->capsule_idx = -1;
+    if (!reg || !prompt || !*prompt) { out->status = CNET_VSA_ANSWER_ROUTE_REFUSED; return -1; }
+    if (k < 1) k = 1;
+    if (k > CNET_VSA_ANSWER_MAX) k = CNET_VSA_ANSWER_MAX;
+    double t0 = answer_now_us();
+    int winner = cnet_vsa_registry_route_query(reg, prompt, &out->route);
+    out->route_us = answer_now_us() - t0;
+    if (winner < 0) { out->status = CNET_VSA_ANSWER_ROUTE_REFUSED; return -1; }
+    out->capsule_idx = winner;
+    CnetVsaRegisteredCap *e = &reg->capsules[winner];
+    out->passages = (int)e->passage_count;
+    out->z_min = e->passage_zmin;
+    if (!e->passage_text || e->passage_count == 0) { out->status = CNET_VSA_ANSWER_NO_PASSAGES; return -1; }
+    t0 = answer_now_us();
+    if (!e->passage_q8) {
+        /* first answer for this capsule: build and keep its passage vectors */
+        int8_t *pq = (int8_t *)malloc((size_t)e->passage_count * CNET_VSA_TOPICAL_DIM);
+        float *pn = (float *)malloc(sizeof(float) * e->passage_count);
+        if (!pq || !pn) { free(pq); free(pn); out->status = CNET_VSA_ANSWER_NO_PASSAGES; return -1; }
+        for (uint32_t i = 0; i < e->passage_count; ++i) {
+            int8_t *v = pq + (size_t)i * CNET_VSA_TOPICAL_DIM;
+            if (cnet_vsa_gencap_encode_intent_q8(e->passage_text + e->passage_off[i], v, e->encoder_id) != 0) memset(v, 0, CNET_VSA_TOPICAL_DIM);
+            pn[i] = cnet_vsa_text_q8_norm(v);
+        }
+        e->passage_q8 = pq; e->passage_norm = pn;
+        out->cold = 1;
+    }
+    int8_t qv[CNET_VSA_TOPICAL_DIM];
+    if (cnet_vsa_gencap_encode_intent_q8(prompt, qv, e->encoder_id) != 0) { out->status = CNET_VSA_ANSWER_ROUTE_REFUSED; return -1; }
+    float qn = cnet_vsa_text_q8_norm(qv);
+    float sims[CNET_VSA_PASSAGE_MAX];
+    double sum = 0.0, sq = 0.0; int n = (int)e->passage_count;
+    for (int i = 0; i < n; ++i) {
+        sims[i] = cnet_vsa_text_q8_similarity_n(qv, qn, e->passage_q8 + (size_t)i * CNET_VSA_TOPICAL_DIM, e->passage_norm[i]);
+        sum += sims[i]; sq += (double)sims[i] * sims[i];
+    }
+    /* top-k by partial selection */
+    int used[CNET_VSA_PASSAGE_MAX]; memset(used, 0, sizeof(int) * (size_t)n);
+    for (int j = 0; j < k && j < n; ++j) {
+        int bi = -1; float bs = -2.0f;
+        for (int i = 0; i < n; ++i) if (!used[i] && sims[i] > bs) { bs = sims[i]; bi = i; }
+        used[bi] = 1; out->passage_idx[j] = bi; out->sim[j] = bs; out->n = j + 1;
+    }
+    float best = out->sim[0];
+    if (n >= 3) {
+        double mean = (sum - best) / (n - 1);
+        double var = ((sq - (double)best * best) - (n - 1) * mean * mean) / (n - 2);
+        if (var < 1e-12) var = 1e-12;
+        out->z = (float)((best - mean) / sqrt(var));
+    } else {
+        out->z = out->z_min; /* too few passages to measure: the route decides */
+    }
+    out->rank_us = answer_now_us() - t0;
+    if (out->z < out->z_min) { out->status = CNET_VSA_ANSWER_REFUSE_PASSAGE; return -1; }
+    out->status = CNET_VSA_ANSWER_OK;
+    return winner;
 }
 
 int cnet_vsa_registry_binary_space(const CnetVsaGenRegistry *reg) {

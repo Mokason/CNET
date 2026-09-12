@@ -13,7 +13,8 @@ extern "C" {
 #endif
 
 #define CNET_VSA_GENCAP_MAGIC       0x47434150 /* 'GCAP' */
-#define CNET_VSA_GENCAP_VERSION     3   /* current: receipt + wide binary topical block */
+#define CNET_VSA_GENCAP_VERSION     4   /* current: receipt + wide block + certified passages */
+#define CNET_VSA_GENCAP_VERSION_V3  3   /* receipt + wide binary topical block, no passages */
 #define CNET_VSA_GENCAP_VERSION_V2  2   /* receipt only; routes in the 512-d float space */
 #define CNET_VSA_GENCAP_VERSION_V1  1   /* legacy: fixed 0.90 radius, no receipt */
 #define CNET_VSA_GENCAP_NAME_MAX    64
@@ -82,6 +83,29 @@ typedef struct {
     int8_t   q8[CNET_VSA_TOPICAL_DIM];
 } CnetVsaTopicalBlock;
 
+/* Version 4: the capsule's own sentences, digest-covered, so a routed query
+ * can be answered with certified text instead of generated text (measured:
+ * the capsule's passage answers 85% of its questions, generation 0%).
+ * Stored NUL-separated in ingest order; ranking happens in the wide space at
+ * answer time. The within-capsule floor z_min is calibrated from probes
+ * (the best passage must stand out from the capsule's other passages). */
+#define CNET_VSA_PASSAGE_MAX    128
+#define CNET_VSA_PASSAGE_BYTES  32768
+typedef struct {
+    uint32_t present;
+    uint32_t count;        /* passages stored */
+    uint32_t bytes;        /* used bytes of text[] including terminators */
+    uint32_t ingested;     /* sentences ingested (> count when the block filled up) */
+    uint32_t offset[CNET_VSA_PASSAGE_MAX];
+    uint32_t calibrated;   /* 1 when z_min came from negatives */
+    uint32_t probe_count;  /* in-domain probes measured against the floor */
+    float    z_min;        /* floor on the best passage's z over the capsule's passages (1.0 uncalibrated) */
+    float    probe_z_median;
+    uint32_t neg_count;    /* off-topic queries the floor was set from */
+    float    probe_accept; /* share of probes whose best passage clears the floor */
+    char     text[CNET_VSA_PASSAGE_BYTES];
+} CnetVsaPassageBlock;
+
 typedef struct {
     /* Header & Identity */
     uint32_t magic;
@@ -106,8 +130,11 @@ typedef struct {
     /* Version 2: calibration receipt */
     CnetVsaGencapCalibration calib;
 
-    /* Version 3: wide int8 topical block (last persisted member) */
+    /* Version 3: wide int8 topical block */
     CnetVsaTopicalBlock topical;
+
+    /* Version 4: certified passages (last persisted member) */
+    CnetVsaPassageBlock passages;
 
     /* Build-time only, never written: raw sum of wide sentence vectors so that
      * calibration can measure each sentence leave-one-out in the wide space,
@@ -122,8 +149,9 @@ typedef struct {
 /* Persisted byte lengths per format version (each is a prefix of the next). */
 #define CNET_VSA_GENCAP_V1_SIZE   offsetof(CnetVsaGenCapsule, calib)
 #define CNET_VSA_GENCAP_V2_SIZE   offsetof(CnetVsaGenCapsule, topical)
-#define CNET_VSA_GENCAP_V3_SIZE   offsetof(CnetVsaGenCapsule, wide_sum)
-#define CNET_VSA_GENCAP_FILE_SIZE CNET_VSA_GENCAP_V3_SIZE
+#define CNET_VSA_GENCAP_V3_SIZE   offsetof(CnetVsaGenCapsule, passages)
+#define CNET_VSA_GENCAP_V4_SIZE   offsetof(CnetVsaGenCapsule, wide_sum)
+#define CNET_VSA_GENCAP_FILE_SIZE CNET_VSA_GENCAP_V4_SIZE
 
 /* Calibration / seal status codes */
 #define CNET_VSA_GENCAP_NOT_SEPARABLE          (-3)
@@ -218,8 +246,22 @@ int cnet_vsa_gencap_verify_scope_q8(const CnetVsaGenCapsule *cap, const int8_t *
  * legacy 0.90 radius and calib.calibrated == 0. Writes version 3. */
 int cnet_vsa_gencap_seal(CnetVsaGenCapsule *cap);
 
+/* Within-capsule answer floor, set the way the radius is: from off-topic
+ * queries. For each negative the z of its best passage over the capsule's
+ * passages is noise; z_min = the target_reject quantile of those (floored at
+ * 1.0), so an answer's best passage must stand out more than that share of
+ * off-topic queries' best passages do. Probes (in-domain questions never
+ * ingested) are measured against the floor and recorded as probe_accept.
+ * Call after ingest, before seal. Fewer than 8 negatives: z_min 1.0, calibrated 0. */
+int cnet_vsa_gencap_calibrate_passages(CnetVsaGenCapsule *cap,
+                                       const char *const *probes, size_t probe_count,
+                                       const char *const *negatives, size_t neg_count,
+                                       float target_reject);
+
 /* Test-only: seal as a version-1 capsule (legacy digest, no receipt). */
 int cnet_vsa_gencap_seal_legacy_v1(CnetVsaGenCapsule *cap);
+/* Test-only: seal as a version-3 capsule (receipt + wide block, no passages). */
+int cnet_vsa_gencap_seal_legacy_v3(CnetVsaGenCapsule *cap);
 /* Test-only: seal as a version-2 capsule (receipt, no topical block). */
 int cnet_vsa_gencap_seal_legacy_v2(CnetVsaGenCapsule *cap);
 
@@ -282,6 +324,13 @@ typedef struct {
     float    topical_radius;  /* calibrated wide-space radius */
     float    topical_norm;    /* L2 norm of topical[] */
     int8_t   topical[CNET_VSA_TOPICAL_DIM];
+    /* v4 passages (owned copies; cnet_vsa_registry_release frees them) */
+    uint32_t passage_count;
+    uint32_t passage_off[CNET_VSA_PASSAGE_MAX];
+    char    *passage_text;    /* NUL-separated, passage_count entries */
+    int8_t  *passage_q8;      /* built on the first answer: passage_count x CNET_VSA_TOPICAL_DIM */
+    float   *passage_norm;
+    float    passage_zmin;
 } CnetVsaRegisteredCap;
 
 typedef struct {
@@ -318,7 +367,7 @@ typedef struct {
  * k >= 1 also refuses keyword queries whose runner-up merely shares one word
  * (wavefront -> wavefront_sensing), so float stays off by default.
  * result/cnet_vsa_v3_topical_block_20260911.md. Policy knobs, not floors. */
-#define CNET_VSA_ROUTE_AMBIGUITY_K_WIDE_DEFAULT  2.0f
+#define CNET_VSA_ROUTE_AMBIGUITY_K_WIDE_DEFAULT  1.0f   /* 2026-09-12 sweep: k=1 scores +1341 vs +1077 at k=2 on 3,994 never-probed questions, aliens 0/12 with the term gate */
 #define CNET_VSA_ROUTE_AMBIGUITY_K_FLOAT_DEFAULT 0.0f
 
 /* Route decision status */
@@ -395,6 +444,34 @@ int cnet_vsa_registry_binary_space(const CnetVsaGenRegistry *reg);
  *   margin gate : z >= z_min against the other capsules' similarity spread */
 int cnet_vsa_registry_route_ex(const CnetVsaGenRegistry *reg, const float *query_vec,
                                CnetVsaRouteResult *out);
+
+/* Answer: route the prompt, then rank the winning capsule's certified
+ * passages against it in the wide space and return the top k (<= 4). The best
+ * passage must stand out from the capsule's other passages by the capsule's
+ * calibrated z_min, else the answer is refused even though the route held.
+ * Passage vectors are built on a capsule's first answer and kept. */
+#define CNET_VSA_ANSWER_MAX             4
+#define CNET_VSA_ANSWER_OK              0
+#define CNET_VSA_ANSWER_ROUTE_REFUSED   1
+#define CNET_VSA_ANSWER_NO_PASSAGES     2   /* the winner is a pre-v4 capsule */
+#define CNET_VSA_ANSWER_REFUSE_PASSAGE  3   /* no passage stands out */
+typedef struct {
+    CnetVsaRouteResult route;
+    int    status;
+    int    capsule_idx;
+    int    n;
+    int    passage_idx[CNET_VSA_ANSWER_MAX];
+    float  sim[CNET_VSA_ANSWER_MAX];
+    float  z, z_min;          /* best passage vs the capsule's other passages */
+    int    passages;          /* passages in the winning capsule */
+    int    cold;              /* 1 when this call built the capsule's passage vectors */
+    double route_us, rank_us;
+} CnetVsaAnswer;
+int cnet_vsa_registry_answer(CnetVsaGenRegistry *reg, const char *prompt, int k, CnetVsaAnswer *out);
+/* Text of one passage (NULL when out of range). */
+const char *cnet_vsa_registry_passage(const CnetVsaGenRegistry *reg, int cap_idx, int passage_idx);
+/* Free the owned passage copies and caches; the registry struct itself is the caller's. */
+void cnet_vsa_registry_release(CnetVsaGenRegistry *reg);
 
 /* Encode the prompt with every encoder present in the registry and score each
  * capsule against the matching query vector. Use this for mixed bag/HD

@@ -21,6 +21,8 @@
 #   2. core math/runtime (clgemm + archive/forest + model I/O + detect + leak)
 #   3. contract law (secure/unit/heal/mutate/acquire/attribution/base/live_contracts)
 #   4. ship-ish surface (flagship) + light PEFT smoke
+#   5. VSA capsule router, hermetic gates (capsule format, calibration, lexicon, answer path, q8 parity, stemmer);
+#      the registry-dependent and long VSA gates (router bench on bin/, CLI bench, encoder sweep, frozen arena) are T2
 VERIFY_T1_DEPS := \
 	authority \
 	build_integrity \
@@ -52,7 +54,13 @@ VERIFY_T1_DEPS := \
 	cnet_fault_test \
 	cce_adapter_bank_test \
 	cce_dora_test \
-	cnet_serve_decode_test
+	cnet_serve_decode_test \
+	cnet_vsa_gencap_bench \
+	cnet_vsa_calibration_bench \
+	cnet_vsa_lexicon_bench \
+	cnet_vsa_answer_bench \
+	cnet_vsa_q8_bench \
+	cnet_vsa_stem_bench
 
 # ---- T2: soak (not default) -------------------------------------------------
 # Specialty CCE + heavy PEFT + distrust/autonomy soak.
@@ -77,7 +85,12 @@ VERIFY_T2_DEPS := \
 	moe_ckpt_test \
 	distrust_loop \
 	autonomy_tick \
-	autonomy_spine
+	autonomy_spine \
+	cnet_vsa_router_bench \
+	cnet_vsa_cli_bench \
+	cnet_vsa_arena_bench \
+	cnet_vsa_encoder_sweep_bench \
+	vsa_routing_arena
 
 VERIFY_SENTINEL := logs/.verify_sentinel
 VERIFY_T2_SENTINEL := logs/.verify_t2_sentinel

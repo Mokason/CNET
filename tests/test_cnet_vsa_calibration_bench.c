@@ -353,9 +353,9 @@ int main(void) {
         {
             FILE *fp = fopen(p3, "rb"); assert(fp);
             fseek(fp, 0, SEEK_END); long len = ftell(fp); fclose(fp);
-            assert((size_t)len == CNET_VSA_GENCAP_V3_SIZE);
+            assert((size_t)len == CNET_VSA_GENCAP_FILE_SIZE);   /* v4: v3 prefix + passage block */
             assert((size_t)len < sizeof(CnetVsaGenCapsule));
-            printf("  v3 file is %ld bytes (persisted prefix; struct is %zu with the build-time accumulator) PASS\n",
+            printf("  v4 file is %ld bytes (persisted prefix; struct is %zu with the build-time accumulator) PASS\n",
                    len, sizeof(CnetVsaGenCapsule));
         }
         CnetVsaGenCapsule *capR = (CnetVsaGenCapsule *)calloc(1, sizeof(CnetVsaGenCapsule));

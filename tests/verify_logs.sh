@@ -70,6 +70,12 @@ flagship.log|||ALL FLAGSHIP TESTS PASSED
 decimal_demo.log|||All decimal acts passed.
 circuit_demo.log|||All circuit demo parts passed.
 leakcheck.log|||(clean)
+cnet_vsa_gencap_bench.log|||CNET_VSA_GENCAP_BENCH_PASS
+cnet_vsa_calibration_bench.log|||CNET_VSA_CALIBRATION_BENCH_PASS
+cnet_vsa_lexicon_bench.log|||CNET_VSA_LEXICON_BENCH_PASS
+cnet_vsa_answer_bench.log|||CNET_VSA_ANSWER_BENCH_PASS
+cnet_vsa_q8_bench.log|||CNET_VSA_Q8_BENCH_PASS
+cnet_vsa_stem_bench.log|||CNET_VSA_STEM_BENCH_PASS
 '
 
 LONG='
@@ -97,6 +103,11 @@ moe_ckpt_test.log|||MOE_CKPT_PASS
 distrust_loop.log|||DISTRUST_LOOP_PASS
 distrust_loop.log|||AUTONOMY_TICK_PASS
 autonomy_spine.log|||AUTONOMY_SPINE_PASS
+cnet_vsa_router_bench.log|||CNET_VSA_ROUTER_BENCH_PASS
+cnet_vsa_cli_bench.log|||CNET_VSA_CLI_BENCH_PASS
+cnet_vsa_arena_bench.log|||CNET_VSA_ARENA_BENCH_PASS
+cnet_vsa_encoder_sweep_bench.log|||CNET_VSA_ENCODER_SWEEP_BENCH_
+vsa_routing_arena.log|||CNET_VSA_ROUTING_ARENA_PASS
 '
 
 # The compat tier (legacy quarantine): back-compat coverage that must stay

@@ -82,6 +82,8 @@ static void print_usage(const char *prog) {
     printf("  gencap-gen <cap> [prm] [sd]  Autonomous generation from capsule steered by intent (zero LLM)\n");
     printf("  route <dir> <prompt>       Rank all capsules in directory against prompt intent\n");
     printf("  route-batch <dir>          Same, one prompt per stdin line, registry loaded once\n");
+    printf("  answer <dir> <prompt> [k]  Route, then return the winning capsule's certified passages (v4)\n");
+    printf("  answer-batch <dir> [k]     Same, one prompt per stdin line\n");
     printf("  lexicon-build <dir> <out>  Learn a wide-space lexicon from *_corpus.txt (Random Indexing; phrases, subwords, distilled)\n");
     printf("  lexicon-train <in> <out> <dir> <pairs.tsv>  Supervised pass on (capsule, question) pairs toward corpus centroids\n");
     printf("  lexicon-info <file.lex>    Verify and describe a lexicon\n");
@@ -1103,6 +1105,10 @@ static int cmd_gencap_create(const char *name, const char *domain, const char *c
         free(d_in); free(d_neg);
     }
 
+    if (calib_rc == 0 && negatives.count > 0) {
+        cnet_vsa_gencap_calibrate_passages(cap, (const char *const *)probes.lines, probes.count,
+                                           (const char *const *)negatives.lines, negatives.count, opts ? opts->target_neg : 0.90f);
+    }
     int seal_rc = (calib_rc == 0) ? cnet_vsa_gencap_seal(cap) : calib_rc;
     if (seal_rc != 0) {
         printf("=================================================================\n");
@@ -1157,6 +1163,9 @@ static int cmd_gencap_create(const char *name, const char *domain, const char *c
         printf("    evidence source: probes=%zu  negatives=%zu from %d file(s) under '%s'\n",
                probes.count, negatives.count, neg_files, opts->negatives_path);
     }
+    printf("  Passages:          %u certified sentences (%u ingested, %u bytes), answer floor z_min=%.2f%s; probes %u: median z %.2f, %.0f%% clear the floor\n",
+           cap->passages.count, cap->passages.ingested, cap->passages.bytes, cap->passages.z_min,
+           cap->passages.calibrated ? " (from negatives)" : " (uncalibrated)", cap->passages.probe_count, cap->passages.probe_z_median, 100.0f * cap->passages.probe_accept);
     printf("  Integrity Digest:  0x%016llx\n", (unsigned long long)cap->digest);
     printf("  Output File:       %s\n", out_capsule);
     printf("  Status:            SEALED & CERTIFIED [PASS]\n\n");
@@ -1279,6 +1288,8 @@ static void registry_apply_env(CnetVsaGenRegistry *reg) {
     if (f && *f && strcmp(f, "0") != 0) reg->force_float = 1;
     const char *t = getenv("CNET_VSA_TERM_GATE");
     if (t && *t && strcmp(t, "0") == 0) reg->term_gate = 0;
+    const char *zm = getenv("CNET_VSA_Z_MARGIN");   /* margin gate: z_min = sqrt(2 ln N) + z_margin */
+    if (zm && *zm) reg->z_margin = (float)atof(zm);
 }
 
 /* Route one prompt against an already loaded registry and print the decision. */
@@ -1547,6 +1558,7 @@ static void cmd_route(const char *dir_path, const char *prompt) {
     const char *dir = (dir_path && *dir_path) ? dir_path : "bin";
     int n = cnet_vsa_registry_load_dir(reg, dir);
     route_print(reg, dir, n, prompt);
+    cnet_vsa_registry_release(reg);
     free(reg);
 }
 
@@ -1573,6 +1585,70 @@ static void cmd_route_batch(const char *dir_path) {
         route_print(reg, dir, n, line);
         fflush(stdout);
     }
+    free(reg);
+}
+
+/* CNET_VSA_PASSAGE_ZMIN=<z> overrides every capsule's calibrated passage floor (0 disables it): measurement only */
+static void answer_apply_env(CnetVsaGenRegistry *reg) {
+    const char *z = getenv("CNET_VSA_PASSAGE_ZMIN");
+    if (!z || !*z) return;
+    float v = (float)atof(z);
+    for (size_t i = 0; i < reg->count; ++i) reg->capsules[i].passage_zmin = v;
+}
+
+static void answer_print(CnetVsaGenRegistry *reg, const char *prompt, int k) {
+    CnetVsaAnswer a;
+    cnet_vsa_registry_answer(reg, prompt, k, &a);
+    const char *st = a.status == CNET_VSA_ANSWER_OK ? "OK" : a.status == CNET_VSA_ANSWER_ROUTE_REFUSED ? "ROUTE_REFUSED"
+                   : a.status == CNET_VSA_ANSWER_NO_PASSAGES ? "NO_PASSAGES" : "REFUSE_PASSAGE";
+    const char *cap = a.capsule_idx >= 0 ? reg->capsules[a.capsule_idx].header.name
+                    : (a.route.best_idx >= 0 ? reg->capsules[a.route.best_idx].header.name : "none");
+    const char *why = (a.route.status == CNET_VSA_ROUTE_REFUSE_MARGIN) ? "margin" : (a.route.status == CNET_VSA_ROUTE_REFUSE_AMBIGUOUS) ? "ambiguity"
+                    : (a.route.status == CNET_VSA_ROUTE_REFUSE_TERM) ? "term" : (a.route.status == CNET_VSA_ROUTE_ACCEPT) ? "accept" : "radius";
+    printf("  Answer: %s capsule=%s route=%s dist=%.4f z=%.2f z_min=%.2f passages=%d cold=%d route_us=%.1f rank_us=%.1f\n",
+           st, cap, why, a.route.best_dist, a.z, a.z_min, a.passages, a.cold, a.route_us, a.rank_us);
+    for (int i = 0; i < a.n && a.status == CNET_VSA_ANSWER_OK; ++i)
+        printf("  P%d: sim=%.4f | %s\n", i + 1, a.sim[i], cnet_vsa_registry_passage(reg, a.capsule_idx, a.passage_idx[i]));
+}
+
+/* answer <dir> "<prompt>" [k]: route, then return the winning capsule's certified passages */
+static void cmd_answer(const char *dir_path, const char *prompt, int k) {
+    CnetVsaGenRegistry *reg = (CnetVsaGenRegistry *)calloc(1, sizeof(CnetVsaGenRegistry));
+    if (!reg) { fprintf(stderr, "Error: out of memory allocating registry.\n"); return; }
+    cnet_vsa_registry_init(reg, CNET_VSA_DEFAULT_DIM);
+    registry_apply_env(reg);
+    const char *dir = (dir_path && *dir_path) ? dir_path : "bin";
+    int n = cnet_vsa_registry_load_dir(reg, dir);
+    printf("=================================================================\n");
+    printf(" CNET Certified Answer (route, then the capsule's own passages)\n");
+    printf("=================================================================\n");
+    printf("  Registry Directory: %s (%d certified capsules indexed)\n", dir, n);
+    printf("  Prompt:             \"%s\"\n", prompt);
+    answer_apply_env(reg);
+    answer_print(reg, prompt, k);
+    printf("\n");
+    cnet_vsa_registry_release(reg);
+    free(reg);
+}
+
+/* answer-batch <dir> [k]: one prompt per stdin line, registry loaded once */
+static void cmd_answer_batch(const char *dir_path, int k) {
+    CnetVsaGenRegistry *reg = (CnetVsaGenRegistry *)calloc(1, sizeof(CnetVsaGenRegistry));
+    if (!reg) { fprintf(stderr, "Error: out of memory allocating registry.\n"); return; }
+    cnet_vsa_registry_init(reg, CNET_VSA_DEFAULT_DIM);
+    registry_apply_env(reg);
+    const char *dir = (dir_path && *dir_path) ? dir_path : "bin";
+    int n = cnet_vsa_registry_load_dir(reg, dir);
+    printf("  Registry Directory: %s (%d certified capsules indexed)\n", dir, n);
+    answer_apply_env(reg);
+    char line[4096]; int q = 0;
+    while (fgets(line, sizeof(line), stdin)) {
+        line[strcspn(line, "\r\n")] = 0;
+        if (!line[0]) continue;
+        printf("=== QUERY %d ===\n", ++q);
+        answer_print(reg, line, k);
+    }
+    cnet_vsa_registry_release(reg);
     free(reg);
 }
 
@@ -1935,6 +2011,11 @@ int main(int argc, char **argv) {
         return cmd_lexicon_build(argc - (arg_offset + 1), argv + arg_offset + 1);
     } else if (strcmp(cmd, "stem-words") == 0) {
         return cmd_stem_words();
+    } else if (strcmp(cmd, "answer") == 0) {
+        if (arg_offset + 2 < argc) cmd_answer(argv[arg_offset + 1], argv[arg_offset + 2], arg_offset + 3 < argc ? atoi(argv[arg_offset + 3]) : 2);
+        else { fprintf(stderr, "Usage: %s answer <dir> \"<prompt>\" [k]\n", argv[0]); return 1; }
+    } else if (strcmp(cmd, "answer-batch") == 0) {
+        cmd_answer_batch(arg_offset + 1 < argc ? argv[arg_offset + 1] : "bin", arg_offset + 2 < argc ? atoi(argv[arg_offset + 2]) : 2);
     } else if (strcmp(cmd, "lexicon-train") == 0) {
         return cmd_lexicon_train(argc - (arg_offset + 1), argv + arg_offset + 1);
     } else if (strcmp(cmd, "lexicon-info") == 0) {

@@ -116,7 +116,12 @@ of the training pairs, not their register
 generation itself was measured once: on-topic seven-word phrase runs with no
 sentence structure, never answering the prompt, against 85% for the capsule's
 own passage returned verbatim; answers come from retrieval, not generation
-(`result/cnet_vsa_generation_coherence_20260912.md`). The production
+(`result/cnet_vsa_generation_coherence_20260912.md`). Capsule format v4
+carries those passages, digest-covered, and `cnet_vsa_cli answer` routes a
+prompt and returns the winning capsule's best passages under a calibrated
+floor in about 60 microseconds (`result/cnet_vsa_answer_path_20260912.md`).
+The Isekai/RPG corpora have no certifiable epoch yet: measured and rejected
+twice (`result/cnet_vsa_isekai_epoch_20260912.md`). The production
 registry was resealed under the v3 block and the shipped lexicon
 (`bin/registry.lex`, auto-activated by every registry load): on the
 never-probed teacher questions wrong accepts fell from 35% to 1.2%, with a
