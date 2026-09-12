@@ -1,0 +1,46 @@
+{
+  "model": "gemma4-26b-meanpool",
+  "dims": 3840,
+  "corpora": 1068,
+  "doc_prefix": "",
+  "query_prefix": "",
+  "fixture_sha256": {
+    "corpora.tsv": "6638bd60dc6e04b9d2903435f8ae310f9e8ee594b71d1011adef79811f80e497",
+    "questions.tsv": "066a6bf692dafbd9418e426f25092796302b398b31be0b238fda4649517ea11a"
+  },
+  "test_sentences": {
+    "n": 2136,
+    "top1": 0.09597378277153558,
+    "top3": 0.16760299625468164,
+    "margin": 0.0034449640661478043
+  },
+  "questions": {
+    "n": 5258,
+    "top1": 0.08900722708254089,
+    "top3": 0.15728413845568656,
+    "margin": 0.0035788521636277437
+  },
+  "separability": {
+    "0.90/0.95": {
+      "count": 1,
+      "fraction": 0.0009363295880149813
+    },
+    "0.80/0.90": {
+      "count": 28,
+      "fraction": 0.026217228464419477
+    },
+    "0.70/0.90": {
+      "count": 98,
+      "fraction": 0.09176029962546817
+    }
+  },
+  "null_sd": 0.0483289510011673,
+  "in_domain_mean_cos": 0.8903292417526245,
+  "aliens": {
+    "n": 12,
+    "best_cos_mean": 0.8469085097312927,
+    "z_mean": 2.71566104888916
+  },
+  "timings_s": {},
+  "total_s": 10.36946964263916
+}

@@ -183,3 +183,7 @@ result/master_postmerge_*
 
 # live-generated crawler status snapshot
 docs/ISEKAI_RPG_NETWORK_STATUS.md
+
+# arena raw embedding caches and session scratch (regenerable)
+var/arena_cache/
+var/claude_scratch/

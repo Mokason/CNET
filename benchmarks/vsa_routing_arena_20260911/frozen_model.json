@@ -1,0 +1,26 @@
+{
+  "frozen_at": "2026-09-12 (v3.2)",
+  "note": "Digests of the tables the gate rebuilds from this fixture. The checker fails when a rebuilt table's digest differs: the model is frozen; question sets written after this date are out-of-sample by construction.",
+  "lexicon_full": {
+    "digest": "0x6ce3ba9f1d20e2c3",
+    "flags": "v3.1 flags + --lexicon-extra questions_train_v2.tsv (training-register questions in the build corpus)"
+  },
+  "lexicon_trained": {
+    "digest": "0xaf5569e5bde45edf",
+    "flags": "--train-questions questions_train_v2.tsv --train-sentences 16 --train-lr 0.02 --train-epochs 8 --train-margin 0.10"
+  },
+  "lexicon_distilled": {
+    "digest": "0x1c2b591f5503e600"
+  },
+  "lexicon": {
+    "digest": "0x5dca9fd4b4a44ca6"
+  },
+  "previous": {
+    "frozen_at": "2026-09-12 (v3)",
+    "lexicon_trained": "0x88193b9fb75b46d0"
+  },
+  "previous_v31": {
+    "lexicon_full": "0x311a11a8c0862ba8",
+    "lexicon_trained": "0x7365d88beb71b904"
+  }
+}

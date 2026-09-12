@@ -1,0 +1,32 @@
+{
+  "model": "qwen3-embedding-4b",
+  "dims": 2560,
+  "corpora": 1068,
+  "doc_prefix": "",
+  "query_prefix": "",
+  "fixture_sha256": {
+    "corpora.tsv": "6638bd60dc6e04b9d2903435f8ae310f9e8ee594b71d1011adef79811f80e497",
+    "questions.tsv": "066a6bf692dafbd9418e426f25092796302b398b31be0b238fda4649517ea11a"
+  },
+  "test_sentences": {
+    "n": 2136,
+    "top1": 0.37687265917602997,
+    "top3": 0.5674157303370787,
+    "margin": 0.03259015455842018
+  },
+  "questions": {
+    "n": 5258,
+    "top1": 0.5608596424496006,
+    "top3": 0.7820464054773678,
+    "margin": 0.04369175061583519
+  },
+  "null_sd": 0.07869512587785721,
+  "in_domain_mean_cos": 0.6585626006126404,
+  "aliens": {
+    "n": 12,
+    "best_cos_mean": 0.36103832721710205,
+    "z_mean": 4.957046031951904
+  },
+  "timings_s": {},
+  "total_s": 7.982051849365234
+}

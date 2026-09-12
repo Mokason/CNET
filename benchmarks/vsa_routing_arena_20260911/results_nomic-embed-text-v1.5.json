@@ -1,0 +1,47 @@
+{
+  "model": "nomic-embed-text-v1.5",
+  "dims": 768,
+  "corpora": 1068,
+  "doc_prefix": "",
+  "query_prefix": "",
+  "fixture_sha256": {
+    "corpora.tsv": "6638bd60dc6e04b9d2903435f8ae310f9e8ee594b71d1011adef79811f80e497",
+    "questions.tsv": "066a6bf692dafbd9418e426f25092796302b398b31be0b238fda4649517ea11a"
+  },
+  "test_sentences": {
+    "n": 2136,
+    "top1": 0.28651685393258425,
+    "top3": 0.449438202247191,
+    "margin": 0.011096511036157608,
+    "top1_lenient": 0.28651685393258425
+  },
+  "questions": {
+    "n": 5258,
+    "top1": 0.4691898060098897,
+    "top3": 0.6759224039558768,
+    "margin": 0.01609257236123085,
+    "top1_lenient": 0.4691898060098897
+  },
+  "separability": {
+    "0.90/0.95": {
+      "count": 257,
+      "fraction": 0.2406367041198502
+    },
+    "0.80/0.90": {
+      "count": 810,
+      "fraction": 0.7584269662921348
+    },
+    "0.70/0.90": {
+      "count": 990,
+      "fraction": 0.9269662921348315
+    }
+  },
+  "null_sd": 0.04077974334359169,
+  "in_domain_mean_cos": 0.8153643608093262,
+  "aliens": {
+    "n": 12,
+    "best_cos_mean": 0.634521484375,
+    "z_mean": 3.859983444213867
+  },
+  "timings_s": {}
+}

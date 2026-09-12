@@ -1,0 +1,403 @@
+# Same writer and register as questions_indep_mistral_20260912.tsv (Mistral-Small-3.2-24B, everyday), but written from TRAIN
+# sentences at positions no training pair or paraphrase used (t*n/16 + n/32, t=3,11) for 400 sampled corpora: isolates content position
+# (held-out tail vs in-corpus) from register. Per-question alternates judged by the same model. Section M. Never trained on.
+abstract_interpretation|static_analysis|symbolic_execution	What does it mean when a system throws away details to make sure it stops after a certain number of steps?	M
+acid_base_extraction_of_organic_compounds	How can I make something dissolve faster in water?	M
+adjoint_state_optimization	How do I figure out how much memory I need for this backward-solving process?	M
+aerodynamic_boundary_layer_theory	What's the simple explanation for how lasers measure the speed of liquids?	M
+aerodynamic_shape_optimization	How does the algorithm check the fitness of each option?	M
+aerodynamics_of_projectile_flight|aerodynamics	What's the connection between Mach number, nose angle and shock wave angle in flight?	M
+agronomy|fungal_pathogen_management_in_high_humidity_environments|arid_adapted_horticulture	What are the best crops to grow in different places? How do tiny soil bugs help fight plant diseases?	M
+alloy_phase_diagram_analysis|thermodynamic_phase_diagram_construction|phase_diagram_analysis	What does the enthalpy of mixing do to the system's order?	M
+analog_signal_conditioning_and_anti_aliasing_filters	How can you minimize parasitic capacitances in a circuit design?	M
+annealing_and_tempering	How do you know when tempering metal has worked right?	M
+api_based_data_integration|security_architecture_and_access_control_systems	How do I make sure both the client and server are who they say they are in a secure way?	M
+apothecary_compounding_and_distillation	How do you pour liquid slowly without mixing the layers?	M
+applied_mathematics|numerical_solution_of_laplace_s_equation	What's the simple way to understand electromagnetism and what affects convergence?	M
+archery_equipment_engineering	How do the angle and length of a bow's limbs affect its speed and safety?	M
+architectural_defense_engineering	How do active detection systems work to spot and figure out incoming threats?	M
+arid_adapted_horticulture	What do you use instead of soil to grow plants in water?	M
+astronomical_telescope_design	How do I balance the weights to keep the scope steady?	M
+asynchronous_network_models|fault_tolerant_computing_systems	How do systems handle when parts act up or go rogue?	M
+attribute_grammars|syntax_directed_translation|compiler_lexical_analysis_and_parsing	What happens if there's a loop in the order that things need to be calculated?	M
+austenite_stabilization_mechanisms	Why does cooling metal quickly make it harder?	M
+b_tree_index_maintenance	How do I move a key from a parent node to a sibling node?	M
+b_tree_indexing	What happens when a parent folder in a computer file system gets too full?	M
+biochemical_pathway_analysis|flux_balance_analysis|metabolic_network_reconstruction|context_specific_metabolic_modeling	How does feedback inhibition work in models of body processes?	M
+bioprocess_control	How do I track what users do and what changes happen in a system?	M
+bioreactor_design|chemical_reactor_design_and_scale_up|coolant_system_design	why is it hard to cool big bioreactors?	M
+blacksmithing_and_tool_forging	How do I balance strength and shape when hammering hot metal?	M
+blade_angle_optimization	How do you clean up messy data from experiments?	M
+blade_stress_analysis	How do I make a mesh for areas with a lot of stress?	M
+bouguer_anomaly_interpretation|crustal_density_modeling|crustal_density_distribution_modeling	How do maps account for the weight of mountains and hills?	M
+boundary_layer_measurement_techniques	How do I get rid of electrical noise without losing the signal?	M
+boundary_layer_modeling|boundary_layer_separation|boundary_layer_theory	What makes the boundary layer separate?	M
+boundary_layer_transition	How do I make the switch from smooth to turbulent flow in an experiment?	M
+boundary_lubrication|tribology|tribology_and_surface_contact_mechanics	What makes a film peel off under stress?	M
+bulk_flow_theory|viscous_flow_dynamics|hydrodynamics	What makes the connection happen in fluid dynamics?	M
+bundle_adjustment	What's a simple way to estimate something without dealing with complex math?	M
+caravan_trade_and_caravan_management|mercantile_logistics_and_caravan_management|logistics_and_supply_chain_management	How can we keep things running if the supply chain breaks down for a while?	M
+cavitation_and_erosion_analysis	How do I calculate the cavitation number?	M
+ceramic_body_composition_and_firing|ceramic_firing_protocols	How fast should I heat my bisque from 600 to 1000 degrees Celsius?	M
+ceramic_firing_protocols	How do you slowly heat large ceramic pieces to avoid breaking them?	M
+ceramic_kiln_operation	How do you prevent cracking when heating ceramics?	M
+ceramic_matrix_composite_fabrication	How do the size and shape of fibers affect the stiffness and strength of composite materials?	M
+chemical_reactor_design_and_scale_up	why do packed bed reactors have high pressure drops?	M
+clay_body_formulation_and_mineralogy|ceramic_body_composition_and_firing	How does heat affect quartz and metakaolinite in ceramics?	M
+clifford_algebra|geometric_algebra|spatial_vector_algebra	What are gamma matrices and how do bivectors relate to them?	M
+closed_loop_motion_control_systems	What makes a system's accuracy and overshoot change?	M
+cnet_vsa_core	how do you join together multiple lists?	M
+colloid_chemistry|electrokinetics|microfluidic_separation_systems	What makes tiny particles push each other away in a liquid?	M
+combustion_chamber_heat_transfer|heat_transfer_and_convection|thermodynamics_and_heat_transfer	How does heat and wall thickness affect stress on a surface?	M
+compensator_plate_adjustment|optical_interferometry	How do I get the detector signal to its lowest point?	M
+competitive_inhibition|enzyme_kinetics_modeling	What happens when there's a lot of substrate and an inhibitor?	M
+compiler_lexical_analysis_and_parsing	how do I tell if there's a problem with what I'm saying or just how I'm saying it?	M
+composite_material_failure_analysis|fiber_reinforcement_engineering|anisotropic_fiber_reinforcement_techniques	What's the deal with stress fields and damage in layered materials?	M
+composite_materials_manufacturing	How does eating more fiber affect my body's interactions?	M
+computational_chemistry	What's the Hartree-Fock method in simple terms?	M
+computational_fluid_dynamics|computational_fluid_dynamics_simulation|turbulence_modeling	How do you handle fast-moving fluids in simulations without causing errors?	M
+computational_structural_mechanics|computational_mechanics	How do shape functions help with boundary conditions and equilibrium equations?	M
+computer_numerical_control_machining|machine_tool_error_compensation|high_precision_linear_actuation_technologies	How does a machine know where to move and when?	M
+conformal_field_theory	How does the radial coordinate in the bulk relate to the energy scale in the boundary theory?	M
+consensus_algorithm_design|byzantine_fault_tolerance|quorum_based_consensus_mechanisms	How do you stop people from messing with messages in a secure chat?	M
+construction_quality_control|quality_assurance_and_inspection_protocols|dimensional_quality_control|maintenance_and_reliability_engineering	what happens if the welds are not aligned properly?	M
+context_specific_metabolic_modeling|metabolic_network_reconstruction|flux_balance_analysis	How do you make sure everything adds up right in a metabolic model?	M
+contractor_pre_qualification_and_resource_allocation|standardization_and_regulatory_compliance|maintenance_and_reliability_engineering	How do companies make sure their operations follow safety and environmental rules?	M
+coordinate_measurement_machine_calibration	When do I need to recalibrate my equipment?	M
+covering_index_design|range_query_optimization|index_key_value_comparison	How can I make sure my database index supports the sorting and grouping I need?	M
+critical_depth_determination|open_channel_hydraulics|hydraulic_jump_analysis|open_channel_flow_hydraulics|open_channel_flow_analysis	How does a small mistake in water depth affect the top level of a spillway?	M
+critical_exponents_and_scaling_relations|critical_phenomena_and_scaling_laws|critical_phenomena	What's the deal with δ in critical temperature stuff?	M
+critical_phenomena|critical_phenomena_and_scaling_laws|critical_exponents_and_scaling_relations	What's the deal with how far forces reach and how it affects stuff like phase transitions?	M
+critical_point_analysis	How do you find the inflection point on a curve?	M
+cryogenic_engineering_and_thermal_isolation|thermal_management_systems|thermal_gradient_control|thermal_shock_resistance_engineering|controlled_cooling_and_thermal_cycling	How do they keep the super cold stuff from warming up too fast?	M
+cryptographic_encryption_protocols|cryptography|cryptography_foundations	What's the best way to keep my stuff safe from hackers right now?	M
+cryptographic_hash_functions	How do I find the original message from its hash value?	M
+cryptographic_signature_schemes|cryptography	How do I check if a message has been tampered with using a cryptographic signature?	M
+cryptographic_zero_knowledge_proofs	How can I be sure this proof thing is legit?	M
+cryptography	What does the system do to make data harder to crack each time it runs?	M
+cryptography_foundations|cryptography|cryptographic_encryption_protocols	How do I make sure my secret keys don't expose my old chat logs?	M
+crystallization_and_devitrification|crystallization_kinetics|nucleation_kinetics|nucleation_and_growth_kinetics	How do crystals grow and what's the deal with cooling them down?	M
+crystallization_kinetics	How do crystals grow in size over time?	M
+crystallographic_orientation_analysis|electron_backscatter_diffraction|grain_structure_analysis	How do algorithms figure out the angle and axis between grains in a material?	M
+cuticular_permeability_regulation	How do hormones keep larvae from growing up too fast?	M
+cyber_defense	What does splitting up a network do for security?	M
+cyclic_loading_simulation|fatigue_analysis_and_testing|low_cycle_fatigue_analysis_and_crack_propagation_modeling	How do I measure small, localized strain changes on a surface?	M
+cytochrome_p450_monooxygenase_catalysis	How does threonine help keep the heme structure steady and affect the iron part?	M
+d_printing_post_processing	What stuff should I use to make sure I can work with it after? How can I check for hidden flaws in expensive parts?	M
+database_indexing_algorithms	How do I find out how many different documents have a specific word?	M
+diamond_impregnation_chemistry	How do I safely release gas from an autoclave after use?	M
+differential_forms	What's the formula for de Rham cohomology on a contractible open set?	M
+diffusion_controlled_coarsening	What's the difference between diffusion-limited and reaction-limited growth patterns?	M
+diffusion_couple_analysis|isotope_tracer_diffusion|carbon_diffusion_in_solid_solutions	How does the inverse method help find the diffusion coefficient in different situations?	M
+digital_cartography_and_map_design|geographic_information_systems|cartography_and_topographical_surveying	What's the best way to make a detailed map with clear labels?	M
+digital_identity_verification	How do I spot fake videos made by computers?	M
+dimensional_stability_optimization_in_high_temperature_ceramics|thermal_shock_resistance|ceramic_thermal_shock_resistance|thermal_stress_modeling_in_ceramics	How can I reduce heat-related expansion and stress in materials?	M
+disk_i_o_optimization_techniques	How do I tell if slow storage or the program itself is causing delays?	M
+dislocation_dynamics_and_plasticity|dislocation_dynamics_and_plasticity_theory|twinning_induced_plasticity	Does the energy needed to move dislocations in some materials go down as the energy of defects within those materials goes up?" and "Can the boundaries between crystal grains in a material create dislocations?	M
+distributed_consensus_algorithms|byzantine_fault_tolerance	How many backup servers do I need to keep my system safe from hackers?	M
+distributed_state_machine_replication	What does the leader do to keep things consistent?	M
+distributed_systems|distributed_state_machine_replication|consensus_algorithm_design	How do computers keep data safe when lots of them are working together?	M
+domestic_liquidity_management_in_segmented_markets	What do banks need to keep on hand for emergencies?	M
+dynamic_force_measurement_and_signal_conditioning|analog_signal_conditioning_and_anti_aliasing_filters|signal_processing	How do systems fix wonky signals and keep things straight?	M
+earthmoving_cycle_time_optimization	How do hydraulics help with digging and lifting?	M
+electrical_contact_resistance_measurement	How do I separate the contact and bulk resistance measurements?	M
+electromagnetic_geophysics	What causes static shift in fields?	M
+electromagnetic_interference_mitigation	What's the best way to stop radiation from coming through vents?	M
+electromagnetic_sounding|magnetotelluric_sounding|electromagnetic_geophysics|induced_pole_resistivity|magnetotellurics	What's the deal with high frequencies and how deep they go?	M
+electromagnetic_suspension_systems|active_feedback_control_systems|closed_loop_motion_control_systems	How do sensors keep track of the tiny space between the electromagnet and rail?	M
+electromagnetic_theory	What shapes can these techniques be used on?	M
+elliptic_curve_cryptography|point_doubling	What kind of field is best for efficient arithmetic operations?	M
+energy_dissipation	How do metamaterials control vibrations?	M
+environmental_monitoring_systems	How can I make my sensor network use less power and work better over long distances?	M
+enzyme_engineering	How do scaffold proteins help enzymes work better?	M
+episcopal_arbitration_in_feudal_disputes|vassal_obligation_enforcement_mechanisms|manorial_court_proceedings	Why did the manorial hall become a popular place for legal matters?	M
+explosion_proof_electrical_equipment|fire_protection_engineering|ventilation_and_gas_management	How do I put out a flame using cold air?	M
+explosive_ordnance_disposal	What's the deal with barriers for crowd control and vacuum systems?	M
+fatigue_analysis_and_testing|low_cycle_fatigue_analysis_and_crack_propagation_modeling|fatigue_life_prediction_and_modeling	What makes stuff last longer under stress?	M
+fatigue_life_prediction_and_modeling|fatigue_analysis_and_testing|cyclic_loading_simulation|low_cycle_fatigue_analysis_and_crack_propagation_modeling	How do you predict when something might fail under stress and what happens when stress isn't applied evenly?	M
+feature_detection_and_matching|feature_matching|structure_from_motion|camera_pose_estimation	how do you know if a pixel is special for finding features in an image?	M
+ferroelectric_memory_storage	How does the discharge affect data storage time?	M
+feudal_tenure_documentation	How did notaries make a document official back in the day?	M
+fiber_mat_densification_and_entanglement	Why does making a surface water-resistant need high heat?	M
+fiber_preparation_and_pretreatment	How do steam explosions help break down cellulose?	M
+financial_statement_analysis|double_entry_bookkeeping_and_ledger_reconciliation|cost_accounting	What happens to money and assets when a company spends on big stuff?	M
+fire_resistant_coating_formulation|thermal_barrier_coatings|intumescent_coating_chemistry	What stuff can I use to keep heat from making things fall apart?	M
+flow_induced_crystallization_kinetics|shear_induced_crystallization_in_polymer_melts	How can I make my plastic parts grow faster and more imperfect?	M
+flux_balance_analysis|metabolic_flux_analysis|stoichiometric_matrix_analysis	Which goal should I pick to make my model work best for biology stuff?	M
+flux_variability_analysis	How does the complexity change when there are more reactions? Why can this method better find key reactions?	M
+forest_inventory_measurement|remote_sensing|surveying_and_topographic_mapping	How do you account for location or environment when comparing different plots?	M
+formal_language_theory	How do these groups fit inside each other?	M
+fortification_construction_techniques	What kind of mortar is used to bond the facing to allow for flexibility? How should the inside of a casemate be arranged?	M
+fracture_mechanics_and_crack_propagation_modeling	How do small samples show different toughness?	M
+fresnel_reflection_theory|thin_film_optics|spectroscopic_ellipsometry|thin_film_metrology|optical_thin_film_design_and_modeling	What makes the electric and magnetic fields stay continuous at the edges? How does the angle at which light hits something affect how much of it bounces off for both types of light waves?	M
+full_field_strain_measurement	How much the material stretches is tied to how many lines shift.	M
+full_waveform_inversion	How does the shape of the receiver affect what's lit up underground?	M
+fungal_pathogen_management_in_high_humidity_environments	How often should I check my drains to avoid water buildup and fungus?	M
+furnace_atmosphere_control|kiln_atmosphere_control_and_redox_chemistry|hot_gas_exhaust_mass_flow_rate	How do I set the injection valve positions to match the gas flow rates I've set?	M
+geodetic_surveying|surveying_and_topographic_mapping	What's the first step to get accurate angle readings from this tool?	M
+geographic_information_systems	How do I keep track of changes made to my data to make sure I can repeat the process later?	M
+geomechanics|geotechnical_engineering|geotechnical_soil_mechanics	What are simple ways to check if a slope will stay put?	M
+geometric_mesh_simplification|geometric_processing|graph_subdivision_and_contraction	How do you check if lines stay accurate when you simplify a 3D shape?	M
+geometric_metrology|dimensional_metrology|precision_metrology_and_dimensional_inspection	How do you fix things that bend or move around when you're measuring them?	M
+geophysical_exploration|geophysical_signal_processing|seismic_reflection_analysis	How do sensor weight and frequency response affect data quality in geophysical exploration?	M
+geophysical_surveying|geophysics|geophysical_exploration	What causes energy to scatter in different directions during recording sessions?	M
+geostatistical_modeling|geostatistics|statistical_validation_methods	How does the inverse of the covariance matrix balance observations based on their location and connection?	M
+geostatistics|geostatistical_modeling|statistical_validation_methods	Best way to estimate things when the data behaves predictably and distances affect how similar things are?	M
+glass_forming_and_annealing	How hot should the glass be after I put it in the oven?	M
+grain_boundary_segregation_dynamics|solute_drag_interface_mobility|metal_solute_depletion_modeling	How do atoms move around in metals and how can we see where they are?	M
+grain_structure_analysis	How do faster deformation rates affect metal's internal structure?	M
+graph_subdivision_and_contraction|topological_graph_theory	What do you do when you add new points to every line between points in a drawing?	M
+green_s_function_theory|numerical_methods|numerical_geophysics|computational_electromagnetics	How do I make sure my math problem has a solution when dealing with boundaries and special conditions?	M
+hand_plane_sharpening_and_honing	How do I smooth out scratches from rough sandpaper?	M
+hazardous_gas_detection_systems|sensor_calibration_protocols|environmental_monitoring_systems	How do I keep my sensor readings steady and accurate?	M
+hazardous_materials_storage	what's needed to keep hazardous materials safe from heat and leaks?	M
+hearing_conduct	How do we figure out where sounds are coming from?	M
+heat_exchanger_design	How do I find the overall heat transfer number using the individual heat transfer numbers?	M
+heat_transfer_analysis|thermodynamics_and_heat_transfer|controlled_cooling_and_thermal_cycling	What's the deal with heat flow in stuff that doesn't conduct heat evenly?	M
+heat_transfer_and_convection	How does the length of a cooling fin affect its efficiency?	M
+heat_treatment_engineering|metallurgical_heat_treatment|heat_treatment_and_quenching_techniques|annealing_and_tempering|thermomechanical_processing_and_heat_treatment	How do you stop metal from getting damaged when heating it up?	M
+hemodynamics	What's the deal with laminar flow and that Reynolds number thing?	M
+hide_preparation|leather_tanning|leather_tanning_and_leatherworking	How do you prepare a hide before drying it?	M
+hierarchical_search_routing	How do I stop query injection in my database?	M
+high_fire_glazing_techniques	how to make glaze for ceramics smooth	M
+historical_architecture_and_spatial_organization	How do buildings let in fresh air without using machines?	M
+historical_evidence_authentication	How do experts spot added or changed parts in old writings using light?	M
+homage_and_fealty_rituals	What happens if you mess up a loyalty ritual?	M
+homomorphic_encryption	Why is GSW encryption slower than other types?	M
+human_robot_interaction|robotic_control_systems|robotic_compliance	How can I make sure my robot can handle mistakes and work well in real life?	M
+hydraulic_engineering_and_pipe_network_design|pipe_network_analysis|hydraulic_modeling_and_network_simulation|hydraulics_and_fluid_mechanics	What decides the pressure changes in a pipe system?	M
+hydraulic_pressure_compensation	How do changes in temperature affect hydraulic fluid in closed systems?	M
+hydrological_modeling|unsaturated_flow_modeling	How do scientists mimic the way soil grabs onto stuff like water or chemicals?	M
+hyperspectral_imaging|remote_sensing|spectral_calibration	What's the deal with image detail and color info in optical systems?	M
+impedance_control	How do you make a simple circuit work best at one specific frequency?	M
+industrial_steel_manufacturing	How long can metal be cooled before bad stuff starts happening?	M
+industrial_vision_systems_for_part_alignment	How do systems keep parts in the right place while they're being worked on?	M
+interfacial_debonding_mechanisms	How do leftover squeezes stop tiny cracks from starting?	M
+interfacial_energy_analysis	How does changing the size of soap molecules affect the smallest amount needed to form bubbles?	M
+interfacial_energy_quantification|surface_energy_and_curvature_effects|interfacial_thermodynamics|wetting_phenomena	What causes the surface tension of a material to change?	M
+interferometric_metrology	What do you need to know about the light used in an interferometer?	M
+intrinsic_phase_stabilization|materials_phase_diagram_analysis	How do scientists figure out the exact positions of atoms in a crystal and map out how different materials behave at various temperatures and compositions?	M
+inverse_theory|geophysical_data_inversion|geophysical_inversion_methods	How do I check if my model's results are reliable and accurate?	M
+irrigation_engineering	How do you figure out how much more water you need to add because of evaporation and how often?	M
+isentropic_efficiency_analysis|fluid_dynamics_and_turbine_design	How do surface roughness and Reynolds numbers affect friction losses?	M
+isotope_ratio_mass_spectrometry	How do I store something to keep it from changing with the air around it?	M
+isotope_tracer_diffusion	How does impurity affect the Darken equation?	M
+kerf_debris_removal_mechanisms	How do I check my lawnmower blade before using it?	M
+kiln_loading_and_firing_schedules	How do I make sure everything in my kiln gets the same heat?	M
+kuratowski_s_theorem|topological_graph_theory|planar_graph_embedding	How do I check if a graph can be drawn without any lines crossing?	M
+laser_beam_propagation	What makes stars twinkle at night?	M
+lattice_based_cryptography	What's a simple explanation of Ring-LWE and its role in security?	M
+lay_representation	Can regular people talk during certain parts of a trial?	M
+lignin_chemistry|polymer_chemistry_and_crosslinking	What affects the molecular weight range of the end product?	M
+lignocellulosic_material_science|fiber_preparation_and_pretreatment	How can I break down the bonds in cellulose and hemicellulose?	M
+low_cycle_fatigue_analysis_and_crack_propagation_modeling|fracture_mechanics_and_crack_propagation_modeling	How do neutron diffraction and computer simulations match up for finding where cracks start?	M
+low_latency_network_interface_engineering	What's a simple way to reduce the delay caused by handling interruptions?	M
+lumber_drying_and_moisture_control	How do you store things after drying to keep them from getting too dry or too wet?	M
+machine_isolation_and_vibration_damping_systems|vibration_isolation_engineering|vibration_isolation_systems	How do I keep my material from changing during tests?	M
+magnetometry_and_field_quantification|superconducting_quantum_interference_device_technology	What's the deal with the current flowing through a SQUID and how does it relate to magnetic flux?	M
+magnetorheological_actuator_design	How do I keep my house warm in winter?	M
+magnetotelluric_sounding|electromagnetic_geophysics|electromagnetic_induction_surveying	How do you find out what frequencies are in a signal?	M
+maintenance_and_reliability_engineering|force_distribution_monitoring	How do machines detect problems like bearing wear or unbalanced parts?	M
+manipulator_design|robotic_kinematics|spatial_mechanics	What's the deal with figuring out where a robot's hand is based on its joints?	M
+manorial_court_proceedings	Who was in the waiting area outside the courtroom?	M
+martensite_variant_selection|martensitic_transformation_control|martensitic_transformation	How does stress affect the formation of martensite variants?	M
+martensitic_transformation_thermodynamics	How does the energy at the boundary between two phases change with temperature and crystal orientation?	M
+masonry_joint_design	Why do I need a flexible layer when bonding facing units to core masonry?	M
+masonry_structural_analysis	Why can't masonry blocks be tested right after they're made?	M
+masonry_unit_compressive_strength_testing	How big should a brick be for testing?	M
+mass_flow_rate_stoichiometry_in_fire	What makes stuff mix faster in a chaotic fire?	M
+mass_spectrometry	What's the best way to keep ion optics working right?	M
+mass_transfer_and_interfacial_phenomena	What's the best model for low-solubility gases where there's not much turbulence at the surface?	M
+material_handling_systems	How do I stop my stuff from getting stuck in machines?	M
+materials_defect_analysis	How do you clean stuff before the last check?	M
+materials_science|metallurgy_and_materials_science|phase_transformation_kinetics_and_alloy_design	What makes metal bend slowly when it's hot?	M
+materials_science_for_bow_limbs|archery_equipment_engineering	What's the best shape for a limb to handle stress and save material?	M
+materials_thermodynamics	What makes the line between two phases on a pressure-temperature graph slope up or down?	M
+mean_field_theory_and_ginzburg_landau_functional|landau_theory_of_phase_transitions	What's the purpose of the quartic term in this context?	M
+mechanical_engineering_and_impact_force_analysis	How do you measure the force and duration of an impact?	M
+mechanical_vibration_analysis|structural_dynamics|vibration_analysis_and_modal_testing	What does the shaking pattern at a certain frequency tell us about the system?	M
+membrane_mechanics	How do the fats in a cell membrane affect how stiff or bendy it is?	M
+memory_management_and_paging	How does the Clock algorithm work to manage memory?	M
+memory_safety_analysis|static_analysis	How do I make sure I don't accidentally use a pointer that's not pointing to anything?	M
+merkle_tree_cryptography|distributed_ledger_technology	How can I keep the outputs of my hash function safe from tampering?	M
+mesh_based_modeling|geometric_processing|geometric_mesh_simplification|computational_geometry	What does it mean when vertices are floating?	M
+metabolic_flux_analysis|flux_balance_analysis|stoichiometric_matrix_analysis|flux_variability_analysis	How do I make the most of my biomass or save the most energy?	M
+metal_solute_depletion_modeling	Why are implicit time integration schemes better for stiff diffusion equations?	M
+microcracking_prevention_through_controlled_cooling_protocols|thermal_shock_resistance_engineering|thermal_shock_resistance|ceramic_thermal_shock_resistance|thermal_stress_analysis_in_manufacturing	How do things chill out and relax when cooled slowly?	M
+mirror_manufacturing_and_optical_coating|thin_film_deposition_and_growth	What's a simple way to make thin films less porous and stick better?	M
+modal_analysis|vibration_analysis_and_modal_testing|structural_dynamics	What's the relationship between force, movement, and frequency?	M
+molecular_dynamics_simulation	How do I keep the temperature steady in a simulation?	M
+monetary_zone_theory_and_policy	Why does the economy need workers to move around easily?	M
+mortar_unit_interface_bonding_mechanics	How hot or cold is too much for the surface I'm putting mortar on?	M
+mortise_and_tenon_joinery|timber_framing_and_joinery|woodworking_joinery_techniques	Can you tell me how to make sure the tenon fits into the mortise correctly?	M
+network_protocols	How do computers figure out the biggest data chunk that can be sent without being split up?	M
+non_destructive_testing|non_destructive_testing_and_quality_assurance	How do I check for surface flaws using electrical currents?	M
+non_destructive_testing_and_quality_assurance|non_destructive_testing|ground_penetrating_radar	How do I make things look more different on an X-ray?	M
+non_ribosomal_peptide_synthetase_assembly	Why does the peptide only get released when it's fully assembled?	M
+numerical_analysis_and_interpolation	Why does Runge's phenomenon happen with equally spaced points?	M
+open_channel_flow_analysis|open_channel_hydraulics|open_channel_flow_hydraulics	How do you figure out how fast stuff is moving through a pipe?	M
+open_channel_flow_design	How do I stop soil from being washed away during heavy rains?	M
+operating_systems_sched	How do computers measure how moving tasks around affects speed?	M
+operational_transformation|view_synchronization_mechanisms|last_write_wins_conflict_resolution	How do I handle adding new stuff when others are doing it too?	M
+optical_coherence_tomography	How does detector dark current affect measurements at low signal levels?	M
+optical_diffraction_and_wavefront_analysis|laser_beam_profiling|interferometric_measurement|optical_wavefront_reconstruction|fourier_optics|optical_metrology|wavefront_sensing	What's the deal with those light and dark bands you see in certain experiments?	M
+optical_interferometry	What causes sharp peaks at certain wavelengths?	M
+osmotic_potential_dynamics|solute_partitioning_and_rejection|lipid_barrier_permeation_kinetics	What's the deal with water pressure and how it affects stuff dissolved in it?	M
+out_of_band_communication_signaling	How do storage controllers handle device commands?	M
+phase_diagram_analysis|thermodynamic_phase_diagram_construction|thermodynamics_and_phase_transformations	How do different conditions affect the formation of stable vs. unstable phases?	M
+phase_transformation_kinetics_and_alloy_design	How do metastable phases form and why does martensite behave differently depending on the texture?	M
+phase_transformation_kinetics_and_thermodynamics|phase_transformation_kinetics|diffusion_controlled_phase_transformations|nucleation_and_growth_kinetics	How does the creation of a new surface between two phases affect energy, and what influences the speed of this process?	M
+phase_transitions_in_condensed_matter|condensed_matter_physics|phase_transitions	How do tiny details affect big changes in stuff?	M
+phloem_loading_and_unloading	What happens when sucrose turns into glucose and fructose in plants?	M
+photoelectric_effect_quantification	What's the deal with low anode voltage and light frequency affecting electron emission?	M
+photoemission_spectroscopy|photoelectric_effect_quantification	How do you find out the energy that holds electrons in a material?	M
+pile_group_load_distribution|foundation_engineering|shallow_foundation_design|foundation_settlement_prediction	How do you figure out how much weight a bunch of piles can hold together?	M
+pipe_network_analysis|hydraulic_engineering_and_pipe_network_design|hydraulic_modeling_and_network_simulation|hydraulics_and_fluid_mechanics	What's the deal with sudden water pressure spikes in pipes?	M
+pipelined_consensus_protocols	How can specialized hardware speed up the process of checking and agreeing on new updates in a system?	M
+piston_ring_sealing_technology	What causes leakage between the rings in a multi-ring setup?	M
+planar_graph_embedding	How do I change the layout of a flat diagram by rotating edges around a point?	M
+plant_hydraulics|xylem_anatomy	How do tylosids and pit membranes help trees manage air bubbles?	M
+pm_civic_magic_order	How do guilds keep their messages secret from others?	M
+pm_kinetics_ragdoll|spatial_mechanics|robotic_kinematics	How do they model a person walking like an upside-down pendulum?	M
+pm_steward_economy	What's stopping the building of houses and making tools?	M
+pm_voice_dialogue|pm_director_pacing|pm_cast_lifecycle	What happens if a character in a game isn't happy with their tasks or resources?	M
+point_addition	How does the size of the field affect security in math calculations?	M
+polymer_chemistry_and_crosslinking|protective_coating_formation|thermal_processing_of_non_crystalline_materials	What makes crosslinking happen faster?	M
+polymer_rheology|rheology_of_polymer_solutions	When do polymer solutions start acting weird?	M
+precipitate_hardening	How do shearing precipitates affect strain hardening?	M
+precision_agriculture	What can I do to make my GPS more accurate?	M
+precision_gear_manufacturing|precision_machining_and_surface_finishing	What's the best way to measure tiny details on a surface?	M
+precision_machining_and_surface_finishing|precision_machining_of_crankshafts	What tools can handle faster cutting and keep their sharpness?	M
+process_safety_management	How do I make a plan for managing emergencies and talking to outside help?	M
+pyrolysis_and_char_formation|timber_combustion_kinetics|polymer_matrix_thermal_degradation	How do higher temperatures change the stuff made from heating wood or plants without oxygen?	M
+python_runtime	What's the deal with tracked lists and reference cycles in Python?	M
+quantum_anomalous_hall_effect|chiral_edge_states|topological_insulators	How does Hall conductivity stay the same without outside influences breaking time-reversal symmetry?	M
+quantum_electrodynamics|quantum_field_theory|quantum_chromodynamics	How does the vertex factor come about?	M
+quasi_static_maxwell_equations	What limits does the electrostatic approximation have?	M
+range_query_optimization|covering_index_design|index_key_value_comparison	How do B-tree indexes handle extra searches without needing more structures?	M
+ransac_algorithm|structure_from_motion|reprojection_error	How can setting the threshold too high mess up my final results?	M
+reduction_oxidation_firing_techniques	What colors do you get when reducing iron in glaze?	M
+redundant_control_logic_design|fault_tolerant_computing_systems|robotic_control_systems|redundant_server_architecture	How do I make sure all the control functions are working properly on the backup system?	M
+refractory_engineering|refractory_material_engineering|ceramic_thermal_shock_resistance	What materials resist heat and chemicals well in blast furnace hearths?	M
+remote_sensing|remote_sensing_image_processing|topographic_mapping	How do I account for bumpy land in my data?	M
+remote_sensing_image_processing|remote_sensing|topographic_mapping	How do you fix weather effects in photos taken from space?	M
+retinal_ganglion_cell_mapping	Which brain cells use Lhx5?	M
+robotic_kinematics	Why do machines have limited movement areas and how can we fix movement errors as they happen?	M
+rock_engineering|geomechanics|geotechnical_engineering|foundation_engineering	How can I make predictions more accurate for complicated engineering tasks?	M
+rocm_gpu_compute	How do I make sure things run in the right order when using hipStreamSynchronize?	M
+role_based_access_control_systems	How do I make sure job roles have the same permissions across the company?	M
+rotating_machinery_and_shaft_alignment	How do I find the angle difference between two points?	M
+rotational_dynamics_and_inertial_balancing|rotating_machinery_balancing|crankshaft_balance_dynamics|rotordynamic_analysis	How do machines keep spinning steadily without outside help?	M
+secondary_ion_mass_spectrometry	What causes electrons to move to higher energy levels during collisions?	M
+security_architecture_and_access_control_systems|digital_identity_verification	How do companies manage user logins across different systems without storing all the passwords in one place?	M
+seismic_reflection_analysis|geophysical_exploration|geophysical_signal_processing	What's the best stuff to use for energy transfer based on the ground's makeup?	M
+seismic_tomography|inverse_theory_in_geophysics|seismology_and_crustal_structure	What's the deal with waves going different speeds in different directions?	M
+seismic_wave_propagation	How does the stuff's thickness affect wave resistance?	M
+shallow_foundation_design|foundation_engineering|geotechnical_engineering	Why does water near the base of a building make it less stable?	M
+shear_strength_testing|soil_mechanics|rock_mechanics	How do I make sure my measurements are accurate when testing materials?	M
+shish_kebab_morphology_development	How long should I soak meat before cooking?	M
+siege_weapons_and_fortification_defenses	How do I make sure a ram head is strong enough for battering down doors?	M
+signal_processing|digital_signal_proc|analog_signal_conditioning_and_anti_aliasing_filters|dynamic_force_measurement_and_signal_conditioning	What's the best way to reduce errors and improve signal quality in sampling systems?	M
+silicate_melt_rheology	What's the link between bond breaking and melt viscosity in fragile silicate melts?	M
+skin_depth_calculation	How do antennas use something called skin depth to work better?	M
+slotting_analysis|fatigue_analysis_and_testing|fracture_mechanics_analysis	How do they make sure the stress is spread out evenly and not concentrated at the edges of slots?	M
+smart_contract_execution	How do you spot those reentry bugs in code?	M
+soil_consolidation	How do I find the final volume of soil after a consolidation test?	M
+soil_hydraulic_conductivity_measurement|soil_moisture_retention_and_drainage_engineering	How do you measure soil water suction in the ground?	M
+soil_moisture_retention_and_drainage_engineering|soil_physics|unsaturated_flow_modeling	Why do some spots get soaked while others nearby stay dry when it rains?	M
+soil_structure_interaction_analysis	How do I set up the coordinate system and boundary conditions for my analysis?	M
+solder_joint_reliability_analysis	How hot should I make it when melting the solder to stick things together without messing up the other parts?	M
+solute_drag_interface_mobility|metal_solute_depletion_modeling|solidification_kinetics_and_interface_stability|diffusion_controlled_microstructure_evolution	How does the speed of stuff moving through a material change with how easily it can move and how much it likes to stick to the material?	M
+solvent_extraction_engineering|mass_transfer_and_interfacial_phenomena	Why does mass transfer happen where it does in film theory?	M
+source_sink_relationships	How does electric current keep flowing in a connection?	M
+spatial_indexing_and_spatial_partitioning|spatial_data_structures|database_indexing_algorithms	How do grids handle adding and removing things without changing everything?	M
+spatial_mechanics	What's the best kind of actuator for precise control in changing temperatures?	M
+spectral_deconvolution|regularization_in_inverse_problems|inverse_theory|full_waveform_inversion	Why does the point spread function need to be absolutely integrable?	M
+spectral_interference_reduction	How can I reduce background noise in my light measurements?	M
+spectral_line_analysis|spectroscopic_analysis_and_metrology|spectral_calibration|spectroscopy	how do lasers keep time so precise?	M
+spectroscopic_analysis_and_metrology|spectroscopic_analysis|spectroscopy	What's the connection between a material's emissivity and absorptivity?	M
+spectroscopic_ellipsometry|thin_film_metrology|optical_thin_film_design_and_modeling|complex_refractive_index_analysis	how does layer thickness affect light speed?	M
+spectroscopic_refractometry	How do I fill the critical angle measurement cell without getting air bubbles in it?	M
+squeeze_out_defect_quantification	How does constant electrical current affect the resistance of metal connections over time?	M
+static_analysis	What's the simplest explanation of the Knaster-Tarski theorem?	M
+statistical_mechanics	How do I know if my system has long-lasting states?	M
+stomatal_physiology	What does the build-up of K⁺ and anions in the vacuole do?	M
+stone_dressing_and_honing_techniques	How do I clean my tools before working on a rock?	M
+stone_masonry_and_vault_construction	How do the funny shaped stones in an arch hold it up?	M
+stratum_corneum_partitioning|cosmetic_ingredient_penetration_enhancement|trans_epidermal_drug_delivery|tanning_chemistry_and_penetration	What's the best way to get medicine through the outer layer of your skin?	M
+structural_dynamics	What does big bending do to stiffness?	M
+structural_fire_dynamics	How do fire commanders change their strategies during a fire?	M
+structural_integrity_assessment	How do they put together the big stiffness matrix from the smaller ones?	M
+subcritical_and_supercritical_flow_regimes|compressible_flow|high_pressure_fluid_dynamics	What's the deal with Mach number and shock waves in ducts and turbines?	M
+subsurface_conductivity_inversion|geophysical_data_inversion|geophysical_inversion_methods	How do I check if my electrodes are working right?	M
+subsurface_drainage_systems	What's the minimum thickness for gravel in a filter system?	M
+subsurface_imaging_systems|geophysical_exploration_method_selection|electromagnetic_geophysics|geophysical_exploration	How deep does a signal go into a material and what affects it?	M
+superconducting_quantum_interference_device_technology	How thin should a superconducting film be to keep the current flow even?	M
+surface_energy_and_curvature_effects|surface_thermodynamics|surface_science_and_interface_characterization|interfacial_thermodynamics	What causes the stickiness in how water spreads on different spots of a surface?	M
+surface_figure_measurement|dimensional_metrology|precision_metrology_and_dimensional_inspection	How do I show that my measurements are consistent?	M
+surface_finish_evaluation|dimensional_metrology	How do temperature changes mess up precise measurements?	M
+surface_reconstruction_techniques|surface_science_and_interface_characterization|surface_science	What's a method to study the makeup of a material's surface in detail?	M
+surface_science	How do they measure the bend in a cantilever?	M
+surface_thermodynamics	How does heating up stuff during deposition affect grain size?	M
+symbolic_execution|program_verification|static_analysis	How do I check if a loop can end with the current conditions?	M
+syntax_directed_translation	How can I make my grammar simpler and check it early?	M
+systems_biology|context_specific_metabolic_modeling|metabolic_network_reconstruction|gene_protein_reaction_mapping|biosynthetic_pathway_engineering|biochemical_pathway_analysis	How do models show the stability of different cell states?	M
+tanning_chemistry_and_penetration|stratum_corneum_partitioning|trans_epidermal_drug_delivery	How do my skin's natural oils affect how tanning products get absorbed?	M
+tax_provision_accounting	How do accountants keep track of tax payments and adjustments?	M
+tensile_testing_and_stress_analysis	What does the crosshead assembly do in a testing machine?	M
+textile_drying_and_moisture_control|lumber_drying_and_moisture_control|kiln_thermodynamics	How does water vapor move and what energy is needed to dry stuff?	M
+textile_engineering	How do heat and polyester affect dyeing?	M
+thermal_expansion_compensation|thermal_expansion_coefficient_measurement	How do you keep a design from flopping around and how do you measure it?	M
+thermal_insulation_design|energy_loss_minimization|thermal_insulation_materials	How do gaps in insulation mess with its heat-blocking power?	M
+thermal_insulation_materials	What happens to foam panels when temperatures keep changing?	M
+thermal_management_in_optical_systems|thermal_gradient_control|thermal_management_systems|controlled_cooling_and_thermal_cycling	How does dampness affect the parts that cool down computer chips?	M
+thermal_management_systems|coolant_system_design	How can I use fluids to reduce energy use in cooling systems?	M
+thermal_mass_characterization|controlled_cooling_and_thermal_cycling|thermal_gradient_control|thermal_insulation_design	What's a good method for measuring temperature in thin stuff?	M
+thermal_processing_of_non_crystalline_materials|thermal_shock_resistance_engineering|microcracking_prevention_through_controlled_cooling_protocols	What stops stuff from breaking down when it gets too hot?	M
+thermal_shock_engineering|thermal_shock_resistance|ceramic_thermal_shock_resistance|thermal_shock_resistance_engineering	How does the heat resistance of a material affect the temperature it can handle?	M
+thermal_shock_resistance|thermal_shock_engineering|thermal_shock_resistance_engineering	How does heat transfer affect stress in metals when they're cooled quickly?	M
+thermal_shock_resistance_engineering|ceramic_thermal_shock_resistance|thermal_shock_resistance|thermal_shock_engineering	How do you make stuff stronger against heat shocks?	M
+thermal_stress_analysis	How do you calculate how much heat something can hold when it's heating up or cooling down?	M
+thermo_mechanical_finite_element_analysis	How do I pick the right time step size in simulations?	M
+thermo_mechanical_stress_analysis_and_residual_stress_mapping|residual_stress_analysis_and_stress_relief_techniques|thermal_stress_analysis_in_manufacturing|residual_stress_engineering_in_sintered_materials	How does temperature change how flexible things are in calculations?	M
+thermodynamic_driving_force_calculation|thermodynamic_feasibility_analysis|thermodynamics	How do fugacity coefficients help in chemical reactions?	M
+thermodynamic_feasibility_analysis|thermodynamic_driving_force_calculation|thermodynamic_property_correlation_and_modeling	How do I find the best settings for my chemical process?	M
+thermodynamic_property_correlation_and_modeling	How do I minimize the difference between predicted and actual values?	M
+thermodynamic_stability_of_multiphase_systems|thermodynamics_of_phase_transitions|thermodynamics_and_phase_transformations|thermodynamic_phase_diagram_construction|phase_diagram_analysis	What else affects the result besides the main factors?	M
+thermodynamics_of_phase_transitions	Why do tiny particles melt at a lower temperature than bigger ones?	M
+thermoplastic_composite_manufacturing|composite_material_processing|composite_materials_manufacturing	How do you heat stuff evenly to save time?	M
+thin_film_deposition	What causes changes in the chemical makeup of the layer when pressure is low?	M
+timber_combustion_kinetics|pyrolysis_and_char_formation|compartment_fire_dynamics	How does making wood denser affect how heat spreads and burns it?	M
+timber_framing_and_joinery|traditional_timber_framing|woodworking_joinery_techniques	How do roof supports sit on the top beams of a house?	M
+topographic_mapping|surveying_and_topographic_mapping|geodetic_surveying	How do I convert local height data to a global model?	M
+topological_data_analysis	Why do barcodes make sense for some data and not others?	M
+topological_graph_theory	How do you find those math equations for a knot's shape?	M
+topological_insulators	Why can't regular impurities mess up certain pairs in special superconductors?	M
+traditional_timber_framing	How do I use power saws for making joints before using hand tools?	M
+trans_epidermal_drug_delivery	How does water affect the spaces between skin cell layers?	M
+trench_shoring_and_slope_stability|retaining_wall_construction|foundation_engineering	How do I figure out how much force soil pushes on a wall? What should I look for in soil when choosing soil nails?	M
+tribology	What causes things to wear out when they rub together without any liquid in between?	M
+tribology_and_surface_contact_mechanics|tribology|tribology_and_wear_resistance	Why does heat from friction make lubricant less sticky?	M
+tribology_and_wear_resistance|tribology_and_surface_contact_mechanics|tribology_and_lubrication_engineering	How does speed affect heat and wear in materials?	M
+turbomachinery_aerodynamics	How do I find the tangential and radial parts of an object's total speed?	M
+turbomachinery_and_pump_performance_analysis|turbomachinery_aerodynamics|base_pressure_recovery_systems|airfoil_design|fluid_dynamics_and_turbine_design	What gadgets can I use to measure how air moves around?	M
+twinning_induced_plasticity	How do stress and twinning affect material stretchiness?	M
+unsaturated_flow_modeling|soil_moisture_retention_and_drainage_engineering|hydrological_modeling	What's a simple way to solve problems with complicated shapes and smooth results?	M
+urban_planning_and_traffic_flow_design	What's given to the public when buildings go taller?	M
+vassal_obligation_enforcement_mechanisms|feudal_tenure_documentation|feudal_land_tenure	How did feudal courts deal with problems between lords and their followers?	M
+ventilation_and_gas_management|pressure_zone_management_and_control|furnace_atmosphere_control	How do I keep air flowing in one direction in a confined space?	M
+vibration_analysis_and_modal_testing	Why does random vibration testing take so long?	M
+viscoplasticity_theory	How does cold weather affect how much force is needed to bend or shape metals?	M
+visual_information_design|digital_cartography_and_map_design|image_processing	How do I make brightness numbers match what my eyes see? and What's the best way to arrange data so it's easy to understand?	M
+warehouse_layout_optimization|physical_storage_layout|picking_path_optimization	How do I pick the right pallet jack or forklift for my warehouse?	M
+water_distribution_systems	What's needed to simulate water supply changes in a reservoir?	M
+water_jet_cutting_and_material_removal	What should operators wear to protect against splashes and cuts?	M
+wavefront_sensing	How big should the detector pixels be to measure light spots accurately?	M
+welding_and_coating_process_engineering	How can I clean surfaces to avoid stuff not sticking later?	M
+wire_tensioning_systems|tensile_testing_and_stress_analysis	What causes wires in galvanized setups to snap sooner than stainless steel ones under the same tension?	M
+wood_moisture_meter_calibration|soil_moisture_sensor_calibration|sensor_calibration_protocols	How do I check if my moisture meter is reading correctly?	M
+woodworking_joinery_and_surface_finishing	How do grain patterns affect wood strength?	M
+work_hardening_and_strain_aging	How do X-rays show how materials stretch and change over time when stressed slowly?	M
+x_ray_crystallography|crystallography|x_ray_diffraction	How do I figure out the size of tiny crystal building blocks using spots from reflected waves?	M
+x_ray_diffraction	How do I find the wavelength of an X-ray used in an experiment?	M
+xylem_anatomy|transpiration_physiology|structural_botany_and_plant_architecture	How do plants stop water from flowing backward?	M

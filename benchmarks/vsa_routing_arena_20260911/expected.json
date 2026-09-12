@@ -1,0 +1,237 @@
+{
+  "tolerance": 0.01,
+  "values": {
+    "cnet stem::test_top1": 0.2322,
+    "cnet stem::test_top3": 0.3755,
+    "cnet stem::q_top1": 0.3754,
+    "cnet stem::q_top3": 0.5662,
+    "cnet stem::sep_80_90": 0.8099,
+    "cnet stem::sep_90_95": 0.2182,
+    "cnet lex::test_top1": 0.2893,
+    "cnet lex::test_top3": 0.4518,
+    "cnet lex::q_top1": 0.4549,
+    "cnet lex::q_top3": 0.671,
+    "cnet lex::sep_80_90": 0.9288,
+    "cnet lex::sep_90_95": 0.3933,
+    "cnet lex_distilled::test_top1": 0.2926,
+    "cnet lex_distilled::test_top3": 0.4565,
+    "cnet lex_distilled::q_top1": 0.4675,
+    "cnet lex_distilled::q_top3": 0.6974,
+    "cnet lex_distilled::sep_80_90": 0.9485,
+    "cnet lex_distilled::sep_90_95": 0.4878,
+    "cnet lex_full::test_top1": 0.3034,
+    "cnet lex_full::test_top3": 0.4649,
+    "cnet lex_full::q_top1": 0.4914,
+    "cnet lex_full::q_top3": 0.7181,
+    "cnet lex_full::sep_80_90": 0.9691,
+    "cnet lex_full::sep_90_95": 0.5702,
+    "cnet lex_trained::test_top1": 0.3371,
+    "cnet lex_trained::test_top3": 0.4991,
+    "cnet lex_trained::q_top1": 0.6424,
+    "cnet lex_trained::q_top3": 0.8271,
+    "cnet lex_trained::sep_80_90": 0.9785,
+    "cnet lex_trained::sep_90_95": 0.5927,
+    "transformer gemma4-26b-meanpool::test_top1": 0.09597378277153558,
+    "transformer gemma4-26b-meanpool::test_top3": 0.16760299625468164,
+    "transformer gemma4-26b-meanpool::q_top1": 0.08900722708254089,
+    "transformer gemma4-26b-meanpool::q_top3": 0.15728413845568656,
+    "transformer gemma4-26b-meanpool::sep_80_90": 0.026217228464419477,
+    "transformer gemma4-26b-meanpool::sep_90_95": 0.0009363295880149813,
+    "transformer nomic-embed-text-v1.5::test_top1": 0.28651685393258425,
+    "transformer nomic-embed-text-v1.5::test_top3": 0.449438202247191,
+    "transformer nomic-embed-text-v1.5::q_top1": 0.4691898060098897,
+    "transformer nomic-embed-text-v1.5::q_top3": 0.6759224039558768,
+    "transformer nomic-embed-text-v1.5::sep_80_90": 0.7584269662921348,
+    "transformer nomic-embed-text-v1.5::sep_90_95": 0.2406367041198502,
+    "transformer qwen3-embedding-4b::test_top1": 0.37640449438202245,
+    "transformer qwen3-embedding-4b::test_top3": 0.5683520599250936,
+    "transformer qwen3-embedding-4b::q_top1": 0.5604792696842906,
+    "transformer qwen3-embedding-4b::q_top3": 0.7816660327120578,
+    "transformer qwen3-embedding-4b::sep_80_90": 0.898876404494382,
+    "transformer qwen3-embedding-4b::sep_90_95": 0.4794007490636704
+  },
+  "claims": [
+    {
+      "lhs": "cnet lex",
+      "rhs": "transformer nomic-embed-text-v1.5",
+      "key": "sep_80_90",
+      "label": "separability 0.80/0.90: lexicon >= nomic-embed-text (small embedding transformer)"
+    },
+    {
+      "lhs": "cnet lex",
+      "rhs": "transformer qwen3-embedding-4b",
+      "key": "sep_80_90",
+      "label": "separability 0.80/0.90: lexicon >= Qwen3-Embedding-4B (large embedding transformer)"
+    },
+    {
+      "lhs": "cnet lex",
+      "rhs": "transformer gemma4-26b-meanpool",
+      "key": "sep_80_90",
+      "label": "separability 0.80/0.90: lexicon >= gemma4 26B mean-pooled hidden states"
+    },
+    {
+      "lhs": "cnet lex",
+      "rhs": "transformer nomic-embed-text-v1.5",
+      "key": "test_top3",
+      "label": "held-out sentence top-3: lexicon >= nomic-embed-text"
+    },
+    {
+      "lhs": "cnet lex",
+      "rhs": "transformer nomic-embed-text-v1.5",
+      "key": "q_top3",
+      "label": "teacher-question top-3: lexicon >= nomic-embed-text"
+    },
+    {
+      "lhs": "cnet lex",
+      "rhs": "cnet stem",
+      "key": "q_top1",
+      "label": "teacher-question top-1: lexicon >= stem hash"
+    },
+    {
+      "lhs": "transformer qwen3-embedding-4b",
+      "rhs": "cnet lex",
+      "key": "test_top1",
+      "label": "held-out sentence top-1: Qwen3-Embedding-4B >= lexicon (recorded loss; remove this claim when it stops holding)"
+    },
+    {
+      "lhs": "cnet lex_distilled",
+      "rhs": "cnet lex",
+      "key": "q_top1",
+      "label": "teacher-question top-1: distilled lexicon >= random-indexing lexicon (offline transformer context helps ranking)"
+    },
+    {
+      "lhs": "cnet lex_distilled",
+      "rhs": "cnet lex",
+      "key": "sep_80_90",
+      "label": "separability 0.80/0.90: distilled lexicon >= random-indexing lexicon"
+    },
+    {
+      "lhs": "cnet lex_distilled",
+      "rhs": "transformer nomic-embed-text-v1.5",
+      "key": "q_top3",
+      "label": "teacher-question top-3: distilled lexicon >= nomic-embed-text"
+    },
+    {
+      "lhs": "cnet lex_distilled",
+      "rhs": "transformer qwen3-embedding-4b",
+      "key": "sep_80_90",
+      "label": "separability 0.80/0.90: distilled lexicon >= Qwen3-Embedding-4B"
+    },
+    {
+      "lhs": "transformer qwen3-embedding-4b",
+      "rhs": "cnet lex_distilled",
+      "key": "test_top1",
+      "label": "held-out sentence top-1: Qwen3-Embedding-4B >= distilled lexicon (recorded loss; remove when it stops holding)"
+    },
+    {
+      "lhs": "transformer qwen3-embedding-4b",
+      "rhs": "cnet lex_distilled",
+      "key": "q_top1",
+      "label": "teacher-question top-1: Qwen3-Embedding-4B >= distilled lexicon (recorded loss; remove when it stops holding)"
+    },
+    {
+      "lhs": "cnet lex_full",
+      "rhs": "cnet lex_distilled",
+      "key": "q_top1",
+      "label": "teacher-question top-1: phrases + subword backoff >= distilled lexicon"
+    },
+    {
+      "lhs": "cnet lex_full",
+      "rhs": "cnet lex_distilled",
+      "key": "sep_80_90",
+      "label": "separability 0.80/0.90: phrases + subword backoff >= distilled lexicon"
+    },
+    {
+      "lhs": "cnet lex_full",
+      "rhs": "transformer qwen3-embedding-4b",
+      "key": "sep_80_90",
+      "label": "separability 0.80/0.90: phrases + subword backoff >= Qwen3-Embedding-4B"
+    },
+    {
+      "lhs": "cnet lex_full",
+      "rhs": "transformer qwen3-embedding-4b",
+      "key": "sep_90_95",
+      "label": "separability 0.90/0.95: phrases + subword backoff >= Qwen3-Embedding-4B"
+    },
+    {
+      "lhs": "cnet lex_trained",
+      "rhs": "cnet lex_full",
+      "key": "q_top1",
+      "label": "teacher-question top-1: trained on capsule sentences + disjoint questions >= untrained"
+    },
+    {
+      "lhs": "cnet lex_trained",
+      "rhs": "transformer qwen3-embedding-4b",
+      "key": "q_top1",
+      "label": "teacher-question top-1: trained lexicon >= Qwen3-Embedding-4B (evaluation questions never trained on)"
+    },
+    {
+      "lhs": "cnet lex_trained",
+      "rhs": "transformer qwen3-embedding-4b",
+      "key": "q_top3",
+      "label": "teacher-question top-3: trained lexicon >= Qwen3-Embedding-4B"
+    },
+    {
+      "lhs": "transformer qwen3-embedding-4b",
+      "rhs": "cnet lex_trained",
+      "key": "test_top1",
+      "label": "held-out sentence top-1: Qwen3-Embedding-4B >= trained lexicon (recorded loss; remove when it stops holding)"
+    },
+    {
+      "lhs": "transformer qwen3-embedding-4b",
+      "rhs": "cnet lex_trained",
+      "key": "test_top3",
+      "label": "held-out sentence top-3: Qwen3-Embedding-4B >= trained lexicon (recorded loss; remove when it stops holding)"
+    },
+    {
+      "lhs": "cnet lex_trained",
+      "rhs": "transformer qwen3-embedding-4b",
+      "key": "questions_fresh_20260912.tsv::top1",
+      "label": "regression set (88, written after the v3 freeze, never trained on): trained lexicon >= Qwen3-Embedding-4B"
+    },
+    {
+      "lhs": "cnet lex_trained",
+      "rhs": "transformer qwen3-embedding-4b",
+      "key": "questions_colloquial_eval.tsv::top1",
+      "label": "colloquial evaluation set (held-out paraphrase families): trained lexicon >= Qwen3-Embedding-4B"
+    },
+    {
+      "lhs": "transformer qwen3-embedding-4b",
+      "rhs": "cnet lex_trained",
+      "key": "questions_contrast_eval.tsv::top3",
+      "label": "contrast evaluation set top-3: Qwen3-Embedding-4B >= trained lexicon (recorded loss; remove when it stops holding)"
+    },
+    {
+      "lhs": "transformer qwen3-embedding-4b",
+      "rhs": "cnet lex_trained",
+      "key": "questions_eval_mistral_everyday.tsv::top1",
+      "label": "everyday questions by an unseen writer (Mistral) from held-out content: Qwen3-Embedding-4B >= trained lexicon (recorded loss)"
+    },
+    {
+      "lhs": "transformer qwen3-embedding-4b",
+      "rhs": "cnet lex_trained",
+      "key": "questions_eval_gemma_everyday.tsv::top1",
+      "label": "everyday questions by an unseen writer (gemma) from held-out content: Qwen3-Embedding-4B >= trained lexicon (recorded loss)"
+    },
+    {
+      "lhs": "transformer qwen3-embedding-4b",
+      "rhs": "cnet lex_trained",
+      "key": "questions_indep_mistral_mid_20260912.tsv::top1",
+      "label": "everyday questions by an unseen writer from in-corpus content: Qwen3-Embedding-4B >= trained lexicon (recorded loss)"
+    }
+  ],
+  "not_claimed": [
+    "that any CNET row beats Qwen3-Embedding-4B on held-out SENTENCE ranking: it leads test top-1/top-3 over every lexicon, trained or not",
+    "separability of lex_trained against anything: its leave-one-out number is partly measured on sentences used as training pairs (16 of ~59 per corpus); the untrained lex_full carries the separability claims",
+    "distilled lexicon >= Qwen3-Embedding-4B on 0.90/0.95 separability (48.8% vs 47.9%, inside the tolerance; not claimed)",
+    "anything about generation, QA answer correctness, or open-ended language",
+    "anything on the regression or evaluation sets for rows other than lex_trained: reported, not claimed",
+    "contrast evaluation set top-1: trained lexicon 33.7 vs Qwen3-4B 32.1, within noise for n=549; not claimed either way",
+    "that register-diverse training closes the everyday-register gap: adding a writer's own register moved its held-out-content set by about one point (cross-writer experiment)"
+  ],
+  "floors": {
+    "cnet lex_trained::questions_fresh_20260912.tsv::top1": 0.5568,
+    "cnet lex_trained::questions_colloquial_eval.tsv::top1": 0.5706,
+    "cnet lex_trained::questions_contrast_eval.tsv::top1": 0.337
+  }
+}

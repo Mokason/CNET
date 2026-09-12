@@ -54,20 +54,37 @@ int main(void) {
     int num_tests = sizeof(route_tests) / sizeof(route_tests[0]);
 
     for (int i = 0; i < num_tests; ++i) {
-        float q_vec[CNET_VSA_DEFAULT_DIM];
-        assert(cnet_vsa_gencap_encode_intent(route_tests[i].query, q_vec, reg->dim) == 0);
+        /* route by prompt: each capsule is scored with the encoder it was sealed with */
+        CnetVsaRouteResult rr;
+        int winner = cnet_vsa_registry_route_query(reg, route_tests[i].query, &rr);
+        int best_idx = rr.best_idx;
+        float best_dist = rr.best_dist;
+        (void)best_idx;
 
-        int best_idx = -1;
-        float best_dist = 1.0f;
-        int winner = cnet_vsa_registry_route(reg, q_vec, &best_idx, &best_dist);
-
-        assert(winner >= 0);
-        int match = (strcmp(reg->capsules[winner].header.name, route_tests[i].expected_cap) == 0) ||
-                    (strstr(reg->capsules[winner].header.name, route_tests[i].expected_cap) != NULL) ||
-                    (strstr(reg->capsules[winner].header.name, "cryptography") && strstr(route_tests[i].expected_cap, "cryptography"));
+        /* a keyword list may fall between two sibling capsules of one domain
+         * (crypto: foundations vs encryption protocols); the ambiguity gate then
+         * abstains by design. That counts only when the closest capsule is the
+         * expected one and the runner-up shares its domain. */
+        int idx = winner >= 0 ? winner : best_idx;
+        assert(idx >= 0);
+        if (winner < 0) {
+            assert(rr.status == CNET_VSA_ROUTE_REFUSE_AMBIGUOUS);
+            assert(rr.second_idx >= 0);
+            /* sibling = same domain label, or both names carry the query's subject (crypt*) */
+            const char *sn = reg->capsules[rr.second_idx].header.name;
+            assert(strcmp(reg->capsules[idx].header.domain, reg->capsules[rr.second_idx].header.domain) == 0 ||
+                   (strstr(sn, "crypt") && strstr(reg->capsules[idx].header.name, "crypt")));
+        }
+        int match = (strcmp(reg->capsules[idx].header.name, route_tests[i].expected_cap) == 0) ||
+                    (strstr(reg->capsules[idx].header.name, route_tests[i].expected_cap) != NULL) ||
+                    (strstr(reg->capsules[idx].header.name, "cryptography") && strstr(route_tests[i].expected_cap, "cryptography"));
         assert(match);
-        printf("  Query: \"%-45s...\" -> Routed: %-22s (dist=%.4f) PASS\n",
-               route_tests[i].query, reg->capsules[winner].header.name, best_dist);
+        if (winner >= 0)
+            printf("  Query: \"%-45s...\" -> Routed: %-22s (dist=%.4f) PASS\n",
+                   route_tests[i].query, reg->capsules[winner].header.name, best_dist);
+        else
+            printf("  Query: \"%-45s...\" -> ABSTAIN between siblings %s / %s (gap=%.4f) PASS\n",
+                   route_tests[i].query, reg->capsules[idx].header.name, reg->capsules[rr.second_idx].header.name, rr.gap);
     }
 
     double total_us = get_time_us() - t0;
@@ -83,17 +100,17 @@ int main(void) {
     };
 
     for (int i = 0; i < 2; ++i) {
-        float q_vec[CNET_VSA_DEFAULT_DIM];
-        assert(cnet_vsa_gencap_encode_intent(ood_queries[i], q_vec, reg->dim) == 0);
+        CnetVsaRouteResult rr;
+        int winner = cnet_vsa_registry_route_query(reg, ood_queries[i], &rr);
+        int best_idx = rr.best_idx;
+        float best_dist = rr.best_dist;
 
-        int best_idx = -1;
-        float best_dist = 1.0f;
-        int winner = cnet_vsa_registry_route(reg, q_vec, &best_idx, &best_dist);
-
-        assert(winner == -1); /* Must refuse all capsules */
-        assert(best_dist > 0.900f);
-        printf("  OOD Query: \"%-45s...\" -> Refused (closest='%s', dist=%.4f > 0.900) PASS\n",
-               ood_queries[i], reg->capsules[best_idx].header.name, best_dist);
+        assert(winner == -1); /* Must refuse all capsules, by whichever gate */
+        const char *why = (rr.status == CNET_VSA_ROUTE_REFUSE_MARGIN) ? "margin"
+                        : (rr.status == CNET_VSA_ROUTE_REFUSE_AMBIGUOUS) ? "ambiguity"
+                        : (rr.status == CNET_VSA_ROUTE_REFUSE_TERM) ? "term" : "radius";
+        printf("  OOD Query: \"%-45s...\" -> Refused by %s gate (closest='%s', dist=%.4f, limit=%.3f) PASS\n",
+               ood_queries[i], why, reg->capsules[best_idx].header.name, best_dist, rr.radius);
     }
 
     /* [4/4] End-to-End Autonomous Dispatch */

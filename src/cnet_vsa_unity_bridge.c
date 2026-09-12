@@ -36,11 +36,10 @@ int cnet_unity_get_capsule_name(int index, char *out_name, int max_len) {
 
 int cnet_unity_route(const char *prompt, char *out_capsule, int max_cap_len, float *out_dist) {
     if (!g_registry_initialized || !prompt) return -1;
-    float q_vec[CNET_VSA_DEFAULT_DIM];
-    if (cnet_vsa_gencap_encode_intent(prompt, q_vec, g_unity_registry.dim) != 0) return -2;
-    int best_idx = -1;
-    float best_dist = 1.0f;
-    int winner = cnet_vsa_registry_route(&g_unity_registry, q_vec, &best_idx, &best_dist);
+    CnetVsaRouteResult rr;
+    int winner = cnet_vsa_registry_route_query(&g_unity_registry, prompt, &rr);
+    int best_idx = rr.best_idx;
+    float best_dist = rr.best_dist;
     if (out_dist) *out_dist = best_dist;
     if (out_capsule && max_cap_len > 0) {
         if (winner >= 0) {

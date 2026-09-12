@@ -1,0 +1,550 @@
+# Untouched: contrast questions for held-out confusable pairs (incl. the 24 regression pairs) and held-out polysemous words; third column = the contrasting capsule.
+active_feedback_control_systems	how do I make my motor follow a target speed better by fixing the difference between where it is and where i want it to be?	closed_loop_motion_control_systems
+active_feedback_control_systems	why does my controller adjust its output based on how far off my system is from the desired value?	closed_loop_motion_control_systems
+closed_loop_motion_control_systems	how can i get rid of tracking errors by using a model that predicts disturbances before they happen?	active_feedback_control_systems
+closed_loop_motion_control_systems	why should my motion controller use the actual mass of each axis instead of a standard guess to avoid wobble?	active_feedback_control_systems
+additive_manufacturing_of_thermal_coatings	why do some heat shields crack when the metal underneath shrinks more than the paint?	surface_protection_technologies
+additive_manufacturing_of_thermal_coatings	how do compressive stresses in the coating help stop cracks from starting?	surface_protection_technologies
+surface_protection_technologies	what tool lets me see what chemicals are on the very top of a coating?	additive_manufacturing_of_thermal_coatings
+surface_protection_technologies	which microscope shows me if the surface is bumpy or smooth at a tiny scale?	additive_manufacturing_of_thermal_coatings
+aerodynamic_boundary_layer_theory	how much does the sticky air near the wall push the fast moving air further away from the surface	boundary_layer_measurement_techniques
+aerodynamic_boundary_layer_theory	how do we figure out how much missing speed the boundary layer steals from the main flow	boundary_layer_measurement_techniques
+boundary_layer_measurement_techniques	how do we fix the pressure push along the pipe so our speed readings make sense	aerodynamic_boundary_layer_theory
+boundary_layer_measurement_techniques	how do we turn our messy speed charts into one simple log curve	aerodynamic_boundary_layer_theory
+aerodynamic_boundary_layer_theory	how far does the slow moving air push the fast air away from the wing?	boundary_layer_modeling
+aerodynamic_boundary_layer_theory	what's the missing momentum inside the layer compared to the free stream?	boundary_layer_modeling
+boundary_layer_modeling	when does the smooth flow start to get bumpy on a flat plate?	aerodynamic_boundary_layer_theory
+boundary_layer_modeling	how does high speed affect the air layer near the surface?	aerodynamic_boundary_layer_theory
+aerodynamic_boundary_layer_theory	how much does the boundary layer push the fast stream outward?	boundary_layer_separation
+aerodynamic_boundary_layer_theory	how much momentum is missing inside the slow layer near the wall?	boundary_layer_separation
+boundary_layer_separation	where does the wall drag drop to zero before the flow peels off?	aerodynamic_boundary_layer_theory
+boundary_layer_separation	why does the wall drag turn negative after the flow detaches?	aerodynamic_boundary_layer_theory
+aerodynamic_boundary_layer_theory	How far do the outer air streamlines get pushed out by the slow layer near a wing's surface?	bulk_flow_theory
+aerodynamic_boundary_layer_theory	What is the measure of lost forward push inside the thin air layer right next to a flat plate?	bulk_flow_theory
+bulk_flow_theory	Why do we split up the total wind speed into an average part and a wiggly random part?	aerodynamic_boundary_layer_theory
+bulk_flow_theory	Why can't we just solve the average wind speed equation on its own without knowing the random gusts?	aerodynamic_boundary_layer_theory
+aging_induced_microstructural_evolution	why do grains grow slower when tiny particles are stuck on the boundaries?	precipitate_hardening
+aging_induced_microstructural_evolution	what happens when the pinning particles get too big and the grain boundary breaks free?	precipitate_hardening
+precipitate_hardening	why do the hardening particles get bigger over time?	aging_induced_microstructural_evolution
+precipitate_hardening	why does the material lose strength in the very late stage of aging?	aging_induced_microstructural_evolution
+agricultural_irrigation_engineering	why does my drip line spray different amounts of water at the top and bottom of the hill?	irrigation_engineering
+agricultural_irrigation_engineering	how do I keep the same drip rate from each emitter when water pressure changes?	irrigation_engineering
+irrigation_engineering	what size pipe should i use to run water to my fields without losing too much pressure?	agricultural_irrigation_engineering
+irrigation_engineering	how much water do my tomatoes need per week so i don't overwater or underwater?	agricultural_irrigation_engineering
+alloy_phase_diagram_analysis	how do i find out what phases form when i heat this mix of metals	mass_transfer_and_interfacial_phenomena
+alloy_phase_diagram_analysis	can you show me where the phase boundaries move during heating	mass_transfer_and_interfacial_phenomena
+mass_transfer_and_interfacial_phenomena	how fast does salt spread in water when i stir it	alloy_phase_diagram_analysis
+mass_transfer_and_interfacial_phenomena	why does dye spread faster in a pipe than in still water	alloy_phase_diagram_analysis
+arterial_wall_mechanics	why do my legs feel heavy when i stand up too long	vascular_anatomy
+arterial_wall_mechanics	how does exercise make my veins feel tighter	vascular_anatomy
+vascular_anatomy	where is the thickest layer of an artery located	arterial_wall_mechanics
+vascular_anatomy	what part of the artery has more rubbery sheets	arterial_wall_mechanics
+atom_probe_tomography	how do I get atoms to fly off the tip when I crank up the voltage pulse?	electron_microprobe_analysis
+atom_probe_tomography	why does a super pointy needle focus the electric field way better than a round one?	electron_microprobe_analysis
+electron_microprobe_analysis	what should i do first to make sure my electron microscope is ready for work?	atom_probe_tomography
+electron_microprobe_analysis	how do i set the right spot size and distance before I start analyzing my sample?	atom_probe_tomography
+austenite_stabilization	what do i add to my steel to keep it austenite below room temp?	austenite_stabilization_mechanisms
+austenite_stabilization	why does adding carbon and nitrogen help stabilize austenite?	austenite_stabilization_mechanisms
+austenite_stabilization_mechanisms	how do titanium and vanadium affect austenite stability?	austenite_stabilization
+austenite_stabilization_mechanisms	why does precipitating carbides lower the thermodynamic driving force for austenite formation?	austenite_stabilization
+automata_theory	how does the transition function decide where to move the head and what to write?	formal_language_theory
+automata_theory	when does the machine stop because no more moves are possible?	formal_language_theory
+formal_language_theory	why does CYK need the grammar in Chomsky Normal Form to work?	automata_theory
+formal_language_theory	what is LL(k) parsing and why does it use lookahead tokens?	automata_theory
+b_tree_index_maintenance	how do i keep the leaf nodes connected so range scans work fast without walking the tree?	b_tree_indexing
+b_tree_index_maintenance	why must each page be the same fixed size so memory maps and I/O behave predictably?	b_tree_indexing
+b_tree_indexing	what happens when the leaf page is full and i need to insert a new key?	b_tree_index_maintenance
+b_tree_indexing	how does the insert algorithm find the right leaf page to add the new record?	b_tree_index_maintenance
+b_tree_index_maintenance	how do i fix the leaf links so range scans don't rewalk the tree?	range_query_optimization
+b_tree_index_maintenance	why is my index so tall even though i added more rows?	range_query_optimization
+range_query_optimization	why is my query still reading the table even though i have a covering index?	b_tree_index_maintenance
+range_query_optimization	how can i make the db skip the data pages and just use the index?	b_tree_index_maintenance
+b_tree_index_maintenance	how do b tree leaves stay linked together for fast range scans?	relational_database_b_tree_indexing
+b_tree_index_maintenance	why must b tree pages be fixed size to keep io costs predictable?	relational_database_b_tree_indexing
+relational_database_b_tree_indexing	which leaf does the engine start from when reading a range query?	b_tree_index_maintenance
+relational_database_b_tree_indexing	how does the optimizer pick the b tree index for a column range?	b_tree_index_maintenance
+blade_angle_for_end_grain_planing	how do i set my table speed for cutting solid oak?	wood_chip_formation_dynamics
+blade_angle_for_end_grain_planing	what depth should i use to keep my blade from bending?	wood_chip_formation_dynamics
+wood_chip_formation_dynamics	why does my chip tear out when i push the wood?	blade_angle_for_end_grain_planing
+wood_chip_formation_dynamics	why is my wood getting too hot and burning?	blade_angle_for_end_grain_planing
+bouguer_anomaly_interpretation	why is the Bouguer correction needed to get rid of the hill mass above me?	geophysics
+bouguer_anomaly_interpretation	what happens to the gravity reading if we don't subtract the extra rock on top?	geophysics
+geophysics	how do I get rid of the rumble from the highway next to my sensor?	bouguer_anomaly_interpretation
+geophysics	why is there always some static noise coming from my own equipment?	bouguer_anomaly_interpretation
+bouguer_anomaly_interpretation	why did my gravity map look bumpy until I took the mountain mass out?	gravimetry_and_geodesy
+bouguer_anomaly_interpretation	how does subtracting the topographic weight help find buried rocks?	gravimetry_and_geodesy
+gravimetry_and_geodesy	why do we need to fix for the moon tugging on the earth?	bouguer_anomaly_interpretation
+gravimetry_and_geodesy	how does a floating ball inside the machine actually weigh things?	bouguer_anomaly_interpretation
+bundle_adjustment	how can i get the real world size of my photos from just one camera view	photogrammetry
+bundle_adjustment	why does my 3d model keep rotating when i run the optimization	photogrammetry
+photogrammetry	why is my reconstruction so blurry even though the points look good	bundle_adjustment
+photogrammetry	how do i fix my pixel coordinate errors to get a better 3d model	bundle_adjustment
+capacitive_sensing_and_dielectric_spectroscopy	how do i lay out my tiny electrodes so the electric field reaches the target spot without shorting out?	soil_physics_and_dielectric_constant_measurement
+capacitive_sensing_and_dielectric_spectroscopy	why does making my insulation layer thinner make my sensor pick up more changes?	soil_physics_and_dielectric_constant_measurement
+soil_physics_and_dielectric_constant_measurement	why does my soil sensor reading go up when the ground gets wet?	capacitive_sensing_and_dielectric_spectroscopy
+soil_physics_and_dielectric_constant_measurement	how does the imaginary part of soil data show me the soil's electrical conductivity?	capacitive_sensing_and_dielectric_spectroscopy
+cartographic_generalization	How do I fix overlapping lines in my map before simplifying the shape?	geometric_mesh_simplification
+cartographic_generalization	Can I reduce the number of points in my road network without making it look weird?	geometric_mesh_simplification
+geometric_mesh_simplification	How do I keep the sharp corners of my 3D model when I lower the detail?	cartographic_generalization
+geometric_mesh_simplification	Why are my high curve areas on the mesh not getting simplified?	cartographic_generalization
+castle_fortification_and_defensive_architecture	how do crenels let archers shoot over the wall without getting hit?	siege_weapons_and_fortification_defenses
+castle_fortification_and_defensive_architecture	why do castles have those thick blocks on top of the wall for cover?	siege_weapons_and_fortification_defenses
+siege_weapons_and_fortification_defenses	how do murder holes work to drop stuff on attackers at the gate?	castle_fortification_and_defensive_architecture
+siege_weapons_and_fortification_defenses	what are machicolations and how do they help defend against siege towers?	castle_fortification_and_defensive_architecture
+ceramic_body_sintering	how hot should i get my kiln to stop my clay from shrinking too much?	ceramic_firing_protocols
+ceramic_body_sintering	why are my tiles cracking if i heat them up too fast?	ceramic_firing_protocols
+ceramic_firing_protocols	how do i keep my glaze from turning orange instead of clear?	ceramic_body_sintering
+ceramic_firing_protocols	why did my pot turn yellow after it came out of the oven?	ceramic_body_sintering
+ceramic_fracture_mechanics	How do the little pieces inside a ceramic grain slide past each other to stop it from shattering?	fatigue_life_prediction_and_modeling
+ceramic_fracture_mechanics	Why do the grains in a ceramic rotate so they can share the load without cracking?	fatigue_life_prediction_and_modeling
+fatigue_life_prediction_and_modeling	How does a metal part fail after being shaken back and forth over and over?	ceramic_fracture_mechanics
+fatigue_life_prediction_and_modeling	What role do the lines inside metal grains play when they start a crack from surface scratches?	ceramic_fracture_mechanics
+ceramic_kiln_design	how do we map the temperature across the floor of the kiln?	kiln_thermodynamics
+ceramic_kiln_design	why are there thermocouples embedded deep inside the shelves?	kiln_thermodynamics
+kiln_thermodynamics	what kind of insulation keeps the heat from escaping?	ceramic_kiln_design
+kiln_thermodynamics	which bricks handle the main heat and structure of the kiln?	ceramic_kiln_design
+ceramic_kiln_operation	how do i keep the fire in my clay oven from making the walls crack when it gets super hot?	kiln_atmosphere_control_and_redox_chemistry
+ceramic_kiln_operation	why do i need those thick blocks inside the kiln to stop the heat from melting the outside?	kiln_atmosphere_control_and_redox_chemistry
+kiln_atmosphere_control_and_redox_chemistry	how do i make sure the smoke and air mix evenly so my pottery doesn't turn black in spots?	ceramic_kiln_operation
+kiln_atmosphere_control_and_redox_chemistry	what should i do if the gas gauge drops and the kiln starts running cold halfway through?	ceramic_kiln_operation
+ceramic_kiln_operation	how do i fix my kiln wall when the bricks are cracking?	kiln_thermodynamics
+ceramic_kiln_operation	why is my heating element not getting hot enough?	kiln_thermodynamics
+kiln_thermodynamics	how do ceramic fiber blankets improve heat retention?	ceramic_kiln_operation
+kiln_thermodynamics	why is my kiln losing heat too fast through the insulation?	ceramic_kiln_operation
+ceramic_kiln_operation	My kiln walls are cracking after high heat, what refractory material do i use?	pottery_and_ceramic_glaze_firing
+ceramic_kiln_operation	my heating elements keep blowing out, how do i fix the gas supply?	pottery_and_ceramic_glaze_firing
+pottery_and_ceramic_glaze_firing	my clay is too wet to shape, how do i mix it right?	ceramic_kiln_operation
+pottery_and_ceramic_glaze_firing	my pots are warping when drying, what’s the best way to dry them?	ceramic_kiln_operation
+ceramic_thermal_shock_resistance	How do I make my pottery survive rapid cooling without cracking?	thermal_stress_modeling_in_ceramics
+ceramic_thermal_shock_resistance	What surface treatment stops my ceramic from breaking from small chips?	thermal_stress_modeling_in_ceramics
+thermal_stress_modeling_in_ceramics	Why does my ceramic warp when it changes crystal structure during heating?	ceramic_thermal_shock_resistance
+thermal_stress_modeling_in_ceramics	How does the heat released during a phase shift mess up my stress calculations?	ceramic_thermal_shock_resistance
+compartment_fire_dynamics	why do some things heat up faster than others in a fire	structural_fire_dynamics
+compartment_fire_dynamics	how does a wall's ability to spread heat affect the inside	structural_fire_dynamics
+structural_fire_dynamics	why does a fire burn differently when there's no good air flow	compartment_fire_dynamics
+structural_fire_dynamics	how does the amount of fresh air coming in control the fire's strength	compartment_fire_dynamics
+compiler_design	how do I get my c++ compiler to remove unused functions before linking?	compiler_optimization
+compiler_design	why does my java program run faster after enabling escape analysis in the compiler?	compiler_optimization
+compiler_optimization	why are my loops running slower after the compiler inlined all functions?	compiler_design
+compiler_optimization	how do i stop my compiler from removing code that looks like a bug but is actually a feature?	compiler_design
+composite_material_processing	how do I get the fibers to line up when I pour the mix?	composite_materials_manufacturing
+composite_material_processing	why does the glue get easier to spread when I move my hand faster?	composite_materials_manufacturing
+composite_materials_manufacturing	how do i keep the glue from turning hard before i finish?	composite_material_processing
+composite_materials_manufacturing	what temp should i use so the stuff flows right but doesn't ruin the fibers?	composite_material_processing
+computational_geometry	why does my shape overlap when the points are super close together?	computational_geometry_algorithms
+computational_geometry	how do i fix the tiny errors from using decimal math for shapes?	computational_geometry_algorithms
+computational_geometry_algorithms	how do i check if my points turn left or right?	computational_geometry
+computational_geometry_algorithms	why does my hull stack keep adding the wrong corner points?	computational_geometry
+computational_geometry	why does my shape break when two lines look parallel but math says they cross?	geometric_processing
+computational_geometry	how do I fix my distance calc when my coords are super long?	geometric_processing
+geometric_processing	why does my model look blocky after i shrink it to save space?	computational_geometry
+geometric_processing	how do i tell if my simplified mesh still matches the original shape?	computational_geometry
+computational_heat_transfer	why is my flow simulation getting blurry spots even though it looks stable?	fluid_dynamics_and_heat_transfer_analysis
+computational_heat_transfer	what do i do when my central difference method starts blowing up in fast flows?	fluid_dynamics_and_heat_transfer_analysis
+fluid_dynamics_and_heat_transfer_analysis	why does my pipe get hot faster when i increase the fluid speed?	computational_heat_transfer
+fluid_dynamics_and_heat_transfer_analysis	how do i figure out the heat loss from a pipe wall using the energy equation?	computational_heat_transfer
+computational_thermal_analysis	why does the sun feel hot but the air near it feels cool	solid_mechanics
+computational_thermal_analysis	how do I calculate the heat loss from a hot industrial furnace wall	solid_mechanics
+solid_mechanics	will this bridge support the traffic load without breaking	computational_thermal_analysis
+solid_mechanics	how much force does the screw need to tighten the bolt	computational_thermal_analysis
+computational_thermal_analysis	how do I model radiative heat transfer in my furnace simulation?	thermal_gradient_control
+computational_thermal_analysis	why does the discrete element method give better view factors than others?	thermal_gradient_control
+thermal_gradient_control	which thermal interface material has higher conductivity?	computational_thermal_analysis
+thermal_gradient_control	why does thermal expansion mismatch cause stress in my chip?	computational_thermal_analysis
+computer_graphics	how do i get realistic reflections in my game using rays instead of flat textures?	computer_graphics_rendering
+computer_graphics	why does my screen-space lighting look weird when moving the camera too fast?	computer_graphics_rendering
+computer_graphics_rendering	how do i fix my 3d model spinning in the wrong direction before it draws?	computer_graphics
+computer_graphics_rendering	why is my pixel grid distorted when zooming out on the viewport?	computer_graphics
+computer_numerical_control_machining	why is my cnc machine cutting too deep on the last repeat?	woodworking_joinery_techniques
+computer_numerical_control_machining	how do i fix the encoder error on my milling machine?	woodworking_joinery_techniques
+woodworking_joinery_techniques	why did my glue joint fail when i left it outside in the rain?	computer_numerical_control_machining
+woodworking_joinery_techniques	should i use oak or pine for an outdoor table frame?	computer_numerical_control_machining
+computer_vision_and_shape_analysis	how do i turn a scanned 3d model into a smooth surface using signed distance functions?	geometric_processing
+computer_vision_and_shape_analysis	what software helps me reconstruct a shape from scattered point cloud data?	geometric_processing
+geometric_processing	why is my 3d mesh getting too big for my game and how do i simplify it?	computer_vision_and_shape_analysis
+geometric_processing	how do i measure how far apart two different mesh models are using Hausdorff distance?	computer_vision_and_shape_analysis
+construction_scheduling_and_critical_path_method	how long will it take to finish the whole job if I do the tasks in the right order?	operating_systems_sched
+construction_scheduling_and_critical_path_method	why does my construction plan say the foundation has to finish before the walls can start?	operating_systems_sched
+operating_systems_sched	why does my computer freeze briefly when I switch between open apps?	construction_scheduling_and_critical_path_method
+operating_systems_sched	what happens to the program location when the cpu jumps from one task to another?	construction_scheduling_and_critical_path_method
+cosmetic_ingredient_penetration_enhancement	why do alpha hydroxy acids help makeup go deeper into my skin	trans_epidermal_drug_delivery
+cosmetic_ingredient_penetration_enhancement	how does lowering the skin surface ph change how keratin holds together	trans_epidermal_drug_delivery
+trans_epidermal_drug_delivery	how do liposomes keep water loving medicines inside a fatty shell	cosmetic_ingredient_penetration_enhancement
+trans_epidermal_drug_delivery	what makes solid lipid nanoparticles able to carry both oily and watery drugs	cosmetic_ingredient_penetration_enhancement
+critical_exponents_and_scaling_relations	why do all the critical exponents link together instead of being separate numbers?	critical_phenomena
+critical_exponents_and_scaling_relations	how does the renormalization group show that the system looks the same at every zoom level?	critical_phenomena
+critical_phenomena	what does the specific heat exponent measure exactly?	critical_exponents_and_scaling_relations
+critical_phenomena	how does the magnetization behave as i get closer to the critical temperature?	critical_exponents_and_scaling_relations
+critical_phenomena	why does specific heat spike near the critical temperature?	universality_classes_in_field_theory
+critical_phenomena	how do you find the exponent beta for magnetization?	universality_classes_in_field_theory
+universality_classes_in_field_theory	why are some operators irrelevant in field theory?	critical_phenomena
+universality_classes_in_field_theory	how do scaling dimensions tell you if an operator is relevant?	critical_phenomena
+critical_phenomena_and_scaling_laws	How fast does the range of influence grow near the critical temp?	critical_point_analysis
+critical_phenomena_and_scaling_laws	What power law describes how far apart things correlate near Tc?	critical_point_analysis
+critical_point_analysis	What happens to the pressure slope when volume changes at the critical point?	critical_phenomena_and_scaling_laws
+critical_point_analysis	Why does the second volume change of pressure hit zero right at the critical point?	critical_phenomena_and_scaling_laws
+critical_phenomena_and_scaling_laws	why does the correlation length blow up as i get closer to the critical temperature?	universality_classes_in_field_theory
+critical_phenomena_and_scaling_laws	what does the exponent nu tell me about how a material behaves near its phase change?	universality_classes_in_field_theory
+universality_classes_in_field_theory	if an operator has a scaling dimension less than d why does it grow in the renormalization group flow?	critical_phenomena_and_scaling_laws
+universality_classes_in_field_theory	how do i tell if an operator is relevant or irrelevant in a quantum field theory?	critical_phenomena_and_scaling_laws
+crustal_density_distribution_modeling	how much do quartz and mica change the bulk density of the upper crust?	crustal_density_modeling
+crustal_density_distribution_modeling	why does getting hotter make the crust less dense?	crustal_density_modeling
+crustal_density_modeling	how do you fix the gravity reading for the hills above?	crustal_density_distribution_modeling
+crustal_density_modeling	what's the leftover gravity signal after you subtract topography?	crustal_density_distribution_modeling
+cryptographic_encryption_protocols	how do i make sure my secret message stays hidden from eavesdroppers using a shared key?	cryptographic_signature_schemes
+cryptographic_encryption_protocols	why do i need to encrypt the session key with the receivers public key before sending it?	cryptographic_signature_schemes
+cryptographic_signature_schemes	how do i sign a document so people can prove i wrote it without sharing my secret?	cryptographic_encryption_protocols
+cryptographic_signature_schemes	why is the discrete logarithm problem considered the hard math behind digital signatures?	cryptographic_encryption_protocols
+crystallization_kinetics	why does the average particle size grow with the cube root of time in crystal growth?	phase_transformation_kinetics_and_alloy_design
+crystallization_kinetics	how do small particles dissolve to feed bigger ones during crystal growth?	phase_transformation_kinetics_and_alloy_design
+phase_transformation_kinetics_and_alloy_design	how does crystal growth direction affect the overall transformation rate in alloys?	crystallization_kinetics
+phase_transformation_kinetics_and_alloy_design	why does the transformation slow down as more transformation sites get filled up?	crystallization_kinetics
+crystallographic_orientation_analysis	how do I plot a pole figure from my goniometer data?	grain_structure_analysis
+crystallographic_orientation_analysis	why is my pole figure showing spotty rings instead of sharp spots?	grain_structure_analysis
+grain_structure_analysis	how small can electron backscatter diffraction actually see?	crystallographic_orientation_analysis
+grain_structure_analysis	why does transmission electron microscopy require so much sample prep?	crystallographic_orientation_analysis
+crystallographic_structure_determination	how do I get the initial phases for my new crystal data using direct methods?	crystallography
+crystallographic_structure_determination	why are my direct method calculations failing because of missing reflections?	crystallography
+crystallography	how many unique atoms does my space group symmetry actually generate?	crystallographic_structure_determination
+crystallography	how do I figure out which screw axis and glide plane my crystal has?	crystallographic_structure_determination
+customary_law_jurisprudence	how do village elders decide who gets the land after someone dies	customary_obligation_enforcement
+customary_law_jurisprudence	why do religious leaders have a say in marriage disputes in our community	customary_obligation_enforcement
+customary_obligation_enforcement	how long does a habit need to run before the court treats it as a real duty	customary_law_jurisprudence
+customary_obligation_enforcement	what proof do judges need to see that everyone actually thinks the rule is binding	customary_law_jurisprudence
+dielectric_polarization_and_ferroelectric_switching	Why do ferroelectric materials resist flipping their dipole directions when exposed to weak electric fields?	ferroelectric_memory_storage
+dielectric_polarization_and_ferroelectric_switching	What happens to the stored polarization when you apply an electric field to a ferroelectric crystal?	ferroelectric_memory_storage
+ferroelectric_memory_storage	How does a ferroelectric memory device use electric fields to store bits of data?	dielectric_polarization_and_ferroelectric_switching
+ferroelectric_memory_storage	Why do domain walls in ferroelectrics move along specific crystallographic planes when charged?	dielectric_polarization_and_ferroelectric_switching
+dislocation_dynamics_and_plasticity	why does metal get harder as you bend it more times?	dislocation_dynamics_and_plasticity_theory
+dislocation_dynamics_and_plasticity	how do crossing dislocations block each other on the same slip plane?	dislocation_dynamics_and_plasticity_theory
+dislocation_dynamics_and_plasticity_theory	why do dislocations move toward each other when they’re far apart?	dislocation_dynamics_and_plasticity
+dislocation_dynamics_and_plasticity_theory	what makes dislocations get tangled up and form jumbles?	dislocation_dynamics_and_plasticity
+dovetail_joint_construction	how many teeth should i cut for a dovetail that stays super strong?	woodworking_joinery_techniques
+dovetail_joint_construction	why does my male part need to be just a bit wider than the female one?	woodworking_joinery_techniques
+woodworking_joinery_techniques	will a lap joint crack if my wood swells in the summer heat?	dovetail_joint_construction
+woodworking_joinery_techniques	why should i avoid gluing across the grain in my project?	dovetail_joint_construction
+electromagnetic_geophysics	how do I clean up the noisy signals before doing the spatial analysis?	electromagnetic_induction_surveying
+electromagnetic_geophysics	how do I make sure my measurements line up in the same map grid?	electromagnetic_induction_surveying
+electromagnetic_induction_surveying	how does the moving magnet make the coil pick up a signal?	electromagnetic_geophysics
+electromagnetic_induction_surveying	why does the signal get weaker the deeper I look for metal?	electromagnetic_geophysics
+electromagnetic_theory	How do we know the choice of gauge doesn't change the actual fields we measure?	quasi_static_maxwell_equations
+electromagnetic_theory	Why does the Lorenz gauge make the potential equations separate and easier to solve?	quasi_static_maxwell_equations
+quasi_static_maxwell_equations	When do we drop the displacement current from Ampere's law?	electromagnetic_theory
+quasi_static_maxwell_equations	How does ignoring the changing electric field decouple the magnetic equations from the electric ones?	electromagnetic_theory
+elliptic_curve_cryptography	Why does the double-and-add algorithm look at bits from left to right?	point_doubling
+point_doubling	What happens when you add a point to itself on an elliptic curve?	elliptic_curve_cryptography
+point_doubling	How do you find the next point when you're doubling a point on the curve?	elliptic_curve_cryptography
+episcopal_arbitration_in_feudal_disputes	how do I file a formal complaint with the bishop's office about a land dispute?	secure_multi_party_computation
+episcopal_arbitration_in_feudal_disputes	why do both sides have to swear an oath before the church arbiter?	secure_multi_party_computation
+secure_multi_party_computation	how do i split my secret password into pieces for my friends to hold?	episcopal_arbitration_in_feudal_disputes
+secure_multi_party_computation	how many pieces of the secret do i need to put together to unlock it?	episcopal_arbitration_in_feudal_disputes
+fatigue_analysis_and_testing	how do i machine a test piece so the surface is smooth and the notch size is exact before testing?	low_cycle_fatigue_analysis_and_crack_propagation_modeling
+fatigue_analysis_and_testing	why does my lab need to polish the specimen surface to get rid of tool marks before starting the test?	low_cycle_fatigue_analysis_and_crack_propagation_modeling
+low_cycle_fatigue_analysis_and_crack_propagation_modeling	why does rain or high humidity make metal cracks grow faster than when its dry?	fatigue_analysis_and_testing
+low_cycle_fatigue_analysis_and_crack_propagation_modeling	how does getting really hot or cold change how fast a crack spreads in the metal?	fatigue_analysis_and_testing
+feudal_land_tenure	how much tax did the lord get from fines in the manorial court?	vassal_obligation_enforcement_mechanisms
+feudal_land_tenure	who decided what happened when a tenant broke the manor rules?	vassal_obligation_enforcement_mechanisms
+vassal_obligation_enforcement_mechanisms	where did the royal chancery keep its official papers?	feudal_land_tenure
+vassal_obligation_enforcement_mechanisms	what was the main room used to hold the lord’s court meetings?	feudal_land_tenure
+feudal_tenure_documentation	where did the king’s courts settle fights over who owned the big estates?	medieval_property_law
+feudal_tenure_documentation	when did the royal judges finally rule on the big noble land quarrels?	medieval_property_law
+medieval_property_law	what record kept track of which noble held which plot of land?	feudal_tenure_documentation
+medieval_property_law	how did the manor scribe write down who got to farm the fields?	feudal_tenure_documentation
+flux_balance_analysis	How do I set up the rows and columns in the stoichiometric matrix so each metabolite and reaction match up correctly?	stoichiometric_matrix_analysis
+flux_balance_analysis	How can I use the stoichiometric matrix to find steady-state fluxes by solving for the null space?	stoichiometric_matrix_analysis
+stoichiometric_matrix_analysis	Why are some flux directions impossible even if the stoichiometry balances, due to thermodynamic limits?	flux_balance_analysis
+stoichiometric_matrix_analysis	How do I add Gibbs free energy constraints to filter out thermodynamically infeasible flux solutions?	flux_balance_analysis
+force_torque_sensing	how do i get force data from my robot arm to the controller?	robotic_compliance
+force_torque_sensing	why does my force feedback loop need to run faster than the position loop?	robotic_compliance
+robotic_compliance	how do i add a spring to my robot arm to make it softer?	force_torque_sensing
+robotic_compliance	what do i use in my robot arm to stop it from breaking on impact?	force_torque_sensing
+foundation_engineering	why do we put big concrete pads under houses on good dirt?	pile_group_load_distribution
+foundation_engineering	when the dirt down deep is mushy why do we drive long steel pipes?	pile_group_load_distribution
+pile_group_load_distribution	will the whole pile cluster sink together or just one pole?	foundation_engineering
+pile_group_load_distribution	if one pole snaps under the load does the rest stay put?	foundation_engineering
+fringe_contrast_optimization	why do my rainbow fringes fade out when I slide the mirror too far?	interferometric_measurement
+fringe_contrast_optimization	how can I keep the fringes sharp when using a white light bulb?	interferometric_measurement
+interferometric_measurement	what’s the phase shift when one arm of the interferometer is 0.5 microns longer?	fringe_contrast_optimization
+interferometric_measurement	how do I find the refractive index of the air inside my setup?	fringe_contrast_optimization
+fringe_contrast_optimization	my fringes are blurry when I separate the mirrors too far, why?	phase_problem
+fringe_contrast_optimization	how do I get sharper stripes by using a light with a single color?	phase_problem
+phase_problem	why do the bright spots move when I change the gap between the waves?	fringe_contrast_optimization
+phase_problem	how do I make the waves line up perfectly to make the brightest spot?	fringe_contrast_optimization
+gene_protein_reaction_mapping	how does my body know when to start making more insulin when blood sugar gets high?	systems_biology
+gene_protein_reaction_mapping	why does a virus need to hijack our cellular machinery to copy its genetic instructions?	systems_biology
+systems_biology	why do two bacteria from the same colony sometimes grow at different speeds under the same conditions?	gene_protein_reaction_mapping
+systems_biology	how can a tiny change in one part of a cell's network cause a big shift in how the whole organism behaves?	gene_protein_reaction_mapping
+geomechanics	why does water pressure in saturated clay make it weaker?	soil_mechanics
+geomechanics	how much does pore water reduce the friction on a sliding fault?	soil_mechanics
+soil_mechanics	why do we keep the weight on a soil sample constant in the lab?	geomechanics
+soil_mechanics	how do we set the right density for a soil sample before testing?	geomechanics
+geophysical_data_inversion	How do I make my seismic inversion model not blow up with wiggles?	geophysical_inversion_methods
+geophysical_data_inversion	Can I use L1 norm to get sparse solutions for my tomography?	geophysical_inversion_methods
+geophysical_inversion_methods	Will Tikhonov regularization smooth out my fault lines too much?	geophysical_data_inversion
+geophysical_inversion_methods	How does L1 sparsity help resolve sharp boundaries in my inversion?	geophysical_data_inversion
+geophysical_exploration	How do I lay out my source and receiver lines so the waves actually hit the rocks I care about?	seismic_wave_propagation
+geophysical_exploration	Why does my signal keep bouncing around and making my picture all blurry?	seismic_wave_propagation
+seismic_wave_propagation	What do those letters rho and c with colons and gradients mean in that wave math equation?	geophysical_exploration
+seismic_wave_propagation	How do I tell if the rock is squishier in one direction than another using that stiffness stuff?	geophysical_exploration
+geotechnical_soil_mechanics	how do i figure out the real stress on soil particles when water pressure is pushing up?	soil_mechanics
+geotechnical_soil_mechanics	why does pore water pressure matter more than total stress for soil strength?	soil_mechanics
+soil_mechanics	how do i pack a soil sample to get the right density and moisture?	geotechnical_soil_mechanics
+soil_mechanics	should i keep the normal stress constant during the shear test?	geotechnical_soil_mechanics
+glaze_chemistry_and_formulation	why does my glaze crackle after firing even though I mixed the ingredients right	pottery_and_ceramic_glaze_firing
+glaze_chemistry_and_formulation	how do i make sure my glaze and clay shrink the same amount when cooling	pottery_and_ceramic_glaze_firing
+pottery_and_ceramic_glaze_firing	how long should i wait before touching my wet clay so it doesn't warp	glaze_chemistry_and_formulation
+pottery_and_ceramic_glaze_firing	what tool do i use to take air bubbles out of my clay body before shaping	glaze_chemistry_and_formulation
+graph_subdivision_and_contraction	how do i put new points on every single line of my diagram?	topological_graph_theory
+graph_subdivision_and_contraction	what happens if i cut one line in two with a dot in the middle?	topological_graph_theory
+topological_graph_theory	why can't i draw my lines without them crossing over each other?	graph_subdivision_and_contraction
+topological_graph_theory	is there a simple way to check if a graph can be drawn flat without any crossings?	graph_subdivision_and_contraction
+hand_plane_sharpening_and_honing	how do i sharpen my hand plane blade to the right angle for smooth finishes?	hand_tool_woodworking
+hand_plane_sharpening_and_honing	what angle should i set my secondary bevel when honing a jointer plane?	hand_tool_woodworking
+hand_tool_woodworking	how much should i lower the blade when cutting hardwood vs softwood?	hand_plane_sharpening_and_honing
+hand_tool_woodworking	why is my plane rocking on the wood before i even push it?	hand_plane_sharpening_and_honing
+high_fire_glazing_techniques	why does my glaze crack after the kiln cools down?	pottery_and_ceramic_glaze_firing
+high_fire_glazing_techniques	how do I stop my glaze from crazing on the porcelain?	pottery_and_ceramic_glaze_firing
+pottery_and_ceramic_glaze_firing	how much water should i add to my clay mix?	high_fire_glazing_techniques
+pottery_and_ceramic_glaze_firing	why is my wet clay so hard to wedge?	high_fire_glazing_techniques
+homage_and_fealty_rituals	how do i show my boss i’m really loyal and bow down before them?	pm_civic_magic_order
+homage_and_fealty_rituals	why do we put our hands together on our chest when meeting the chief?	pm_civic_magic_order
+pm_civic_magic_order	who gets to do the church blessings on the altar today?	homage_and_fealty_rituals
+pm_civic_magic_order	how does the priest pick which saint to ask for help with?	homage_and_fealty_rituals
+human_robot_interaction	how much push can my robot arm safely give without hurting me	mirror_figure_control
+human_robot_interaction	why does my robot feel soft when it touches me but stiff when it doesn't	mirror_figure_control
+mirror_figure_control	why is my robot copying my hand movement so smoothly	human_robot_interaction
+mirror_figure_control	how does my robot know what force i want it to apply	human_robot_interaction
+hydrodynamic_lubrication	why does friction drop when a bearing spins faster under light load?	tribology_and_lubrication_engineering
+hydrodynamic_lubrication	how does changing oil thickness and rpm shift us from boundary to fluid film?	tribology_and_lubrication_engineering
+tribology_and_lubrication_engineering	what parts of a machine should stay in the mixed lubrication zone to avoid wear?	hydrodynamic_lubrication
+tribology_and_lubrication_engineering	how do engineers pick speed, load and temp to keep components in the fluid film zone?	hydrodynamic_lubrication
+interferometric_measurement	what happens when the two light paths in an interferometer have different optical path lengths	optical_path_length_matching
+interferometric_measurement	how does the difference in optical path length affect the phase shift in an interferometer	optical_path_length_matching
+optical_path_length_matching	what kind of base material should I use to keep my interferometer stable	interferometric_measurement
+optical_path_length_matching	how do I mount my mirrors so they don’t shift position	interferometric_measurement
+interferometric_metrology	if my laser light stops making those wavy stripes on the screen when I stretch the mirror arm too far, what's the max distance I can go before the pattern disappears?	optical_interferometry
+interferometric_metrology	why does my measurement device lose the interference pattern completely if the two arms are not almost exactly the same length?	optical_interferometry
+optical_interferometry	why is my interference pattern blurry or split into two when the laser beam isn't hitting the splitter at the right angle?	interferometric_metrology
+optical_interferometry	how do i tweak the mirror so the two light beams line up perfectly to make the clearest possible pattern on my detector?	interferometric_metrology
+inverse_theory_in_geophysics	how do we figure out what's deep underground by looking at how long it takes for earthquakes to hit sensors all around?	seismic_reflection_tomography
+inverse_theory_in_geophysics	why does the number of seismic sources and receivers matter so much when building a picture of the Earth's inside?	seismic_reflection_tomography
+seismic_reflection_tomography	why do we need to multiply the adjoint source with the forward gradient to get the update for the velocity model?	inverse_theory_in_geophysics
+seismic_reflection_tomography	how does picking the right Green's function change which parts of the ground the inversion actually sees?	inverse_theory_in_geophysics
+iron_oxide_color_theory	why does rust turn red when it’s been sitting there for a while?	steel_colorimetry_and_visual_inspection
+iron_oxide_color_theory	why does the color change when you heat up iron oxide powder?	steel_colorimetry_and_visual_inspection
+steel_colorimetry_and_visual_inspection	why does the color of the steel surface look different when you look at it from the side?	iron_oxide_color_theory
+steel_colorimetry_and_visual_inspection	how does the thickness of the oxide layer change the color of the steel?	iron_oxide_color_theory
+kiln_construction_and_temperature_control	how do i put up refractory bricks on the kiln floor?	kiln_thermodynamics
+kiln_construction_and_temperature_control	why use ceramic fiber blankets as the main insulation layer?	kiln_thermodynamics
+kiln_thermodynamics	how do refractory bricks handle thermal cycling?	kiln_construction_and_temperature_control
+kiln_thermodynamics	what reduces radiative heat transfer in the insulation?	kiln_construction_and_temperature_control
+laser_beam_propagation_analysis	how far can my laser stay tight before it starts spreading out?	laser_scanning_profilometry
+laser_beam_propagation_analysis	why does a blue laser spread less than a red one at the same spot size?	laser_scanning_profilometry
+laser_scanning_profilometry	how do i block the room lights while scanning a part with laser?	laser_beam_propagation_analysis
+laser_scanning_profilometry	how do i clean up the electrical fuzz from my laser sensor signal?	laser_beam_propagation_analysis
+lignin_chemistry	how do I break the main bond in wood to get smaller pieces	lignocellulosic_material_science
+lignin_chemistry	why do some ways of splitting lignin keep the rings intact	lignocellulosic_material_science
+lignocellulosic_material_science	how does tightly packed wood stop enzymes from working	lignin_chemistry
+lignocellulosic_material_science	why does stiff wood slow down the breakdown process	lignin_chemistry
+lipid_barrier_permeation_kinetics	how long does it take for a drug to get through the fat layer of a cell wall?	membrane_mechanics
+lipid_barrier_permeation_kinetics	why does adding cholesterol make the membrane harder to pass through?	membrane_mechanics
+membrane_mechanics	how does the cell skeleton pull on the cell skin to change its shape?	lipid_barrier_permeation_kinetics
+membrane_mechanics	what makes the cell skin bend more easily in certain spots?	lipid_barrier_permeation_kinetics
+lumber_drying_and_moisture_control	how do I stop my wood from cracking in the kiln?	wood_technology
+lumber_drying_and_moisture_control	why is my wood burning on the outside but still wet inside?	wood_technology
+wood_technology	what glue should i use for my particleboard furniture?	lumber_drying_and_moisture_control
+wood_technology	why does polyurethane glue work better than white glue for edge banding?	lumber_drying_and_moisture_control
+machine_isolation_and_vibration_damping_systems	my machine keeps shaking, how can I stop it from vibrating?	vibration_isolation_engineering
+machine_isolation_and_vibration_damping_systems	what's the difference between active and passive vibration dampers?	vibration_isolation_engineering
+vibration_isolation_engineering	why does vibration travel through my building's walls?	machine_isolation_and_vibration_damping_systems
+vibration_isolation_engineering	how does a mass-spring system block vibrations?	machine_isolation_and_vibration_damping_systems
+manorial_court_proceedings	how much did the bailiff get if he took my cow as a fine?	manorial_justice
+manorial_court_proceedings	who decides if i have enough stuff to pay back the debt?	manorial_justice
+manorial_justice	does the lord's court handle fights between two free men?	manorial_court_proceedings
+manorial_justice	why did the king step in when my neighbor and i argued?	manorial_court_proceedings
+martensitic_steel_heat_treatment	adding more carbon to my steel makes it harder but also lowers the temp where it turns into martensite	shape_memory_effect_activation
+martensitic_steel_heat_treatment	why does carbon content directly affect how easy it is to harden my steel	shape_memory_effect_activation
+shape_memory_effect_activation	changing the nickel to titanium ratio in my alloy changes the stress needed to trigger the shape memory effect	martensitic_steel_heat_treatment
+shape_memory_effect_activation	why does extra nickel make it harder to start the transformation in my shape memory alloy	martensitic_steel_heat_treatment
+masonry_and_stone_cutting	how do you keep the diamond wire from getting too hot while cutting rock	stone_cutting_and_dressing
+masonry_and_stone_cutting	why do you mix water with grit when using a wire saw on stone	stone_cutting_and_dressing
+stone_cutting_and_dressing	where do you lock the stone down before turning on the spinning blade machine	masonry_and_stone_cutting
+stone_cutting_and_dressing	what do you do first when you set up the table to cut a slab	masonry_and_stone_cutting
+masonry_joint_design	how much should i shrink the mortar gap on my brick wall to keep it even?	masonry_joint_troweling
+masonry_joint_design	if my mortar layer is too thin or thick, how much wiggle room do i have before it starts cracking?	masonry_joint_troweling
+masonry_joint_troweling	what size should i use for my mortar joint gap to keep things standard?	masonry_joint_design
+masonry_joint_troweling	how should i smooth out the top of my mortar line so it looks clean and flat?	masonry_joint_design
+materials_phase_diagram_analysis	how do we use x-ray diffraction peaks to figure out which crystal phases are present in this alloy?	thermodynamic_phase_diagram_construction
+materials_phase_diagram_analysis	why does electron microscopy help us see how tiny clusters of atoms change the material's structure during heating?	thermodynamic_phase_diagram_construction
+thermodynamic_phase_diagram_construction	why does adding a little bit of another metal shift the melting point line on the phase diagram more than we'd expect?	materials_phase_diagram_analysis
+thermodynamic_phase_diagram_construction	how do activity coefficients explain why two liquids don't mix perfectly even though they should?	materials_phase_diagram_analysis
+mechanical_vibration_analysis	what do mass matrices stand for in vibration stuff	vibration_analysis_and_modal_testing
+mechanical_vibration_analysis	how do stiffness matrices describe the spring forces	vibration_analysis_and_modal_testing
+vibration_analysis_and_modal_testing	what is the structure under test used for in experiments	mechanical_vibration_analysis
+vibration_analysis_and_modal_testing	why are shakers used to make the thing vibrate	mechanical_vibration_analysis
+mercantile_logistics_and_caravan_management	how do caravans keep bandits away on long trips?	mercantile_trade_routes_and_double_entry_bookkeeping
+mercantile_logistics_and_caravan_management	why change travel routes to stay safe?	mercantile_trade_routes_and_double_entry_bookkeeping
+mercantile_trade_routes_and_double_entry_bookkeeping	what do you debit when getting goods on credit?	mercantile_logistics_and_caravan_management
+mercantile_trade_routes_and_double_entry_bookkeeping	how do you record paying a debt with cash?	mercantile_logistics_and_caravan_management
+mixed_lubrication	how much oil do i need to keep my engine bearings from grinding when the car is just starting up?	tribology_and_surface_contact_mechanics
+mixed_lubrication	why does my car make a squeaking noise when the transmission is cold but runs smoothly once warmed up?	tribology_and_surface_contact_mechanics
+tribology_and_surface_contact_mechanics	what happens when two metal parts touch directly and start wearing down from friction?	mixed_lubrication
+tribology_and_surface_contact_mechanics	how does the type of lubricant film affect how much weight my bearing can hold under load?	mixed_lubrication
+molecular_dynamics_simulation	how do we make a small box of atoms look like an endless repeating universe?	seismic_wavefield_modeling
+molecular_dynamics_simulation	why does the computer get super slow when there are tons of particles interacting with each other?	seismic_wavefield_modeling
+seismic_wavefield_modeling	how do we use a backward-in-time run to find where to tweak the model to match real data?	molecular_dynamics_simulation
+seismic_wavefield_modeling	why do we need to multiply the forward waves with the backward waves to get the best improvements?	molecular_dynamics_simulation
+mortar_mix_design	how do we cast the mortar blocks so they don't crack when they're drying?	mortar_rheology
+mortar_mix_design	why do we have to keep the mortar samples at the exact same room temp for a full month before we crush them?	mortar_rheology
+mortar_rheology	why do we add those liquid additives to make the mix spread out easier?	mortar_mix_design
+mortar_rheology	how do we tell if the mix is too thick or too runny right after we mix it?	mortar_mix_design
+multi_version_concurrency_control	why did my database roll back when i tried to read old data before my update finished?	timestamp_based_versioning
+multi_version_concurrency_control	how does the system decide which version of a row to show me when i’m reading?	timestamp_based_versioning
+timestamp_based_versioning	where can i find the old version of a deleted file?	multi_version_concurrency_control
+timestamp_based_versioning	how do i restore a file to its state from last week?	multi_version_concurrency_control
+non_competitive_inhibition	why does my enzyme work slower but still grab substrate the same way?	uncompetitive_inhibition
+non_competitive_inhibition	why does the Km stay the same even when the inhibitor is hanging around?	uncompetitive_inhibition
+uncompetitive_inhibition	why does the enzyme seem to love the substrate more when the inhibitor is there?	non_competitive_inhibition
+uncompetitive_inhibition	why do both the speed and the affinity numbers get smaller together?	non_competitive_inhibition
+numerical_optimization_methods	how do i pick the step size in line search when minimizing a function?	numerical_solution_of_laplace_s_equation
+numerical_optimization_methods	why does the armijo rule check actual vs predicted drop in my optimizer?	numerical_solution_of_laplace_s_equation
+numerical_solution_of_laplace_s_equation	how do i set up the grid for my electrode shapes when solving laplace eq?	numerical_optimization_methods
+numerical_solution_of_laplace_s_equation	where do i put the voltage values on the boundary of my electrodes?	numerical_optimization_methods
+open_channel_flow_design	how do i fix a big jump in water level that happens in my irrigation ditch?	open_channel_hydraulics
+open_channel_flow_design	how can i find the shallowest water depth my pipe can handle for a certain flow rate?	open_channel_hydraulics
+open_channel_hydraulics	what should i measure first before i figure out how my water will behave downstream?	open_channel_flow_design
+open_channel_hydraulics	how do i use the energy diagram to predict the water depth after the flow changes?	open_channel_flow_design
+optical_diffraction_and_wavefront_analysis	how do i fix a blurry laser beam that's spreading out after hitting a lens?	wavefront_sensing
+optical_diffraction_and_wavefront_analysis	why is my telescope picture getting blurry when the air gets hot?	wavefront_sensing
+wavefront_sensing	why does the dot move to the right when i tilt my lens?	optical_diffraction_and_wavefront_analysis
+wavefront_sensing	how do i figure out how much my lens is tilted by looking at a dot?	optical_diffraction_and_wavefront_analysis
+optical_wavefront_reconstruction	why does my photo blur when I zoom in past a certain point?	wavefront_sensing
+optical_wavefront_reconstruction	how much detail can my microscope actually show before it just gets fuzzy?	wavefront_sensing
+wavefront_sensing	how do I know exactly how tilted my lens is by looking at a single light dot?	optical_wavefront_reconstruction
+wavefront_sensing	what should happen to the position of a laser spot when I tilt my mirror a little bit?	optical_wavefront_reconstruction
+phase_diagram_analysis	how do i figure out what phases exist at different temps with a calorimeter?	thermodynamic_stability_of_multiphase_systems
+phase_diagram_analysis	what tools show me exactly where the different solid phases meet?	thermodynamic_stability_of_multiphase_systems
+thermodynamic_stability_of_multiphase_systems	why do both phases need the same chemical potential to stay together?	phase_diagram_analysis
+thermodynamic_stability_of_multiphase_systems	how does pressure equality affect the phase rule for my mixture?	phase_diagram_analysis
+phase_transitions_in_condensed_matter	why does ice float on water but liquid metals sink in water	spontaneous_symmetry_breaking_in_condensed_matter
+phase_transitions_in_condensed_matter	what causes a material to go from a solid crystal to a liquid when heated	spontaneous_symmetry_breaking_in_condensed_matter
+spontaneous_symmetry_breaking_in_condensed_matter	why do electrons move only one way along the edge of certain materials	phase_transitions_in_condensed_matter
+spontaneous_symmetry_breaking_in_condensed_matter	why don't nonmagnetic impurities stop electrons traveling along the edge	phase_transitions_in_condensed_matter
+plant_tissue_mechanics	why does my plant leaf droop when i poke it gently with my finger?	structural_botany_and_plant_architecture
+plant_tissue_mechanics	how do plants know when a bug is eating them based on leaf bending?	structural_botany_and_plant_architecture
+structural_botany_and_plant_architecture	where on my leaf surface are the tiny pores that let air in?	plant_tissue_mechanics
+structural_botany_and_plant_architecture	why do some plants have more stomata on the bottom side of their leaves?	plant_tissue_mechanics
+pm_director_pacing	when does the director know to speed up the game?	pm_voice_dialogue
+pm_director_pacing	why did the director make things harder for me?	pm_voice_dialogue
+pm_voice_dialogue	what should the guard yell to get everyone in a line?	pm_director_pacing
+pm_voice_dialogue	what kind of shout keeps the troops moving together?	pm_director_pacing
+polymer_chemistry_and_crosslinking	why does rubber get stiffer when you add more sulfur to it?	polymer_matrix_thermal_degradation
+polymer_chemistry_and_crosslinking	at what temperature does my plastic bottle start to go from hard to squishy?	polymer_matrix_thermal_degradation
+polymer_matrix_thermal_degradation	if I heat the plastic too fast, why does it break apart at a lower temperature?	polymer_chemistry_and_crosslinking
+polymer_matrix_thermal_degradation	does the speed I heat up the material change when it starts to smoke?	polymer_chemistry_and_crosslinking
+polymer_rheology	how long does a polymer chain take to wiggle free from its own knot in a thick soup	rheology_of_polymer_solutions
+polymer_rheology	why does it take forever for a long spaghetti strand to untangle and stop squishing	rheology_of_polymer_solutions
+rheology_of_polymer_solutions	why does the soup suddenly feel more like rubber when you add more long chains	polymer_rheology
+rheology_of_polymer_solutions	why does the soup get super sticky and hard to stir when you add a lot of polymer	polymer_rheology
+quantum_anomalous_hall_effect	why is the chern number always a whole number for the quantum anomalous hall effect?	topological_insulators
+quantum_anomalous_hall_effect	how does integrating the berry curvature over the whole band give you a topological number?	topological_insulators
+topological_insulators	what role does spin orbit coupling play in flipping the energy bands of topological insulators?	quantum_anomalous_hall_effect
+topological_insulators	why does strong spin orbit coupling open up a gap in the inverted bands?	quantum_anomalous_hall_effect
+refractive_index_correction	how do I stop color fringing on my camera lens	refractive_index_metrology
+refractive_index_correction	what glass mix removes rainbow blur from my telescope	refractive_index_metrology
+refractive_index_metrology	how fast does light travel through water compared to air	refractive_index_correction
+refractive_index_metrology	why does a glass of water make a coin look higher	refractive_index_correction
+refractory_composite_formulation	what makes the glue between fibers and matrix hold up under heat?	refractory_engineering
+refractory_composite_formulation	how do you use x-ray patterns to spot crystal shapes inside the mix?	refractory_engineering
+refractory_engineering	why does every type of high temp wall need its own recipe?	refractory_composite_formulation
+refractory_engineering	what determines how much a refractory material expands when heated?	refractory_composite_formulation
+solid_state_physics	why does the crystal structure affect electron energy bands?	time_reversal_symmetry_breaking
+solid_state_physics	how do we get the first Brillouin zone from a crystal lattice?	time_reversal_symmetry_breaking
+time_reversal_symmetry_breaking	why do magnetic fields break time reversal symmetry?	solid_state_physics
+time_reversal_symmetry_breaking	how can a Hamiltonian lack invariance under time reversal?	solid_state_physics
+stone_cutting_and_dressing	how to get my spinning blade on the stone cutter table to stay steady	stone_dressing_and_honing_techniques
+stone_cutting_and_dressing	why does my machine keep spraying water while i cut	stone_dressing_and_honing_techniques
+stone_dressing_and_honing_techniques	which grit sandpaper do i use for a hard granite top	stone_cutting_and_dressing
+stone_dressing_and_honing_techniques	can i use high pressure water when polishing soft marble	stone_cutting_and_dressing
+thermal_expansion_and_contraction	why does my wooden floorboard bend more in summer than winter?	thermal_expansion_coefficient_measurement
+thermal_expansion_and_contraction	why do some metals shrink when heated instead of growing?	thermal_expansion_coefficient_measurement
+thermal_expansion_coefficient_measurement	how do you calculate the expansion rate of a steel beam?	thermal_expansion_and_contraction
+thermal_expansion_coefficient_measurement	why is the expansion number divided by the starting length and the temp change?	thermal_expansion_and_contraction
+thermal_insulation_design	why does a double paned window stop heat from escaping through the glass layers?	thermal_insulation_materials
+thermal_insulation_design	how does a vacuum flask keep coffee hot when there’s no air between the walls?	thermal_insulation_materials
+thermal_insulation_materials	why does adding more fiberglass in my attic improve my home’s insulation rating?	thermal_insulation_design
+thermal_insulation_materials	how does the thickness of my foam boards affect how long they stay warm?	thermal_insulation_design
+thermodynamic_property_correlation_and_modeling	how do you figure out the energy of mixing for a liquid solution?	thermodynamics_and_heat_transfer
+thermodynamic_property_correlation_and_modeling	what do binary interaction parameters tell you about solvent mixtures?	thermodynamics_and_heat_transfer
+thermodynamics_and_heat_transfer	how do you find the heat loss through a double pane window?	thermodynamic_property_correlation_and_modeling
+thermodynamics_and_heat_transfer	how does the thickness of insulation affect how much heat escapes?	thermodynamic_property_correlation_and_modeling
+threshold_cryptography	how do i split a secret key among my friends so no single one has it all?	threshold_signature_schemes
+threshold_cryptography	why does each piece of the puzzle look like a random number until i combine enough of them?	threshold_signature_schemes
+threshold_signature_schemes	why do i need a group of signers instead of just one person to approve my transaction?	threshold_cryptography
+threshold_signature_schemes	how does the system work if some of the signers are offline or ignore me?	threshold_cryptography
+transpiration_physiology	why do leaf pores open when it's warm and sunny	xylem_anatomy
+transpiration_physiology	how does my plant drink water through its leaves	xylem_anatomy
+xylem_anatomy	why is the wood in trees full of tiny tubes	transpiration_physiology
+xylem_anatomy	how does the tree prevent air bubbles from stopping water flow	transpiration_physiology
+wavefront_error_analysis	how do you line up each tiny lens in the array so it hits the right sensor spot?	wavefront_sensing
+wavefront_error_analysis	what do you do when the sensor itself messes up the shape of the light coming in?	wavefront_sensing
+wavefront_sensing	how do you figure out how much the light wave is tilting from just seeing where the spot lands?	wavefront_error_analysis
+wavefront_sensing	what happens to the spot position when you know the wave is sloped more steeply?	wavefront_error_analysis
+x_ray_crystallography	How do i get my protein into nice shiny crystals so the x-ray machine can take a picture?	x_ray_diffraction
+x_ray_crystallography	why does my diffraction pattern look like a bunch of dots and how do i turn them into a 3d model?	x_ray_diffraction
+x_ray_diffraction	my powder sample isn't giving me clear rings on the detector what should i do?	x_ray_crystallography
+x_ray_diffraction	how do i start the software with the right starting guess for my crystal structure?	x_ray_crystallography
+mortar_unit_interface_bonding_mechanics	how much do I need to buy to wet the bricks properly?	pattern_recognition
+pattern_recognition	does the robot figure out the maze by trying random things?	mortar_unit_interface_bonding_mechanics
+mercantile_trade_routes_and_double_entry_bookkeeping	Where should I keep the money for this big purchase?	open_channel_flow_analysis
+open_channel_flow_analysis	How can I measure the width of the riverbed?	mercantile_trade_routes_and_double_entry_bookkeeping
+customary_obligation_enforcement	What does the court do to enforce customary obligations?	high_fire_glazing_techniques
+high_fire_glazing_techniques	How do you prevent cracking in clay bodies during firing?	customary_obligation_enforcement
+mass_flow_rate_stoichiometry_in_fire	Why does the flame brush need a good mix of fuel and air to keep burning?	stone_surface_sealing_and_finishing
+stone_surface_sealing_and_finishing	Should I use a hard brush or a soft brush to clean my new marble countertop?	mass_flow_rate_stoichiometry_in_fire
+high_temperature_oxidation_resistance	Is the charge building up too much during the heating process?	manorial_justice
+manorial_justice	Are the charges against him serious enough?	high_temperature_oxidation_resistance
+cure_completion_confirmation	Why did my photos suddenly disappear from my cloud backup?	solute_drag_interface_mobility
+solute_drag_interface_mobility	Why did the particle cloud suddenly detach from the moving boundary during the experiment?	cure_completion_confirmation
+cryptographic_quorum_certificates	Why does the blockchain need so many validators to prevent faults?	twinning_induced_plasticity
+twinning_induced_plasticity	How does the stacking fault energy affect the strength of the alloy?	cryptographic_quorum_certificates
+kilnware_arrangement	What protective gear should I wear when handling hot kilnware?	robotic_kinematics
+robotic_kinematics	Did you check the gear mechanisms on the robot before starting it up?	kilnware_arrangement
+bouguer_anomaly_interpretation	How do I use ground truth to check my survey data?	hazardous_materials_storage
+hazardous_materials_storage	What kind of ground protection do I need for my storage tanks?	bouguer_anomaly_interpretation
+differential_forms	what does the kernel of the exterior derivative mean in differential forms?	page_splitting_algorithms
+page_splitting_algorithms	why do page splitting algorithms run at the kernel level for memory allocation?	differential_forms
+memory_management_and_paging	How do I know if my computer's virtual memory pages are loaded?	mortar_unit_interface_bonding_mechanics
+mortar_unit_interface_bonding_mechanics	What's the best way to get load distribution across a brick wall?	memory_management_and_paging
+mortar_unit_interface_bonding_mechanics	How does the cement paste matrix affect the strength of my brick wall?	perceptual_color_mapping
+perceptual_color_mapping	Why is my photo looking washed out when I change the color matrix settings?	mortar_unit_interface_bonding_mechanics
+multi_version_concurrency_control	Did you back up your files before the drive started making weird noises?	soil_physics_and_dielectric_constant_measurement
+soil_physics_and_dielectric_constant_measurement	Can you tell me what soil type we're testing in the garden plot?	multi_version_concurrency_control
+industrial_steel_manufacturing	How do I clean the mold after making my steel parts without damaging the thermal coating?	rheology_of_polymer_solutions
+rheology_of_polymer_solutions	Why is my plastic piece coming out warped when I try to use a thicker mold?	industrial_steel_manufacturing
+microstructural_control_in_glass_ceramics	why does this ceramic chip have needle-shaped crystals?	pneumatology
+pneumatology	where do they put the needle for the lung test?	microstructural_control_in_glass_ceramics
+cryptographic_quorum_certificates	How much does the net bandwidth drop when I use the new consensus protocol?	twinning_induced_plasticity
+twinning_induced_plasticity	Can I see a picture of how the GND networks form around the twin boundaries?	cryptographic_quorum_certificates
+dissipationless_transport	How much noise does my audio amplifier add to the signal?	ransac_algorithm
+ransac_algorithm	Why did my computer crash due to noise?	dissipationless_transport
+soil_physics_and_dielectric_constant_measurement	What is the optimal particle size distribution for my garden soil?	view_stamped_replication
+view_stamped_replication	Why did the party crash when the network partitioned?	soil_physics_and_dielectric_constant_measurement
+phase_transfer_catalysis	How can I use a pitched-blade impeller to mix my chemicals?	pm_voice_dialogue
+pm_voice_dialogue	What should I include in my trade pitch to appeal to the merchant?	phase_transfer_catalysis
+feudal_land_tenure	How much space do I need for my new vegetable plot?	spectroscopic_refractometry
+spectroscopic_refractometry	Can you help me plot out the steps for making this new instrument work properly?	feudal_land_tenure
+automata_theory	What is the pumping lemma for regular languages?	thixotropy
+thixotropy	How do you pump the sauce out of the bottle?	automata_theory
+quorum_certificate_verification	how much does the verification time grow when we double the number of validators?	soil_physics_and_dielectric_constant_measurement
+soil_physics_and_dielectric_constant_measurement	how does the dielectric reading change when the soil becomes wetter?	quorum_certificate_verification
+mortar_unit_interface_bonding_mechanics	What is the shear strength of the mortar used in this brick wall?	turbulence_closure_models
+turbulence_closure_models	How does the shear affect the turbulence in the airflow?	mortar_unit_interface_bonding_mechanics
+multi_version_concurrency_control	Why does the system keep rejecting my read after I started it?	thermal_mass_characterization
+thermal_mass_characterization	How much weight does the floor have in the building rating?	multi_version_concurrency_control
+manorial_justice	Where should I place the long table for the village meeting?	page_splitting_algorithms
+page_splitting_algorithms	How many entries are in the page table on my computer?	manorial_justice
+explosion_proof_electrical_equipment	How do I tighten a bolt without it coming loose?	leaf_node_traversal
+leaf_node_traversal	Why does my program freeze when multiple threads run at once?	explosion_proof_electrical_equipment
+concrete_fracture_mechanics	How do I specify the direction of the force when I'm trying to crack the concrete?	view_stamped_replication
+view_stamped_replication	Why isn't the data on my tablet syncing with the one on my phone?	concrete_fracture_mechanics

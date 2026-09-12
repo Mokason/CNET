@@ -27,6 +27,20 @@ CNET_CLI = os.getenv("CNET_CLI", "./bin/cnet_vsa_cli")
 CALIB_TARGET_IN = os.environ.get("CNET_CALIB_TARGET_IN", "0.80")   # in-domain accept fraction (measured operating point, see result/cnet_vsa_margin_gate_calibration_20260911.md)
 CALIB_TARGET_NEG = os.environ.get("CNET_CALIB_TARGET_NEG", "0.90") # negative reject fraction
 VSA_ENCODER = os.environ.get("CNET_VSA_ENCODER", "default")   # "default" = the encoder the C sweep gate selected
+# A registry that ships a lexicon (<output_dir>/registry.lex, 2026-09-12 rollout) is sealed with the LEX encoder under
+# that table: new capsules must use the same encoder and the same lexicon or the registry refuses them at admission.
+_REGISTRY_LEX = os.environ.get("CNET_VSA_LEXICON", "")
+def _lexicon_env(output_dir):
+    """Environment for CLI calls: CNET_VSA_LEXICON pointing at the registry's shipped table when it exists."""
+    env = dict(os.environ)
+    lex = _REGISTRY_LEX or os.path.join(str(output_dir), "registry.lex")
+    if os.path.exists(lex):
+        env["CNET_VSA_LEXICON"] = lex
+    return env
+def _encoder_for(output_dir):
+    if VSA_ENCODER != "default":
+        return VSA_ENCODER
+    return "lex" if os.path.exists(_REGISTRY_LEX or os.path.join(str(output_dir), "registry.lex")) else "default"
 STATE_DIR = Path("var/isekai_rpg_crawler")
 STATE_FILE = STATE_DIR / "state.json"
 STATUS_MD = Path("docs/ISEKAI_RPG_NETWORK_STATUS.md")
@@ -309,10 +323,10 @@ def distill_and_certify(topic: str, output_dir: Path) -> dict | None:
     # corpus under var/distill are the negatives. The CLI refuses to seal when
     # no radius meets both targets (NOT_SEPARABLE) or evidence is thin.
     cmd_create = [CNET_CLI, "gencap-create", domain_key, tag_clean, str(corpus_file), str(capsule_file),
-                  "--encoder", VSA_ENCODER,
+                  "--encoder", _encoder_for(output_dir),
                   "--probes", str(probes_file), "--negatives", str(corpus_dir),
                   "--target-in", CALIB_TARGET_IN, "--target-neg", CALIB_TARGET_NEG]
-    res_create = subprocess.run(cmd_create, capture_output=True, text=True)
+    res_create = subprocess.run(cmd_create, capture_output=True, text=True, env=_lexicon_env(output_dir))
     if res_create.returncode != 0:
         if "NOT_SEPARABLE" in res_create.stdout:
             m_sep = re.search(r"separation=([+-]?[0-9.]+)", res_create.stdout)

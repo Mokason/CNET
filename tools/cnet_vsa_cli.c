@@ -17,6 +17,8 @@
 #include <math.h>
 #include <ctype.h>
 #include <unistd.h>
+#include <dirent.h>
+#include <sys/stat.h>
 
 #ifdef __HIP_PLATFORM_AMD__
 #include <hip/hip_runtime.h>
@@ -34,6 +36,7 @@
 #include "cnet_vsa_ngram.h"
 #include "cnet_vsa_hybrid.h"
 #include "cnet_vsa_gen_capsule.h"
+#include "cnet_vsa_lexicon.h"
 #include "cnet_vsa_evidence.h"
 
 #define CLI_MAX_LINE 1024
@@ -74,10 +77,16 @@ static void print_usage(const char *prog) {
     printf("  story-gen [style] [hero]   Generate original story with style (whimsical/adventurous/cozy)\n");
     printf("  mouth-gen [style] [hero]   Generate fluid story via Hybrid VSA Brain + Neural Mouth + Back-Audit\n");
     printf("  ngram-gen [seed] [hero]    Generate word-by-word story via pure VSA unbinding (zero templates)\n");
-    printf("  gencap-create <n> <d> <i> <o> Create & seal specialized generative capsule from text corpus\n");
+    printf("  gencap-create <n> <d> <i> <o> Create & seal generative capsule; --encoder <name> (default from sweep gate); add --negatives <dir> [--probes f] to calibrate radius\n");
     printf("  gencap-verify <file.gencap>  Verify capsule cryptographic digest & domain specification\n");
     printf("  gencap-gen <cap> [prm] [sd]  Autonomous generation from capsule steered by intent (zero LLM)\n");
     printf("  route <dir> <prompt>       Rank all capsules in directory against prompt intent\n");
+    printf("  route-batch <dir>          Same, one prompt per stdin line, registry loaded once\n");
+    printf("  lexicon-build <dir> <out>  Learn a wide-space lexicon from *_corpus.txt (Random Indexing; phrases, subwords, distilled)\n");
+    printf("  lexicon-train <in> <out> <dir> <pairs.tsv>  Supervised pass on (capsule, question) pairs toward corpus centroids\n");
+    printf("  lexicon-info <file.lex>    Verify and describe a lexicon\n");
+    printf("  stem-words                 stdin tokens -> token, stem, stopword flag, key (for distillation tooling)\n");
+    printf("  env CNET_VSA_LEXICON=<f>   Activate a lexicon for --encoder lex (required for lex)\n");
     printf("  auto <prompt> [dir]        Auto-route prompt to best matching capsule and generate response\n");
     printf("  explain-facts <file> <start> <rel>...  Answer a typed path with evidence from supplied facts\n");
     printf("  device-status              Display detected hardware backends (GPU ROCm / CPU AVX2)\n");
@@ -819,57 +828,318 @@ static void cmd_ngram_gen(CliState *s, const char *seed_word, const char *hero, 
     printf("  Output: \"%s\"\n\n", out_text);
 }
 
-static void cmd_gencap_create(const char *name, const char *domain, const char *corpus_path, const char *out_capsule) {
-    CnetVsaGenCapsule *cap = (CnetVsaGenCapsule *)calloc(1, sizeof(CnetVsaGenCapsule));
-    if (!cap) {
-        fprintf(stderr, "Error: out of memory allocating capsule.\n");
-        return;
-    }
+/* ---- calibration evidence loading ---------------------------------------- */
 
-    if (cnet_vsa_gencap_init(cap, name, domain, CNET_VSA_DEFAULT_DIM) != 0) {
-        fprintf(stderr, "Error: failed to initialize capsule '%s'.\n", name);
-        free(cap);
-        return;
-    }
+typedef struct {
+    char **lines;
+    size_t count, cap;
+} LineList;
 
-    FILE *fp = fopen(corpus_path, "r");
-    if (!fp) {
-        fprintf(stderr, "Error: cannot open corpus file '%s'.\n", corpus_path);
-        free(cap);
-        return;
-    }
+static void linelist_free(LineList *l) {
+    for (size_t i = 0; i < l->count; ++i) free(l->lines[i]);
+    free(l->lines);
+    l->lines = NULL; l->count = l->cap = 0;
+}
 
+static int linelist_push(LineList *l, const char *text) {
+    if (l->count == l->cap) {
+        size_t ncap = l->cap ? l->cap * 2 : 256;
+        char **nl = (char **)realloc(l->lines, ncap * sizeof(char *));
+        if (!nl) return -1;
+        l->lines = nl; l->cap = ncap;
+    }
+    l->lines[l->count] = strdup(text);
+    if (!l->lines[l->count]) return -1;
+    l->count++;
+    return 0;
+}
+
+/* Read non-empty, non-comment lines of a text file into the list. */
+static int linelist_read_file(LineList *l, const char *path) {
+    FILE *fp = fopen(path, "r");
+    if (!fp) return -1;
     char line[1024];
-    int lines_ingested = 0;
+    int added = 0;
     while (fgets(line, sizeof(line), fp)) {
         char *p = line;
         while (*p && isspace((unsigned char)*p)) p++;
         size_t len = strlen(p);
         while (len > 0 && isspace((unsigned char)p[len - 1])) p[--len] = '\0';
         if (len == 0 || *p == '#') continue;
-
-        if (cnet_vsa_gencap_ingest(cap, p) > 0) {
-            lines_ingested++;
-        }
+        if (linelist_push(l, p) != 0) { fclose(fp); return -1; }
+        added++;
     }
     fclose(fp);
+    return added;
+}
+
+static int path_is_dir(const char *path) {
+    struct stat st;
+    return (stat(path, &st) == 0 && S_ISDIR(st.st_mode)) ? 1 : 0;
+}
+
+static int same_file(const char *a, const char *b) {
+    struct stat sa, sb;
+    if (stat(a, &sa) != 0 || stat(b, &sb) != 0) return 0;
+    return (sa.st_dev == sb.st_dev && sa.st_ino == sb.st_ino) ? 1 : 0;
+}
+
+/* Negatives: a file of sentences, or a directory of *.txt corpora from other
+ * domains. The capsule's own corpus file and any file whose name starts with
+ * the capsule name are excluded. At most max_lines are kept by deterministic
+ * reservoir sampling seeded from the capsule name, so re-runs are repeatable. */
+static int load_negatives(LineList *out, const char *source, const char *own_corpus,
+                          const char *cap_name, size_t max_lines, int *files_seen) {
+    *files_seen = 0;
+    if (!path_is_dir(source)) {
+        int n = linelist_read_file(out, source);
+        if (n < 0) return -1;
+        *files_seen = 1;
+        return 0;
+    }
+
+    uint64_t seed = 1469598103934665603ULL;
+    for (const char *c = cap_name; *c; ++c) { seed ^= (unsigned char)*c; seed *= 1099511628211ULL; }
+    if (seed == 0) seed = 0x9E3779B97F4A7C15ULL;
+
+    DIR *d = opendir(source);
+    if (!d) return -1;
+    LineList all; memset(&all, 0, sizeof(all));
+    size_t cap_len = strlen(cap_name);
+    struct dirent *de;
+    while ((de = readdir(d)) != NULL) {
+        size_t len = strlen(de->d_name);
+        if (len < 5 || strcmp(de->d_name + len - 4, ".txt") != 0) continue;
+        /* exclude only this capsule's own files by exact name; a sibling whose
+         * name merely starts with ours is one of the hardest negatives */
+        if (cap_len > 0) {
+            char own_c[300], own_p[300];
+            snprintf(own_c, sizeof(own_c), "%s_corpus.txt", cap_name);
+            snprintf(own_p, sizeof(own_p), "%s_probes.txt", cap_name);
+            if (strcmp(de->d_name, own_c) == 0 || strcmp(de->d_name, own_p) == 0) continue;
+        }
+        char full[1024];
+        snprintf(full, sizeof(full), "%s/%s", source, de->d_name);
+        if (own_corpus && same_file(full, own_corpus)) continue;
+        if (linelist_read_file(&all, full) < 0) continue;
+        (*files_seen)++;
+    }
+    closedir(d);
+
+    /* reservoir sample */
+    for (size_t i = 0; i < all.count; ++i) {
+        if (out->count < max_lines) {
+            if (linelist_push(out, all.lines[i]) != 0) { linelist_free(&all); return -1; }
+        } else {
+            seed ^= seed << 13; seed ^= seed >> 7; seed ^= seed << 17;
+            size_t j = (size_t)(seed % (uint64_t)(i + 1));
+            if (j < max_lines) {
+                free(out->lines[j]);
+                out->lines[j] = strdup(all.lines[i]);
+                if (!out->lines[j]) { linelist_free(&all); return -1; }
+            }
+        }
+    }
+    linelist_free(&all);
+    return 0;
+}
+
+static void print_calibration_receipt(const CnetVsaGenCapsule *cap) {
+    const CnetVsaGencapCalibration *c = &cap->calib;
+    const char *enc_name = cnet_vsa_encoder_name(c->reserved0);
+    printf("  Encoder:           %s (id %u)%s\n", enc_name ? enc_name : "UNKNOWN", c->reserved0,
+           c->reserved0 == CNET_VSA_ENCODER_DEFAULT ? " [default]" : "");
+    if (!c->calibrated && c->negative_count == 0) {
+        printf("  Calibration:       UNCALIBRATED (legacy fixed radius %.3f)\n", cap->safe_radius);
+        return;
+    }
+    printf("  Calibration:       %s\n", c->calibrated ? "CALIBRATED (held-out evidence)" : "NOT_SEPARABLE (refused)");
+    printf("    in-domain:       n=%u  dist mean=%.4f sd=%.4f  target accept>=%.2f  measured=%.3f\n",
+           c->in_domain_count, c->in_dist_mean, c->in_dist_std, c->target_in_accept, c->in_accept_rate);
+    printf("    negatives:       n=%u  dist mean=%.4f sd=%.4f  target reject>=%.2f  measured=%.3f\n",
+           c->negative_count, c->neg_dist_mean, c->neg_dist_std, c->target_neg_reject, c->neg_reject_rate);
+    printf("    radius window:   r_in=%.4f  r_neg=%.4f  separation=%+.4f  chosen=%.4f%s\n",
+           c->radius_in, c->radius_neg, c->separation, cap->safe_radius,
+           (c->separation >= 0.0f || c->negative_count == 0) ? "" : "  (float space not separable: radius on the fail-closed side)");
+    if (cap->topical.present) {
+        const CnetVsaTopicalBlock *t = &cap->topical;
+        printf("  Topical block:     v3, %u-d int8 centroid (%u bytes), %s\n",
+               t->width, t->width, t->calibrated ? "CALIBRATED in wide space" : "UNCALIBRATED (ceiling 0.900)");
+        if (t->calibrated || c->negative_count > 0) {
+            printf("    in-domain:       dist mean=%.4f sd=%.4f  measured accept=%.3f\n", t->in_dist_mean, t->in_dist_std, t->in_accept_rate);
+            printf("    negatives:       dist mean=%.4f sd=%.4f  measured reject=%.3f\n", t->neg_dist_mean, t->neg_dist_std, t->neg_reject_rate);
+            printf("    radius window:   r_in=%.4f  r_neg=%.4f  separation=%+.4f  chosen=%.4f\n",
+                   t->radius_in, t->radius_neg, t->separation, t->safe_radius);
+        }
+    } else {
+        printf("  Topical block:     none (format v%u routes in the float-512 space)\n", cap->version);
+    }
+}
+
+typedef struct {
+    const char *probes_path;     /* optional: held-out in-domain queries, one per line */
+    const char *negatives_path;  /* optional: file or directory of other-domain corpora */
+    float target_in;
+    float target_neg;
+    size_t max_negatives;
+    const char *calib_report;    /* optional: write sorted in/neg distances here */
+    int dry_run;                 /* 1: calibrate and report, never save */
+    uint32_t encoder_id;         /* CNET_VSA_ENCODER_HD by default for new seals */
+} GencapCreateOpts;
+
+static void gencap_create_opts_default(GencapCreateOpts *o) {
+    memset(o, 0, sizeof(*o));
+    o->target_in = 0.90f;
+    o->target_neg = 0.95f;
+    o->max_negatives = 512;
+    o->encoder_id = CNET_VSA_ENCODER_DEFAULT;
+}
+
+/* Parses trailing --probes/--negatives/--target-in/--target-neg/--max-negatives */
+static int gencap_create_opts_parse(GencapCreateOpts *o, int argc, char **argv) {
+    for (int i = 0; i < argc; ++i) {
+        const char *a = argv[i];
+        const char *v = (i + 1 < argc) ? argv[i + 1] : NULL;
+        if (strcmp(a, "--probes") == 0 && v) { o->probes_path = v; i++; }
+        else if (strcmp(a, "--negatives") == 0 && v) { o->negatives_path = v; i++; }
+        else if (strcmp(a, "--target-in") == 0 && v) { o->target_in = (float)atof(v); i++; }
+        else if (strcmp(a, "--target-neg") == 0 && v) { o->target_neg = (float)atof(v); i++; }
+        else if (strcmp(a, "--max-negatives") == 0 && v) { o->max_negatives = (size_t)atoi(v); i++; }
+        else if (strcmp(a, "--calib-report") == 0 && v) { o->calib_report = v; i++; }
+        else if (strcmp(a, "--dry-run") == 0) { o->dry_run = 1; }
+        else if (strcmp(a, "--encoder") == 0 && v) {
+            if (cnet_vsa_encoder_parse(v, &o->encoder_id) != 0) {
+                fprintf(stderr, "Error: --encoder must be one of default");
+                for (uint32_t k = 0; k < CNET_VSA_ENCODER_COUNT; ++k) fprintf(stderr, "|%s", cnet_vsa_encoder_name(k));
+                fprintf(stderr, ".\n");
+                return -1;
+            }
+            i++;
+        }
+        else { fprintf(stderr, "Error: unknown option '%s'.\n", a); return -1; }
+    }
+    return 0;
+}
+
+/* Returns 0 on sealed+saved, nonzero on any refusal (so scripts can gate on it). */
+static int cmd_gencap_create(const char *name, const char *domain, const char *corpus_path,
+                             const char *out_capsule, const GencapCreateOpts *opts) {
+    CnetVsaGenCapsule *cap = (CnetVsaGenCapsule *)calloc(1, sizeof(CnetVsaGenCapsule));
+    if (!cap) {
+        fprintf(stderr, "Error: out of memory allocating capsule.\n");
+        return 1;
+    }
+
+    if (cnet_vsa_gencap_init(cap, name, domain, CNET_VSA_DEFAULT_DIM) != 0) {
+        fprintf(stderr, "Error: failed to initialize capsule '%s'.\n", name);
+        free(cap);
+        return 1;
+    }
+    uint32_t enc = opts ? opts->encoder_id : CNET_VSA_ENCODER_DEFAULT;
+    if (cnet_vsa_gencap_set_encoder(cap, enc) != 0) {
+        fprintf(stderr, "Error: failed to set encoder %u on capsule '%s'.\n", enc, name);
+        free(cap);
+        return 1;
+    }
+
+    LineList corpus, probes, negatives;
+    memset(&corpus, 0, sizeof(corpus));
+    memset(&probes, 0, sizeof(probes));
+    memset(&negatives, 0, sizeof(negatives));
+
+    if (linelist_read_file(&corpus, corpus_path) < 0) {
+        fprintf(stderr, "Error: cannot open corpus file '%s'.\n", corpus_path);
+        free(cap);
+        return 1;
+    }
+
+    int lines_ingested = 0;
+    for (size_t i = 0; i < corpus.count; ++i) {
+        if (cnet_vsa_gencap_ingest(cap, corpus.lines[i]) > 0) lines_ingested++;
+    }
 
     if (lines_ingested == 0) {
         fprintf(stderr, "Error: no valid sentences ingested from '%s'.\n", corpus_path);
+        linelist_free(&corpus);
         free(cap);
-        return;
+        return 1;
     }
 
-    if (cnet_vsa_gencap_seal(cap) != 0) {
-        fprintf(stderr, "Error: failed to seal capsule.\n");
+    int calib_rc = 0;
+    int calibration_requested = (opts && opts->negatives_path) ? 1 : 0;
+    int neg_files = 0;
+    if (calibration_requested) {
+        if (opts->probes_path && linelist_read_file(&probes, opts->probes_path) < 0) {
+            fprintf(stderr, "Error: cannot open probes file '%s'.\n", opts->probes_path);
+            linelist_free(&corpus); free(cap);
+            return 1;
+        }
+        if (load_negatives(&negatives, opts->negatives_path, corpus_path, name,
+                           opts->max_negatives, &neg_files) != 0) {
+            fprintf(stderr, "Error: cannot load negatives from '%s'.\n", opts->negatives_path);
+            linelist_free(&corpus); linelist_free(&probes); free(cap);
+            return 1;
+        }
+        size_t in_total = corpus.count + probes.count, n_in = 0, n_neg = 0;
+        float *d_in = (float *)calloc(in_total ? in_total : 1, sizeof(float));
+        float *d_neg = (float *)calloc(negatives.count ? negatives.count : 1, sizeof(float));
+        calib_rc = cnet_vsa_gencap_calibrate_ex(cap,
+                                                (const char *const *)corpus.lines, corpus.count,
+                                                (const char *const *)probes.lines, probes.count,
+                                                (const char *const *)negatives.lines, negatives.count,
+                                                opts->target_in, opts->target_neg,
+                                                d_in, in_total, &n_in, d_neg, negatives.count, &n_neg);
+        if (opts->calib_report && d_in && d_neg) {
+            FILE *rf = fopen(opts->calib_report, "w");
+            if (rf) {
+                fprintf(rf, "name %s\nin", name);
+                for (size_t i = 0; i < n_in; ++i) fprintf(rf, " %.5f", d_in[i]);
+                fprintf(rf, "\nneg");
+                for (size_t i = 0; i < n_neg; ++i) fprintf(rf, " %.5f", d_neg[i]);
+                fprintf(rf, "\n");
+                fclose(rf);
+            }
+        }
+        free(d_in); free(d_neg);
+    }
+
+    int seal_rc = (calib_rc == 0) ? cnet_vsa_gencap_seal(cap) : calib_rc;
+    if (seal_rc != 0) {
+        printf("=================================================================\n");
+        printf(" CNET Generative Knowledge Capsule REFUSED\n");
+        printf("=================================================================\n");
+        printf("  Capsule Name:      %s\n", cap->name);
+        printf("  Domain:            %s\n", cap->domain);
+        printf("  Lines Ingested:    %d\n", lines_ingested);
+        if (seal_rc == CNET_VSA_GENCAP_NOT_SEPARABLE) {
+            print_calibration_receipt(cap);
+            printf("  Status:            REFUSED NOT_SEPARABLE [FAIL] (no radius meets both targets)\n\n");
+        } else if (seal_rc == CNET_VSA_GENCAP_INSUFFICIENT_EVIDENCE) {
+            printf("  Evidence:          in-domain=%zu probes=%zu negatives=%zu (files=%d); need >=%d and >=%d\n",
+                   corpus.count, probes.count, negatives.count, neg_files,
+                   CNET_VSA_GENCAP_MIN_IN_DOMAIN, CNET_VSA_GENCAP_MIN_NEGATIVES);
+            printf("  Status:            REFUSED INSUFFICIENT_EVIDENCE [FAIL]\n\n");
+        } else {
+            printf("  Status:            REFUSED seal rc=%d [FAIL]\n\n", seal_rc);
+        }
+        linelist_free(&corpus); linelist_free(&probes); linelist_free(&negatives);
         free(cap);
-        return;
+        return 2;
+    }
+
+    if (opts && opts->dry_run) {
+        printf("  Dry run: calibration %s, radius %.4f (not saved)\n",
+               cap->calib.calibrated ? "CALIBRATED" : "UNCALIBRATED", cap->safe_radius);
+        linelist_free(&corpus); linelist_free(&probes); linelist_free(&negatives);
+        free(cap);
+        return 0;
     }
 
     if (cnet_vsa_gencap_save(cap, out_capsule) != 0) {
         fprintf(stderr, "Error: failed to save capsule to '%s'.\n", out_capsule);
+        linelist_free(&corpus); linelist_free(&probes); linelist_free(&negatives);
         free(cap);
-        return;
+        return 1;
     }
 
     printf("=================================================================\n");
@@ -877,15 +1147,23 @@ static void cmd_gencap_create(const char *name, const char *domain, const char *
     printf("=================================================================\n");
     printf("  Capsule Name:      %s\n", cap->name);
     printf("  Domain:            %s\n", cap->domain);
+    printf("  Format Version:    %u\n", cap->version);
     printf("  Lines Ingested:    %d\n", lines_ingested);
     printf("  Vocabulary:        %zu unique words\n", cap->ngram.vocab_count);
     printf("  Transitions:       %zu n-gram transitions\n", cap->ngram.transition_count);
     printf("  Safe Radius:       %.3f\n", cap->safe_radius);
+    print_calibration_receipt(cap);
+    if (calibration_requested) {
+        printf("    evidence source: probes=%zu  negatives=%zu from %d file(s) under '%s'\n",
+               probes.count, negatives.count, neg_files, opts->negatives_path);
+    }
     printf("  Integrity Digest:  0x%016llx\n", (unsigned long long)cap->digest);
     printf("  Output File:       %s\n", out_capsule);
     printf("  Status:            SEALED & CERTIFIED [PASS]\n\n");
 
+    linelist_free(&corpus); linelist_free(&probes); linelist_free(&negatives);
     free(cap);
+    return 0;
 }
 
 static void cmd_gencap_verify(const char *capsule_path) {
@@ -915,7 +1193,9 @@ static void cmd_gencap_verify(const char *capsule_path) {
     printf("  Name:              %s\n", cap->name);
     printf("  Domain:            %s\n", cap->domain);
     printf("  Certified:         %s\n", cap->certified ? "YES (Valid)" : "NO");
+    printf("  Format Version:    %u\n", cap->version);
     printf("  Safe Radius:       %.3f\n", cap->safe_radius);
+    print_calibration_receipt(cap);
     printf("  Vocabulary:        %zu words\n", cap->ngram.vocab_count);
     printf("  Transitions:       %zu transitions\n", cap->ngram.transition_count);
     printf("  Frames:            %zu grammar frames\n", cap->frame_count);
@@ -939,19 +1219,42 @@ static void cmd_gencap_gen(const char *capsule_path, const char *prompt, const c
         return;
     }
 
+    /* a LEX capsule needs the lexicon it was sealed under: the one shipped next
+     * to it (registry.lex) or CNET_VSA_LEXICON; without it, refuse rather than
+     * gate in the weaker float space */
+    if (cnet_vsa_gencap_encoder_id(cap) == CNET_VSA_ENCODER_LEX) {
+        char dir[1024]; snprintf(dir, sizeof(dir), "%s", capsule_path);
+        char *slash = strrchr(dir, '/'); if (slash) *slash = 0; else snprintf(dir, sizeof(dir), ".");
+        int lrc = cnet_vsa_lexicon_activate_default(dir);
+        uint32_t tag = 0; memcpy(&tag, &cap->topical.reserved1, sizeof(tag));
+        if (!cnet_vsa_lexicon_active() || cnet_vsa_lexicon_active_tag() != tag) {
+            fprintf(stderr, "Error: capsule '%s' was sealed under lexicon tag 0x%08x; %s (rc=%d). Ship registry.lex next to it or set CNET_VSA_LEXICON.\n",
+                    cap->name, tag, cnet_vsa_lexicon_active() ? "the active lexicon has another tag" : "no lexicon could be activated", lrc);
+            free(cap);
+            return;
+        }
+    }
     float intent_vec[CNET_VSA_DEFAULT_DIM];
     float *p_intent = NULL;
     if (prompt && *prompt) {
-        if (cnet_vsa_gencap_encode_intent(prompt, intent_vec, cap->ngram.dim) == 0) {
+        if (cnet_vsa_gencap_encode_intent_ex(prompt, intent_vec, cap->ngram.dim,
+                                             cnet_vsa_gencap_encoder_id(cap)) == 0) {
             p_intent = intent_vec;
         }
     }
 
+    int8_t intent_q8[CNET_VSA_TOPICAL_DIM];
+    const int8_t *p_bits = NULL;
+    if (prompt && *prompt && cap->topical.present &&
+        cnet_vsa_gencap_encode_intent_q8(prompt, intent_q8, cnet_vsa_gencap_encoder_id(cap)) == 0) {
+        p_bits = intent_q8;
+    }
+
     char out_buf[1024] = {0};
     int toks_out = 0;
-    int gen_rc = cnet_vsa_gencap_generate(cap, seed, p_intent, 0.45f,
-                                         max_tokens > 0 ? max_tokens : 28,
-                                         out_buf, sizeof(out_buf), &toks_out);
+    int gen_rc = cnet_vsa_gencap_generate_ex(cap, seed, p_intent, p_bits, 0.45f,
+                                            max_tokens > 0 ? max_tokens : 28,
+                                            out_buf, sizeof(out_buf), &toks_out);
 
     printf("=================================================================\n");
     printf(" CNET Autonomous Capsule Generation (Pure VSA, Zero LLM)\n");
@@ -959,11 +1262,278 @@ static void cmd_gencap_gen(const char *capsule_path, const char *prompt, const c
     printf("  Capsule:    %s (Domain: %s)\n", cap->name, cap->domain);
     if (prompt) printf("  Prompt:     \"%s\"\n", prompt);
     if (seed)   printf("  Seed:       \"%s\"\n", seed);
+    printf("  Gate space: %s\n", p_bits ? "wide int8 (v3 topical block)" : (p_intent ? "float-512" : "none"));
     printf("  Result:     %s\n", (gen_rc == 0) ? "SUCCESS (In-Domain)" : "REFUSED (Out-of-Domain)");
     printf("  Tokens:     %d\n", toks_out);
     printf("  Output:     \"%s\"\n\n", out_buf);
 
     free(cap);
+}
+
+/* Measurement knobs for route/auto: CNET_VSA_AMBIGUITY_K (float, 0 = off) and
+ * CNET_VSA_FORCE_FLOAT=1 (route in the float-512 space even for v3 registries). */
+static void registry_apply_env(CnetVsaGenRegistry *reg) {
+    const char *k = getenv("CNET_VSA_AMBIGUITY_K");
+    if (k && *k) { reg->ambiguity_k_wide = (float)atof(k); reg->ambiguity_k_float = (float)atof(k); }
+    const char *f = getenv("CNET_VSA_FORCE_FLOAT");
+    if (f && *f && strcmp(f, "0") != 0) reg->force_float = 1;
+    const char *t = getenv("CNET_VSA_TERM_GATE");
+    if (t && *t && strcmp(t, "0") == 0) reg->term_gate = 0;
+}
+
+/* Route one prompt against an already loaded registry and print the decision. */
+static void route_print(CnetVsaGenRegistry *reg, const char *dir, int n, const char *prompt) {
+    printf("=================================================================\n");
+    printf(" CNET Multi-Capsule Intent Router\n");
+    printf("=================================================================\n");
+    printf("  Registry Directory: %s (%d certified capsules indexed)\n", dir, n);
+    printf("  Incoming Prompt:    \"%s\"\n\n", prompt);
+
+    if (n == 0) {
+        printf("  [!] No certified .gencap files found in '%s'.\n", dir);
+        return;
+    }
+
+    printf("  Capsule Domain Match Scores (Topical Cosine Distance):\n");
+    printf("  ---------------------------------------------------------------\n");
+    CnetVsaRouteResult rr;
+    int winner = cnet_vsa_registry_route_query(reg, prompt, &rr);
+    int best_idx = rr.best_idx;
+    float best_dist = rr.best_dist;
+
+    /* Print the top 12 by similarity so large registries stay readable */
+    size_t shown = reg->count < 12 ? reg->count : 12;
+    float *sims = (float *)calloc(reg->count, sizeof(float));
+    int *order = (int *)calloc(reg->count, sizeof(int));
+    /* one query per encoder present, in the space the registry routes in */
+    int binary = cnet_vsa_registry_binary_space(reg);
+    float qv[CNET_VSA_ENCODER_COUNT][CNET_VSA_DEFAULT_DIM];
+    static int8_t qq[CNET_VSA_ENCODER_COUNT][CNET_VSA_TOPICAL_DIM];
+    float qn[CNET_VSA_ENCODER_COUNT];
+    int have[CNET_VSA_ENCODER_COUNT];
+    memset(have, 0, sizeof(have));
+    for (uint32_t k = 0; k < CNET_VSA_ENCODER_COUNT; ++k) {
+        if (binary) {
+            have[k] = (cnet_vsa_gencap_encode_intent_q8(prompt, qq[k], k) == 0);
+            qn[k] = have[k] ? cnet_vsa_text_q8_norm(qq[k]) : 0.0f;
+        } else {
+            have[k] = (cnet_vsa_gencap_encode_intent_ex(prompt, qv[k], reg->dim, k) == 0);
+        }
+    }
+    printf("  Routing space:      %s\n", binary ? "wide int8-2048 (v3 topical blocks)" : "float-512 (legacy, mixed, or forced)");
+    if (sims && order) {
+        for (size_t i = 0; i < reg->count; ++i) {
+            uint32_t enc = reg->capsules[i].encoder_id < CNET_VSA_ENCODER_COUNT ? reg->capsules[i].encoder_id : 0u;
+            if (!have[enc]) sims[i] = -2.0f;
+            else if (binary) sims[i] = cnet_vsa_text_q8_similarity_n(qq[enc], qn[enc], reg->capsules[i].topical, reg->capsules[i].topical_norm);
+            else sims[i] = cnet_vsa_similarity(qv[enc], reg->capsules[i].header.centroid, reg->dim);
+            order[i] = (int)i;
+        }
+        for (size_t a = 0; a < shown; ++a) {
+            size_t best = a;
+            for (size_t b = a + 1; b < reg->count; ++b) if (sims[order[b]] > sims[order[best]]) best = b;
+            int t = order[a]; order[a] = order[best]; order[best] = t;
+        }
+        for (size_t a = 0; a < shown; ++a) {
+            int i = order[a];
+            const char *marker = (i == winner) ? "--> [WINNER]" : "   ";
+            printf("  %s %-40s | %-14s | Dist: %.4f (Limit: %.3f%s) enc=%s\n",
+                   marker, reg->capsules[i].header.name, reg->capsules[i].header.domain,
+                   1.0f - sims[i],
+                   binary ? reg->capsules[i].topical_radius : reg->capsules[i].header.safe_radius,
+                   reg->capsules[i].header.version >= CNET_VSA_GENCAP_VERSION ? "" : " legacy",
+                   cnet_vsa_encoder_name(reg->capsules[i].encoder_id) ? cnet_vsa_encoder_name(reg->capsules[i].encoder_id) : "?");
+        }
+        if (reg->count > shown) printf("      ... %zu more capsules not shown\n", reg->count - shown);
+    }
+    free(sims); free(order);
+
+    printf("  ---------------------------------------------------------------\n");
+    printf("  Radius gate:      dist=%.4f %s limit=%.3f -> %s\n",
+           best_dist, rr.radius_ok ? "<=" : ">", rr.radius, rr.radius_ok ? "pass" : "REFUSE");
+    if (rr.margin_checked) {
+        printf("  Margin gate:      z=%.2f %s z_min=%.2f (null mean=%.4f sd=%.4f over %zu others; gap to runner-up=%.4f%s) -> %s\n",
+               rr.z, rr.margin_ok ? ">=" : "<", rr.z_min, rr.null_mean, rr.null_std, reg->count - 1,
+               rr.gap, rr.ambiguous ? ", AMBIGUOUS" : "", rr.margin_ok ? "pass" : "REFUSE");
+    } else {
+        printf("  Margin gate:      skipped (%zu other capsules < %zu minimum)\n",
+               reg->count ? reg->count - 1 : 0, reg->min_null_count);
+    }
+    float amb_k = binary ? reg->ambiguity_k_wide : reg->ambiguity_k_float;
+    if (amb_k > 0.0f && rr.margin_checked) {
+        printf("  Ambiguity gate:   gap=%.4f %s %.2f*sd=%.4f (runner-up '%s') -> %s\n",
+               rr.gap, rr.ambiguity_ok ? ">=" : "<", amb_k, amb_k * rr.null_std,
+               rr.second_idx >= 0 ? reg->capsules[rr.second_idx].header.name : "none",
+               rr.ambiguity_ok ? "pass" : "REFUSE");
+    } else {
+        printf("  Ambiguity gate:   off for this space (k=%.2f; CNET_VSA_AMBIGUITY_K overrides)\n", amb_k);
+    }
+    if (rr.term_checked) {
+        if (rr.term_words < 2)
+            printf("  Term gate:        %d content word%s (a route needs at least two) -> REFUSE\n", rr.term_words, rr.term_words == 1 ? "" : "s");
+        else if (rr.term_ok)
+            printf("  Term gate:        every leave-one-word-out query stays inside the radius (worst dist=%.4f <= %.3f over %d words) -> pass\n",
+                   rr.term_worst_dist, rr.radius, rr.term_words);
+        else
+            printf("  Term gate:        without '%s' dist=%.4f > limit=%.3f (the accept depended on one word) -> REFUSE\n",
+                   rr.term_word, rr.term_worst_dist, rr.radius);
+    } else if (binary && !reg->term_gate) {
+        printf("  Term gate:        off (CNET_VSA_TERM_GATE=0)\n");
+    }
+    if (winner >= 0) {
+        printf("  Routing Decision: DISPATCH TO '%s' [IN-DOMAIN]\n\n", reg->capsules[winner].header.name);
+    } else {
+        const char *why = (rr.status == CNET_VSA_ROUTE_REFUSE_MARGIN) ? "margin"
+                        : (rr.status == CNET_VSA_ROUTE_REFUSE_AMBIGUOUS) ? "ambiguity"
+                        : (rr.status == CNET_VSA_ROUTE_REFUSE_TERM) ? "term" : "radius";
+        printf("  Routing Decision: FAIL-CLOSED ABSTAIN (closest='%s', refused by %s gate) [OUT-OF-DOMAIN]\n\n",
+               (best_idx >= 0) ? reg->capsules[best_idx].header.name : "none", why);
+    }
+}
+
+static CnetVsaLexicon g_lexicon;
+static int g_lexicon_loaded = 0;
+
+/* CNET_VSA_LEXICON=<file> activates a learned lexicon for the LEX encoder.
+ * A bad file is fatal: a LEX capsule must never be built or routed without
+ * the exact lexicon it was calibrated in. */
+static int lexicon_apply_env(void) {
+    const char *path = getenv("CNET_VSA_LEXICON");
+    if (!path || !*path) return 0;
+    int rc = cnet_vsa_lexicon_load(&g_lexicon, path);
+    if (rc != 0) {
+        fprintf(stderr, "Error: CNET_VSA_LEXICON '%s' failed to load (rc=%d%s).\n", path, rc,
+                rc == -4 ? ": header rejected, expected version 3; rebuild the table with lexicon-build" : "");
+        return -1;
+    }
+    cnet_vsa_lexicon_set_active(&g_lexicon);
+    g_lexicon_loaded = 1;
+    return 0;
+}
+
+static int cmd_lexicon_build(int argc, char **argv) {
+    if (argc < 2) {
+        fprintf(stderr, "Usage: lexicon-build <corpus_dir> <out.lex> [--beta 0.5] [--window 3] [--nnz 16] [--min-count 2] [--max-vocab 16384] [--reflective 0]\n"
+                        "                     [--remove-pcs 0] [--distilled <file.dstl> --distill-alpha 0.5] [--idf-floor 0.25] [--idf-power 1.0]\n"
+                        "                     [--phrases 0 --phrase-min-count 3 --phrase-weight 1.0] [--subwords 0 --subword-min-n 3 --subword-max-n 5 --subword-min-words 4 --subword-max-words 5%%vocab --subword-weight 1.0]\n"
+                        "                     [--vocab-dump <tsv>]\n");
+        return 1;
+    }
+    CnetVsaLexiconBuildOpts o;
+    cnet_vsa_lexicon_build_opts_default(&o);
+    for (int i = 2; i + 1 < argc; i += 2) {
+        if (strcmp(argv[i], "--beta") == 0) o.beta = (float)atof(argv[i + 1]);
+        else if (strcmp(argv[i], "--window") == 0) o.window = (uint32_t)atoi(argv[i + 1]);
+        else if (strcmp(argv[i], "--nnz") == 0) o.nnz = (uint32_t)atoi(argv[i + 1]);
+        else if (strcmp(argv[i], "--min-count") == 0) o.min_count = (uint32_t)atoi(argv[i + 1]);
+        else if (strcmp(argv[i], "--max-vocab") == 0) o.max_vocab = (uint32_t)atoi(argv[i + 1]);
+        else if (strcmp(argv[i], "--reflective") == 0) o.reflective = (uint32_t)atoi(argv[i + 1]);
+        else if (strcmp(argv[i], "--max-df") == 0) o.max_df = (float)atof(argv[i + 1]);
+        else if (strcmp(argv[i], "--center") == 0) o.center = (uint32_t)atoi(argv[i + 1]);
+        else if (strcmp(argv[i], "--remove-pcs") == 0) o.remove_pcs = (uint32_t)atoi(argv[i + 1]);
+        else if (strcmp(argv[i], "--distilled") == 0) o.distilled = argv[i + 1];
+        else if (strcmp(argv[i], "--distill-alpha") == 0) o.distill_alpha = (float)atof(argv[i + 1]);
+        else if (strcmp(argv[i], "--idf-floor") == 0) o.idf_floor = (float)atof(argv[i + 1]);
+        else if (strcmp(argv[i], "--idf-power") == 0) o.idf_power = (float)atof(argv[i + 1]);
+        else if (strcmp(argv[i], "--phrases") == 0) o.max_phrases = (uint32_t)atoi(argv[i + 1]);
+        else if (strcmp(argv[i], "--phrase-min-count") == 0) o.phrase_min_count = (uint32_t)atoi(argv[i + 1]);
+        else if (strcmp(argv[i], "--phrase-weight") == 0) o.phrase_weight = (float)atof(argv[i + 1]);
+        else if (strcmp(argv[i], "--subwords") == 0) o.max_subwords = (uint32_t)atoi(argv[i + 1]);
+        else if (strcmp(argv[i], "--subword-min-n") == 0) o.subword_min_n = (uint32_t)atoi(argv[i + 1]);
+        else if (strcmp(argv[i], "--subword-max-n") == 0) o.subword_max_n = (uint32_t)atoi(argv[i + 1]);
+        else if (strcmp(argv[i], "--subword-min-words") == 0) o.subword_min_words = (uint32_t)atoi(argv[i + 1]);
+        else if (strcmp(argv[i], "--subword-max-words") == 0) o.subword_max_words = (uint32_t)atoi(argv[i + 1]);
+        else if (strcmp(argv[i], "--subword-weight") == 0) o.subword_weight = (float)atof(argv[i + 1]);
+        else if (strcmp(argv[i], "--vocab-dump") == 0) o.vocab_dump = argv[i + 1];
+        else { fprintf(stderr, "Error: unknown option '%s'.\n", argv[i]); return 1; }
+    }
+    CnetVsaLexiconBuildReport rep;
+    int rc = cnet_vsa_lexicon_build(argv[0], &o, argv[1], &rep);
+    if (rc != 0) { fprintf(stderr, "Error: lexicon build failed (rc=%d).\n", rc); return 2; }
+    CnetVsaLexicon lex;
+    if (cnet_vsa_lexicon_load(&lex, argv[1]) != 0) { fprintf(stderr, "Error: built lexicon does not verify.\n"); return 3; }
+    printf("=================================================================\n");
+    printf(" CNET Learned Lexicon Built (Random Indexing, sparse sweep)\n");
+    printf("=================================================================\n");
+    printf("  Corpus dir:        %s (%llu files, %llu sentences, %llu content tokens, %llu distinct)\n",
+           argv[0], (unsigned long long)rep.files, (unsigned long long)rep.sentences,
+           (unsigned long long)rep.tokens, (unsigned long long)rep.distinct);
+    printf("  Vocabulary:        %u words + %u phrases (min count %u, cap %u; phrase min count %u)\n", lex.hdr.count - lex.hdr.phrases, lex.hdr.phrases, o.min_count, o.max_vocab, lex.hdr.phrase_min_count);
+    printf("  Subwords:          %u character n-grams (n %u..%u, in >= %u words) for unknown-word composition\n", lex.hdr.subwords, lex.hdr.subword_min_n, lex.hdr.subword_max_n, lex.hdr.subword_min_words);
+    printf("  Parameters:        window %u, nnz %u, beta %.2f, reflective %u, max-df %.2f, center %u, remove-pcs %u, distilled %u keys (alpha %.2f)\n", o.window, o.nnz, o.beta, o.reflective, o.max_df, o.center, o.remove_pcs, lex.hdr.distilled, lex.hdr.distill_alpha);
+    printf("  Sweep time:        %.3f s\n", rep.sweep_seconds);
+    printf("  Scale:             global %.3f, identity-only magnitude %u\n", lex.hdr.global_scale, lex.hdr.fallback_mag);
+    printf("  Table size:        %zu bytes\n", sizeof(CnetVsaLexiconHeader) + (size_t)lex.hdr.count * sizeof(CnetVsaLexiconEntry) + (size_t)lex.hdr.subwords * sizeof(CnetVsaLexiconSubword));
+    printf("  Digest:            0x%016llx (tag 0x%08x)\n", (unsigned long long)lex.hdr.digest, (unsigned)(lex.hdr.digest & 0xffffffffu));
+    printf("  Output File:       %s\n\n", argv[1]);
+    cnet_vsa_lexicon_free(&lex);
+    return 0;
+}
+
+/* stem-words: one token per stdin line -> "token<TAB>stem<TAB>stop<TAB>key_hex"
+ * using the runtime's exact stopword rule, stemmer and key hash, so external
+ * tools (the distiller) build vocabularies the LEX encoder will actually hit. */
+static int cmd_stem_words(void) {
+    char line[256];
+    while (fgets(line, sizeof(line), stdin)) {
+        line[strcspn(line, "\r\n")] = 0;
+        if (!*line) continue;
+        char stem[CNET_VSA_TOKEN_LEN];
+        snprintf(stem, sizeof(stem), "%s", line);
+        cnet_vsa_text_stem(stem);
+        printf("%s\t%s\t%d\t%016llx\n", line, stem, cnet_vsa_text_is_stopword(line),
+               (unsigned long long)cnet_vsa_lexicon_word_key(line));
+    }
+    return 0;
+}
+
+/* lexicon-train: supervised pass over (capsule name, question) pairs; the
+ * capsule's corpus centroid is the target. Writes a new table with a receipt. */
+static int cmd_lexicon_train(int argc, char **argv) {
+    if (argc < 4) {
+        fprintf(stderr, "Usage: lexicon-train <in.lex> <out.lex> <corpus_dir> <pairs.tsv> [--epochs 8] [--lr 0.05] [--margin 0.10] [--seed N] [--sentences 0]\n"
+                        "       pairs.tsv lines: <corpus name>\\t<question>, name = <name>_corpus.txt under corpus_dir\n");
+        return 1;
+    }
+    CnetVsaLexiconTrainOpts o;
+    cnet_vsa_lexicon_train_opts_default(&o);
+    for (int i = 4; i + 1 < argc; i += 2) {
+        if (strcmp(argv[i], "--epochs") == 0) o.epochs = (uint32_t)atoi(argv[i + 1]);
+        else if (strcmp(argv[i], "--lr") == 0) o.lr = (float)atof(argv[i + 1]);
+        else if (strcmp(argv[i], "--margin") == 0) o.margin = (float)atof(argv[i + 1]);
+        else if (strcmp(argv[i], "--seed") == 0) o.seed = strtoull(argv[i + 1], NULL, 0);
+        else if (strcmp(argv[i], "--sentences") == 0) o.sentences_per_corpus = (uint32_t)atoi(argv[i + 1]);
+        else { fprintf(stderr, "Error: unknown option '%s'.\n", argv[i]); return 1; }
+    }
+    CnetVsaLexiconTrainReport rep;
+    int rc = cnet_vsa_lexicon_train(argv[0], argv[1], argv[2], argv[3], &o, &rep);
+    if (rc != 0) { fprintf(stderr, "Error: lexicon training failed (rc=%d).\n", rc); return 2; }
+    CnetVsaLexicon lex;
+    if (cnet_vsa_lexicon_load(&lex, argv[1]) != 0) { fprintf(stderr, "Error: trained lexicon does not verify.\n"); return 3; }
+    printf("=================================================================\n");
+    printf(" CNET Learned Lexicon Trained (question -> capsule contract pairs)\n");
+    printf("=================================================================\n");
+    printf("  Pairs:             %u questions + %u corpus sentences over %u corpora, %u epochs, lr %.3f, margin %.3f\n", rep.pairs, rep.sentence_pairs, rep.corpora, rep.epochs, o.lr, o.margin);
+    printf("  Terms moved:       %u of %u entries\n", rep.terms_touched, lex.hdr.count);
+    printf("  Train top-1:       %.1f%% -> %.1f%% (on the training pairs; a sanity number, not a result)\n", 100.0 * rep.train_top1_before, 100.0 * rep.train_top1_after);
+    printf("  Time:              %.1f s\n", rep.seconds);
+    printf("  Digest:            0x%016llx (tag 0x%08x)\n", (unsigned long long)lex.hdr.digest, (unsigned)(lex.hdr.digest & 0xffffffffu));
+    printf("  Output File:       %s\n\n", argv[1]);
+    cnet_vsa_lexicon_free(&lex);
+    return 0;
+}
+
+static int cmd_lexicon_info(const char *path) {
+    CnetVsaLexicon lex;
+    int rc = cnet_vsa_lexicon_load(&lex, path);
+    if (rc != 0) { printf("  Lexicon '%s': FAILED to verify (rc=%d)\n", path, rc); return 1; }
+    printf("  Lexicon:           %s\n  Words:             %u (+ %u phrases)\n  Subwords:          %u\n  Dim:               %u\n  Window/nnz/beta:   %u / %u / %.2f (reflective %u, PCs removed %u, distilled %u keys alpha %.2f)\n  Trained:           %u pairs, %u epochs, lr %.3f, margin %.3f\n  Sentences/tokens:  %llu / %llu\n  Digest:            0x%016llx (tag 0x%08x)\n  Verdict:           LEXICON_AUTHENTIC [PASS]\n",
+           path, lex.hdr.count - lex.hdr.phrases, lex.hdr.phrases, lex.hdr.subwords, lex.hdr.dim, lex.hdr.window, lex.hdr.nnz, lex.hdr.beta, lex.hdr.reflective,
+           lex.hdr.remove_pcs, lex.hdr.distilled, lex.hdr.distill_alpha, lex.hdr.trained_pairs, lex.hdr.train_epochs, lex.hdr.train_lr, lex.hdr.train_margin,
+           (unsigned long long)lex.hdr.sentences, (unsigned long long)lex.hdr.tokens,
+           (unsigned long long)lex.hdr.digest, (unsigned)(lex.hdr.digest & 0xffffffffu));
+    cnet_vsa_lexicon_free(&lex);
+    return 0;
 }
 
 static void cmd_route(const char *dir_path, const char *prompt) {
@@ -973,45 +1543,35 @@ static void cmd_route(const char *dir_path, const char *prompt) {
         return;
     }
     cnet_vsa_registry_init(reg, CNET_VSA_DEFAULT_DIM);
+    registry_apply_env(reg);
     const char *dir = (dir_path && *dir_path) ? dir_path : "bin";
     int n = cnet_vsa_registry_load_dir(reg, dir);
+    route_print(reg, dir, n, prompt);
+    free(reg);
+}
 
-    printf("=================================================================\n");
-    printf(" CNET Multi-Capsule Intent Router\n");
-    printf("=================================================================\n");
-    printf("  Registry Directory: %s (%d certified capsules indexed)\n", dir, n);
-    printf("  Incoming Prompt:    \"%s\"\n\n", prompt);
-
-    if (n == 0) {
-        printf("  [!] No certified .gencap files found in '%s'.\n", dir);
-        free(reg);
+/* Same output as `route`, one block per stdin line, with the registry loaded
+ * and verified once. Blocks are separated by a "=== QUERY <k> ===" line so
+ * tools can split them; an empty input line is skipped. */
+static void cmd_route_batch(const char *dir_path) {
+    CnetVsaGenRegistry *reg = (CnetVsaGenRegistry *)calloc(1, sizeof(CnetVsaGenRegistry));
+    if (!reg) {
+        fprintf(stderr, "Error: out of memory allocating registry.\n");
         return;
     }
-
-    float query_vec[CNET_VSA_DEFAULT_DIM];
-    cnet_vsa_gencap_encode_intent(prompt, query_vec, reg->dim);
-
-    printf("  Capsule Domain Match Scores (Topical Cosine Distance):\n");
-    printf("  ---------------------------------------------------------------\n");
-    int best_idx = -1;
-    float best_dist = 1.0f;
-    int winner = cnet_vsa_registry_route(reg, query_vec, &best_idx, &best_dist);
-
-    for (size_t i = 0; i < reg->count; ++i) {
-        float sim = cnet_vsa_similarity(query_vec, reg->capsules[i].header.centroid, reg->dim);
-        float d = 1.0f - sim;
-        const char *marker = ((int)i == winner) ? "--> [WINNER]" : "   ";
-        printf("  %s %-26s | Domain: %-14s | Dist: %.4f (Limit: %.3f)\n",
-               marker, reg->capsules[i].header.name, reg->capsules[i].header.domain, d, reg->capsules[i].header.safe_radius);
-    }
-
-    printf("  ---------------------------------------------------------------\n");
-    if (winner >= 0) {
-        printf("  Routing Decision: DISPATCH TO '%s' (dist=%.4f <= %.3f) [IN-DOMAIN]\n\n",
-               reg->capsules[winner].header.name, best_dist, reg->capsules[winner].header.safe_radius);
-    } else {
-        printf("  Routing Decision: FAIL-CLOSED ABSTAIN (closest='%s', dist=%.4f > limit) [OUT-OF-DOMAIN]\n\n",
-               (best_idx >= 0) ? reg->capsules[best_idx].header.name : "none", best_dist);
+    cnet_vsa_registry_init(reg, CNET_VSA_DEFAULT_DIM);
+    registry_apply_env(reg);
+    const char *dir = (dir_path && *dir_path) ? dir_path : "bin";
+    int n = cnet_vsa_registry_load_dir(reg, dir);
+    char line[4096];
+    long k = 0;
+    while (fgets(line, sizeof(line), stdin)) {
+        size_t len = strlen(line);
+        while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r')) line[--len] = '\0';
+        if (len == 0) continue;
+        printf("=== QUERY %ld ===\n", ++k);
+        route_print(reg, dir, n, line);
+        fflush(stdout);
     }
     free(reg);
 }
@@ -1023,6 +1583,7 @@ static void cmd_auto(const char *dir_path, const char *prompt) {
         return;
     }
     cnet_vsa_registry_init(reg, CNET_VSA_DEFAULT_DIM);
+    registry_apply_env(reg);
     const char *dir = (dir_path && *dir_path) ? dir_path : "bin";
     int n = cnet_vsa_registry_load_dir(reg, dir);
 
@@ -1211,10 +1772,11 @@ static void run_repl(CliState *s) {
             const char *se = (r_argc >= 4) ? r_argv[3] : "forest";
             cmd_ngram_gen(s, sd, hr, se);
         } else if (strcmp(cmd, "gencap-create") == 0) {
-            if (r_argc >= 5) {
-                cmd_gencap_create(r_argv[1], r_argv[2], r_argv[3], r_argv[4]);
+            GencapCreateOpts o; gencap_create_opts_default(&o);
+            if (r_argc >= 5 && gencap_create_opts_parse(&o, r_argc - 5, r_argv + 5) == 0) {
+                cmd_gencap_create(r_argv[1], r_argv[2], r_argv[3], r_argv[4], &o);
             } else {
-                printf("Usage: gencap-create <name> <domain> <corpus.txt> <output.gencap>\n");
+                printf("Usage: gencap-create <name> <domain> <corpus.txt> <output.gencap> [--encoder hd|bag] [--probes f] [--negatives f|dir] [--target-in 0.90] [--target-neg 0.95]\n");
             }
         } else if (strcmp(cmd, "gencap-verify") == 0) {
             if (r_argc >= 2) {
@@ -1231,6 +1793,8 @@ static void run_repl(CliState *s) {
             } else {
                 printf("Usage: gencap-gen <file.gencap> [prompt] [seed] [max_tokens]\n");
             }
+        } else if (strcmp(cmd, "route-batch") == 0) {
+            cmd_route_batch(r_argc >= 2 ? r_argv[1] : "bin");
         } else if (strcmp(cmd, "route") == 0) {
             if (r_argc >= 3) {
                 cmd_route(r_argv[1], r_argv[2]);
@@ -1256,6 +1820,7 @@ static void run_repl(CliState *s) {
 }
 
 int main(int argc, char **argv) {
+    if (lexicon_apply_env() != 0) return 1;
     /* This CPU-only operator needs no GPU, document store, or capsule allocation. */
     if(argc>1&&!strcmp(argv[1],"explain-facts"))return cmd_explain_facts(argc-2,argv+2);
     const char *dev_override = NULL;
@@ -1341,10 +1906,15 @@ int main(int argc, char **argv) {
         const char *se = (arg_offset + 3 < argc) ? argv[arg_offset + 3] : "forest";
         cmd_ngram_gen(&state, sd, hr, se);
     } else if (strcmp(cmd, "gencap-create") == 0) {
-        if (arg_offset + 4 < argc) {
-            cmd_gencap_create(argv[arg_offset + 1], argv[arg_offset + 2], argv[arg_offset + 3], argv[arg_offset + 4]);
+        GencapCreateOpts o; gencap_create_opts_default(&o);
+        if (arg_offset + 4 < argc &&
+            gencap_create_opts_parse(&o, argc - (arg_offset + 5), argv + arg_offset + 5) == 0) {
+            return cmd_gencap_create(argv[arg_offset + 1], argv[arg_offset + 2], argv[arg_offset + 3],
+                                     argv[arg_offset + 4], &o);
         } else {
-            fprintf(stderr, "Usage: %s gencap-create <name> <domain> <corpus.txt> <output.gencap>\n", argv[0]);
+            fprintf(stderr, "Usage: %s gencap-create <name> <domain> <corpus.txt> <output.gencap> "
+                            "[--encoder hd|bag] [--probes f] [--negatives f|dir] [--target-in 0.90] [--target-neg 0.95] [--max-negatives 512]\n", argv[0]);
+            return 1;
         }
     } else if (strcmp(cmd, "gencap-verify") == 0) {
         if (arg_offset + 1 < argc) {
@@ -1361,6 +1931,18 @@ int main(int argc, char **argv) {
         } else {
             fprintf(stderr, "Usage: %s gencap-gen <file.gencap> [prompt] [seed] [max_tokens]\n", argv[0]);
         }
+    } else if (strcmp(cmd, "lexicon-build") == 0) {
+        return cmd_lexicon_build(argc - (arg_offset + 1), argv + arg_offset + 1);
+    } else if (strcmp(cmd, "stem-words") == 0) {
+        return cmd_stem_words();
+    } else if (strcmp(cmd, "lexicon-train") == 0) {
+        return cmd_lexicon_train(argc - (arg_offset + 1), argv + arg_offset + 1);
+    } else if (strcmp(cmd, "lexicon-info") == 0) {
+        if (arg_offset + 1 < argc) return cmd_lexicon_info(argv[arg_offset + 1]);
+        fprintf(stderr, "Usage: %s lexicon-info <file.lex>\n", argv[0]);
+        return 1;
+    } else if (strcmp(cmd, "route-batch") == 0) {
+        cmd_route_batch(arg_offset + 1 < argc ? argv[arg_offset + 1] : "bin");
     } else if (strcmp(cmd, "route") == 0) {
         if (arg_offset + 2 < argc) {
             cmd_route(argv[arg_offset + 1], argv[arg_offset + 2]);

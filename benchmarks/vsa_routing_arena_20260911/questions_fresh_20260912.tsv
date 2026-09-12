@@ -1,0 +1,93 @@
+# Post-freeze question set. Written 2026-09-12 by Claude (the assistant), NOT by a human, after frozen_model.json was
+# recorded and without consulting any table or routing output. Style is deliberately unlike the teacher's: colloquial,
+# indirect, typos, key terms avoided where possible; the second half targets the distinguishing responsibility of
+# each side of a confusable sibling pair. A human-written set goes in questions_human.tsv in the same format.
+# name<TAB>question
+cnet_vsa_core	if i smash a bunch of hypervectors together by just adding them, what do i get and why does it still kinda work?
+squeeze_out_defect_quantification	my bonded stack has goo pushed out at the edges and tiny voids in it, how bad is that and how do ppl put a number on it
+high_voltage_engineering	that buzzing purple glow on power lines at night, whats going on there and when does it start
+digital_image_correlation	comparing two photos of a part before and after load to get strain, how does the software find where each speckle moved
+biochemical_pathway_analysis	is there a way to break a big metabolic network into the smallest routes that can each run on their own
+thermodynamics_and_heat_transfer	can i treat the layers of my wall like resistors in series to get the heat loss thru it
+concrete_fracture_mechanics	how do engineers put a number on how close a crack in a concrete beam is to running away
+green_infrastructure	parking lot pavement that lets rain soak thru, how is it built underneath so it doesnt collapse
+computational_thermal_analysis	in my furnace sim the radiation part dominates, how do the codes handle heat carried by light between hot surfaces
+total_internal_reflection_imaging	microscope trick where light bounces at the glass and only lights up a super thin layer near the coverslip, how does the angle work
+supercritical_flow_transition	when a fluid gets close to that point where liquid and gas stop being different, what happens to the gas law correction factor
+ceramic_microstructure_property_relationships	if i mix more of a second phase into a ceramic does its thermal expansion just average out
+compartment_fire_dynamics	why does a room full of heavy furniture heat up slower in a fire than one with light stuff
+phloem_translocation	how does sugar get pulled out of the plant's sap tubes into the cells that need it, is there a pump
+unsaturated_soil_mechanics	damp soil above the water table seems stronger than soaked soil, what's the suction thing about
+caravan_trade_and_caravan_management	how did the people running desert camel convoys decide which route to take and when to leave
+surface_roughness_metrology	when a stylus drags across a surface to measure roughness does the tip squish the sample and mess up the reading
+waterjet_cutting_and_high_pressure_fluid_dynamics	how does the sand get sucked into the water stream in an abrasive water cutter
+cuticular_permeability_regulation	what keeps a bug's outer shell from letting water out, and whats the scaffold made of
+thermodynamics	entropy as counting microstates, can someone explain that in plain words
+structural_dynamics	the footbridge wobbles when people walk in step, what frequency is it hitting
+complex_refractive_index_analysis	refractive index has a real and an imaginary part, what does each one physically mean for light going thru
+explosion_proof_electrical_equipment	electrical gear in a gas plant that cant spark or get hot enough to set off fumes, what are the rules
+industrial_vision_systems_for_part_alignment	cameras on the assembly line that check if a part is sitting straight before the robot grabs it
+domain_wall_engineering	chirality of domain walls in super thin magnetic films and that DMI thing, how are they linked
+cutting_tool_geometry	does changing the clearance angle on a lathe tool change how the chip shears off
+inorganic_salt_decomposition_kinetics	heating a salt til it breaks down, how do you know which in-between compounds show up at which temp
+landau_theory_of_phase_transitions	why does the simple mean field picture of a phase transition break in low dimensions, something about a quartic term
+phase_transfer_catalysis	reaction between stuff in water and stuff in oil with a catalyst shuttling between, how hard do you need to stir
+finite_field_arithmetic	that bilinear pairing on elliptic curve torsion points, what properties does it have
+optical_coherence_tomography	eye scanner that images retina layers with light interference, how does it get such fine depth resolution
+elastic_strain_energy_modeling	getting stresses by differentiating an energy function, whats the function called
+fluid_dynamics_and_pump_theory	reading a pump's head vs flow chart, what does it actually tell me
+hydrology	more concrete in a city means more flash flooding, whats the mechanism
+surface_reconstruction_techniques	why do atoms at a crystal surface rearrange differently from the bulk
+damage_mechanics	modelling a material that gradually loses stiffness as it gets damaged, how is the degradation put into the constitutive law
+masonry_joint_troweling	how wide and deep should the mortar gap between bricks be when im pointing them
+open_channel_flow_analysis	in a canal what's the depth where the water has the least energy for a given flow
+ceramic_kiln_design	designing a kiln controller that predicts the temperature across the floor from pyrometers on the roof
+boundary_layer_theory	how does the thickness of the slow layer of air next to a wing grow along the surface in smooth flow
+customary_obligation_enforcement	what do you have to show to prove a village custom counts as a binding duty, like how long it has been going on
+customary_law_jurisprudence	who actually decides disputes under traditional law, the elders or the priests, and on what matters
+b_tree_index_maintenance	why do database index pages need fixed sizes and why are the leaf pages chained together
+relational_database_b_tree_indexing	when i run a BETWEEN query how does the engine use the index to find the starting row
+bundle_adjustment	with a single camera you cant tell how big the scene is, why doesnt the optimisation fix that
+photogrammetry	the least squares step that lines up the photos with the 3d points, what is it minimising
+computer_numerical_control_machining	how does a cnc mill know its axis actually went where it was told
+woodworking_joinery_techniques	gluing wood end to end vs along the grain, which holds and why does humidity matter
+kiln_atmosphere_control_and_redox_chemistry	how is the gas fed into a kiln so the atmosphere is the same everywhere inside
+ceramic_kiln_operation	what are kiln walls made of and how does the thing actually get hot
+laser_beam_propagation_analysis	how far from the waist does a laser beam spread out by root two, and what sets the divergence
+laser_scanning_profilometry	the scanner that reads surface height with a laser, how does it ignore the room light
+masonry_joint_troweling	when filling brick joints with the trowel how deep should i push the mortar in
+masonry_joint_design	spec tolerance on brick joint width in millimetres for a design drawing
+stone_cutting_and_dressing	clamping a stone block on the saw table before cutting, whats the workflow
+masonry_and_stone_cutting	how does a diamond wire saw actually eat thru rock
+thermal_stress_modeling_in_ceramics	when a ceramic changes crystal phase during cooling where does the internal stress come from
+ceramic_thermal_shock_resistance	smaller grains and fewer pores make a pot survive a sudden chill better, why
+topological_graph_theory	which two graphs are the reason a network can't be drawn flat without crossings
+graph_subdivision_and_contraction	splitting every edge of a graph by putting a new node in the middle, what's that operation called
+arterial_wall_mechanics	how do the muscle cells in an artery wall change its stiffness on the fly
+vascular_anatomy	layers of a big elastic artery wall, whats in the inner one vs the middle one
+atom_probe_tomography	ripping atoms off a needle tip with a pulsed voltage, why does the field get so strong at the apex
+electron_microprobe_analysis	setting up an electron microprobe session, what do you let stabilise first and what spot size
+austenite_stabilization_mechanisms	why does adding titanium or vanadium make it harder to keep austenite around
+austenite_stabilization	how do carbon and nitrogen keep austenite from turning into martensite below the transformation temp
+automata_theory	the rule table of a turing machine, what does one entry tell the machine to do
+formal_language_theory	parsing any context free grammar in cubic time with dynamic programming, what's the algorithm and what form does the grammar need
+bulk_flow_theory	splitting a turbulent velocity into a mean and a wiggle and getting an extra stress term out of it
+aerodynamic_boundary_layer_theory	displacement thickness, what does it actually measure about the flow near the wall
+ceramic_firing_protocols	letting oxygen in during firing to turn the iron in the glass from one form to another
+ceramic_body_sintering	does heating a ceramic faster during sintering give bigger or smaller grains
+ceramic_kiln_design	where do you mount the pyrometers in a kiln and what does the predictive controller do with them
+kiln_thermodynamics	how many insulation layers does a kiln need and what does each layer do against heat loss
+composite_materials_manufacturing	resin too thick wont get thru the fibres, too runny and it gels wrong, how do you balance the temperature
+composite_material_processing	fibres line up along the flow when the resin shear-thins, why
+computational_heat_transfer	upwind vs central differencing for convection dominated flow, which is stable and which one smears
+fluid_dynamics_and_heat_transfer_analysis	continuity equation and navier stokes in words, what does each one conserve
+computer_graphics_rendering	object space to clip space to normalised device coords, which stage does what on the gpu
+computer_graphics	path tracing vs ray tracing, whats the difference in how the light bounces are handled
+critical_phenomena	the alpha exponent for specific heat near the critical temperature, how is it defined
+critical_exponents_and_scaling_relations	why are all the critical exponents tied together by just a couple of numbers
+dielectric_polarization_and_ferroelectric_switching	what does an applied field do to the dipoles in a ferroelectric crystal, a torque or something
+ferroelectric_memory_storage	how does the domain wall move when you write a bit into ferroelectric memory
+dislocation_dynamics_and_plasticity	forest hardening, dislocations getting stuck on other dislocations crossing their plane
+dislocation_dynamics_and_plasticity_theory	peach koehler force on a dislocation from other dislocations far away
+electromagnetic_geophysics	cleaning up EM survey data, filtering out powerline and telluric noise before interpretation
+electromagnetic_induction_surveying	a changing magnetic field makes a current in the receiver coil, faraday's law in a ground survey

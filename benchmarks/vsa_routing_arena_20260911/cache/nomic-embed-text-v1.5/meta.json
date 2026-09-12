@@ -1,0 +1,32 @@
+{
+  "model": "nomic-embed-text-v1.5",
+  "dims": 768,
+  "corpora": 1068,
+  "doc_prefix": "",
+  "query_prefix": "",
+  "fixture_sha256": {
+    "corpora.tsv": "6638bd60dc6e04b9d2903435f8ae310f9e8ee594b71d1011adef79811f80e497",
+    "questions.tsv": "066a6bf692dafbd9418e426f25092796302b398b31be0b238fda4649517ea11a"
+  },
+  "test_sentences": {
+    "n": 2136,
+    "top1": 0.28651685393258425,
+    "top3": 0.4499063670411985,
+    "margin": 0.011091568507254124
+  },
+  "questions": {
+    "n": 5258,
+    "top1": 0.4705211106884747,
+    "top3": 0.6749714720426018,
+    "margin": 0.016091734170913696
+  },
+  "null_sd": 0.04077974334359169,
+  "in_domain_mean_cos": 0.8153643608093262,
+  "aliens": {
+    "n": 12,
+    "best_cos_mean": 0.6344941258430481,
+    "z_mean": 3.8586251735687256
+  },
+  "timings_s": {},
+  "total_s": 4.718203783035278
+}

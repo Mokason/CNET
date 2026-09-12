@@ -1,0 +1,110 @@
+{
+  "model": "qwen3-embedding-4b",
+  "dims": 2560,
+  "corpora": 1068,
+  "doc_prefix": "",
+  "query_prefix": "",
+  "fixture_sha256": {
+    "corpora.tsv": "6638bd60dc6e04b9d2903435f8ae310f9e8ee594b71d1011adef79811f80e497",
+    "questions.tsv": "066a6bf692dafbd9418e426f25092796302b398b31be0b238fda4649517ea11a"
+  },
+  "test_sentences": {
+    "n": 2136,
+    "top1": 0.37640449438202245,
+    "top3": 0.5683520599250936,
+    "margin": 0.03259608894586563,
+    "top1_lenient": 0.37640449438202245
+  },
+  "questions": {
+    "n": 5258,
+    "top1": 0.5604792696842906,
+    "top3": 0.7816660327120578,
+    "margin": 0.04369151219725609,
+    "top1_lenient": 0.5604792696842906
+  },
+  "separability": {
+    "0.90/0.95": {
+      "count": 512,
+      "fraction": 0.4794007490636704
+    },
+    "0.80/0.90": {
+      "count": 960,
+      "fraction": 0.898876404494382
+    },
+    "0.70/0.90": {
+      "count": 1049,
+      "fraction": 0.9822097378277154
+    }
+  },
+  "null_sd": 0.07869512587785721,
+  "in_domain_mean_cos": 0.6585626006126404,
+  "aliens": {
+    "n": 12,
+    "best_cos_mean": 0.3610433042049408,
+    "z_mean": 4.957152843475342
+  },
+  "timings_s": {},
+  "questions_extra:questions_fresh_20260912.tsv": {
+    "n": 88,
+    "top1": 0.4772727272727273,
+    "top3": 0.75,
+    "margin": 0.02883157692849636,
+    "top1_lenient": 0.48863636363636365,
+    "source": "benchmarks/vsa_routing_arena_20260911/questions_fresh_20260912.tsv",
+    "sha256": "6fc5a7d8e25d5fa73f9bf932d3645b1837b2d64316f6901fe1043f51e9930978"
+  },
+  "questions_extra:questions_colloquial_eval.tsv": {
+    "n": 1877,
+    "top1": 0.49440596696856687,
+    "top3": 0.7245604688332445,
+    "margin": 0.03229009732604027,
+    "top1_lenient": 0.5039957378795951,
+    "source": "benchmarks/vsa_routing_arena_20260911/questions_colloquial_eval.tsv",
+    "sha256": "8489be64742560fffb18bdef7059a9a69350dbda62ad292f18ac953b175edd04"
+  },
+  "questions_extra:questions_contrast_eval.tsv": {
+    "n": 549,
+    "top1": 0.3205828779599271,
+    "top3": 0.6794171220400729,
+    "margin": 0.022332848981022835,
+    "top1_lenient": 0.33697632058287796,
+    "source": "benchmarks/vsa_routing_arena_20260911/questions_contrast_eval.tsv",
+    "sha256": "371691e25b28618ac9703815e92109fa0f6f020df2a4748b200736d5740c85b3"
+  },
+  "questions_extra:questions_indep_mistral_20260912.tsv": {
+    "n": 773,
+    "top1": 0.2755498059508409,
+    "top3": 0.4398447606727037,
+    "margin": 0.022228071466088295,
+    "top1_lenient": 0.34411384217335056,
+    "source": "benchmarks/vsa_routing_arena_20260911/questions_indep_mistral_20260912.tsv",
+    "sha256": "084175437b1b1ef1117daf745308e87f6226134ebd8de336695b13ede9ad1827"
+  },
+  "questions_extra:questions_indep_mistral_mid_20260912.tsv": {
+    "n": 400,
+    "top1": 0.375,
+    "top3": 0.575,
+    "margin": 0.029182806611061096,
+    "top1_lenient": 0.4475,
+    "source": "benchmarks/vsa_routing_arena_20260911/questions_indep_mistral_mid_20260912.tsv",
+    "sha256": "2cde5901f46492353fd9f35e89fc277db2936672ad97b954fa8fb58c37ad0851"
+  },
+  "questions_extra:questions_eval_mistral_everyday.tsv": {
+    "n": 600,
+    "top1": 0.24166666666666667,
+    "top3": 0.4033333333333333,
+    "margin": 0.023954400792717934,
+    "top1_lenient": 0.33,
+    "source": "benchmarks/vsa_routing_arena_20260911/questions_eval_mistral_everyday.tsv",
+    "sha256": "f2fa72270ba134db550bf10254dc6e657161f08b2a9eb7d88c50502764128e0c"
+  },
+  "questions_extra:questions_eval_gemma_everyday.tsv": {
+    "n": 600,
+    "top1": 0.3,
+    "top3": 0.49,
+    "margin": 0.025958001613616943,
+    "top1_lenient": 0.38666666666666666,
+    "source": "benchmarks/vsa_routing_arena_20260911/questions_eval_gemma_everyday.tsv",
+    "sha256": "ddddc8c798852cb2f2c89e9065bcdbfd5039fb53bdddc4b13f54e8cc950db686"
+  }
+}

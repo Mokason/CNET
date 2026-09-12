@@ -1,0 +1,81 @@
+{
+  "fixture": "benchmarks/vsa_routing_arena_20260911",
+  "fixture_fnv1a": {"corpora.tsv": "0x31c30ff13bc494b6", "questions.tsv": "0x14342a9c91f57041"},
+  "corpora": 1068, "test_sentences_n": 2136, "questions_n": 5258, "aliens_n": 12,
+  "lexicon": {"words": 10795, "beta": 0.50, "remove_pcs": 4, "build_ms": 1767.5, "digest": "0x5dca9fd4b4a44ca6", "table_bytes": 22281056},
+  "lexicon_distilled": {"source": "var/arena_cache/cnet/arena_distilled.dstl", "keys": 10795, "alpha": 0.50, "beta": 1.00, "remove_pcs": 16, "build_ms": 5381.7, "digest": "0x1c2b591f5503e600"},
+  "lexicon_full": {"words": 11542, "phrases": 8192, "subwords": 10067, "distilled": 10795, "build_corpus_extra": "benchmarks/vsa_routing_arena_20260911/questions_train_v2.tsv", "build_ms": 9913.0, "table_bytes": 43469376, "digest": "0x6ce3ba9f1d20e2c3"},
+  "lexicon_trained": {"pairs": 15692, "sentence_pairs": 17088, "epochs": 8, "lr": 0.0200, "margin": 0.100, "terms_moved": 17330, "train_top1_before": 0.4064, "train_top1_after": 0.9896, "seconds": 288.3, "digest": "0xaf5569e5bde45edf"},
+  "encoders": {
+    "stem": {
+      "test_sentences": {"n": 2136, "top1": 0.2322, "top3": 0.3755, "margin": 0.0400, "top1_lenient": 0.2350},
+      "questions": {"n": 5258, "top1": 0.3754, "top3": 0.5662, "margin": 0.0499, "top1_lenient": 0.3802},
+      "questions_extra:questions_fresh_20260912.tsv": {"n": 88, "top1": 0.2841, "top3": 0.5114, "margin": 0.0331, "top1_lenient": 0.2841, "source": "benchmarks/vsa_routing_arena_20260911/questions_fresh_20260912.tsv"},
+      "questions_extra:questions_colloquial_eval.tsv": {"n": 1877, "top1": 0.2461, "top3": 0.4108, "margin": 0.0400, "top1_lenient": 0.2493, "source": "benchmarks/vsa_routing_arena_20260911/questions_colloquial_eval.tsv"},
+      "questions_extra:questions_contrast_eval.tsv": {"n": 549, "top1": 0.1658, "top3": 0.3333, "margin": 0.0349, "top1_lenient": 0.1767, "source": "benchmarks/vsa_routing_arena_20260911/questions_contrast_eval.tsv"},
+      "questions_extra:questions_eval_mistral_everyday.tsv": {"n": 600, "top1": 0.1017, "top3": 0.2100, "margin": 0.0378, "top1_lenient": 0.1450, "source": "benchmarks/vsa_routing_arena_20260911/questions_eval_mistral_everyday.tsv"},
+      "questions_extra:questions_eval_gemma_everyday.tsv": {"n": 600, "top1": 0.1517, "top3": 0.2883, "margin": 0.0401, "top1_lenient": 0.1950, "source": "benchmarks/vsa_routing_arena_20260911/questions_eval_gemma_everyday.tsv"},
+      "questions_extra:questions_indep_mistral_mid_20260912.tsv": {"n": 400, "top1": 0.1800, "top3": 0.3175, "margin": 0.0361, "top1_lenient": 0.2150, "source": "benchmarks/vsa_routing_arena_20260911/questions_indep_mistral_mid_20260912.tsv"},
+      "separability": {"0.90/0.95": {"count": 233, "fraction": 0.2182}, "0.80/0.90": {"count": 865, "fraction": 0.8099}, "0.70/0.90": {"count": 1020, "fraction": 0.9551}},
+      "evaluated": 1068, "null_sd": 0.0487, "in_domain_mean_cos": 0.2386,
+      "aliens": {"n": 12, "best_cos_mean": 0.1106, "z_mean": 4.706},
+      "encode_us": 6.81
+    },
+    "lex": {
+      "test_sentences": {"n": 2136, "top1": 0.2893, "top3": 0.4518, "margin": 0.0554, "top1_lenient": 0.2940},
+      "questions": {"n": 5258, "top1": 0.4549, "top3": 0.6710, "margin": 0.0668, "top1_lenient": 0.4597},
+      "questions_extra:questions_fresh_20260912.tsv": {"n": 88, "top1": 0.2955, "top3": 0.5227, "margin": 0.0410, "top1_lenient": 0.3068, "source": "benchmarks/vsa_routing_arena_20260911/questions_fresh_20260912.tsv"},
+      "questions_extra:questions_colloquial_eval.tsv": {"n": 1877, "top1": 0.3090, "top3": 0.4923, "margin": 0.0433, "top1_lenient": 0.3138, "source": "benchmarks/vsa_routing_arena_20260911/questions_colloquial_eval.tsv"},
+      "questions_extra:questions_contrast_eval.tsv": {"n": 549, "top1": 0.1694, "top3": 0.3515, "margin": 0.0342, "top1_lenient": 0.1767, "source": "benchmarks/vsa_routing_arena_20260911/questions_contrast_eval.tsv"},
+      "questions_extra:questions_eval_mistral_everyday.tsv": {"n": 600, "top1": 0.1400, "top3": 0.2333, "margin": 0.0355, "top1_lenient": 0.1967, "source": "benchmarks/vsa_routing_arena_20260911/questions_eval_mistral_everyday.tsv"},
+      "questions_extra:questions_eval_gemma_everyday.tsv": {"n": 600, "top1": 0.1900, "top3": 0.3267, "margin": 0.0448, "top1_lenient": 0.2417, "source": "benchmarks/vsa_routing_arena_20260911/questions_eval_gemma_everyday.tsv"},
+      "questions_extra:questions_indep_mistral_mid_20260912.tsv": {"n": 400, "top1": 0.2400, "top3": 0.3825, "margin": 0.0448, "top1_lenient": 0.2750, "source": "benchmarks/vsa_routing_arena_20260911/questions_indep_mistral_mid_20260912.tsv"},
+      "separability": {"0.90/0.95": {"count": 420, "fraction": 0.3933}, "0.80/0.90": {"count": 992, "fraction": 0.9288}, "0.70/0.90": {"count": 1054, "fraction": 0.9869}},
+      "evaluated": 1068, "null_sd": 0.0449, "in_domain_mean_cos": 0.2452,
+      "aliens": {"n": 12, "best_cos_mean": 0.0780, "z_mean": 3.558},
+      "encode_us": 3.94
+    },
+    "lex_distilled": {
+      "test_sentences": {"n": 2136, "top1": 0.2926, "top3": 0.4565, "margin": 0.0532, "top1_lenient": 0.2959},
+      "questions": {"n": 5258, "top1": 0.4675, "top3": 0.6974, "margin": 0.0639, "top1_lenient": 0.4720},
+      "questions_extra:questions_fresh_20260912.tsv": {"n": 88, "top1": 0.3750, "top3": 0.6023, "margin": 0.0385, "top1_lenient": 0.3864, "source": "benchmarks/vsa_routing_arena_20260911/questions_fresh_20260912.tsv"},
+      "questions_extra:questions_colloquial_eval.tsv": {"n": 1877, "top1": 0.3463, "top3": 0.5583, "margin": 0.0425, "top1_lenient": 0.3516, "source": "benchmarks/vsa_routing_arena_20260911/questions_colloquial_eval.tsv"},
+      "questions_extra:questions_contrast_eval.tsv": {"n": 549, "top1": 0.2040, "top3": 0.4262, "margin": 0.0338, "top1_lenient": 0.2131, "source": "benchmarks/vsa_routing_arena_20260911/questions_contrast_eval.tsv"},
+      "questions_extra:questions_eval_mistral_everyday.tsv": {"n": 600, "top1": 0.1733, "top3": 0.2817, "margin": 0.0337, "top1_lenient": 0.2283, "source": "benchmarks/vsa_routing_arena_20260911/questions_eval_mistral_everyday.tsv"},
+      "questions_extra:questions_eval_gemma_everyday.tsv": {"n": 600, "top1": 0.2033, "top3": 0.3717, "margin": 0.0427, "top1_lenient": 0.2700, "source": "benchmarks/vsa_routing_arena_20260911/questions_eval_gemma_everyday.tsv"},
+      "questions_extra:questions_indep_mistral_mid_20260912.tsv": {"n": 400, "top1": 0.2575, "top3": 0.4175, "margin": 0.0429, "top1_lenient": 0.3100, "source": "benchmarks/vsa_routing_arena_20260911/questions_indep_mistral_mid_20260912.tsv"},
+      "separability": {"0.90/0.95": {"count": 521, "fraction": 0.4878}, "0.80/0.90": {"count": 1013, "fraction": 0.9485}, "0.70/0.90": {"count": 1064, "fraction": 0.9963}},
+      "evaluated": 1068, "null_sd": 0.0570, "in_domain_mean_cos": 0.2853,
+      "aliens": {"n": 12, "best_cos_mean": 0.0944, "z_mean": 3.775},
+      "encode_us": 3.89
+    },
+    "lex_full": {
+      "test_sentences": {"n": 2136, "top1": 0.3034, "top3": 0.4649, "margin": 0.0531, "top1_lenient": 0.3081},
+      "questions": {"n": 5258, "top1": 0.4914, "top3": 0.7181, "margin": 0.0708, "top1_lenient": 0.4958},
+      "questions_extra:questions_fresh_20260912.tsv": {"n": 88, "top1": 0.3523, "top3": 0.5909, "margin": 0.0473, "top1_lenient": 0.3636, "source": "benchmarks/vsa_routing_arena_20260911/questions_fresh_20260912.tsv"},
+      "questions_extra:questions_colloquial_eval.tsv": {"n": 1877, "top1": 0.3500, "top3": 0.5711, "margin": 0.0523, "top1_lenient": 0.3564, "source": "benchmarks/vsa_routing_arena_20260911/questions_colloquial_eval.tsv"},
+      "questions_extra:questions_contrast_eval.tsv": {"n": 549, "top1": 0.2131, "top3": 0.4335, "margin": 0.0415, "top1_lenient": 0.2259, "source": "benchmarks/vsa_routing_arena_20260911/questions_contrast_eval.tsv"},
+      "questions_extra:questions_eval_mistral_everyday.tsv": {"n": 600, "top1": 0.1667, "top3": 0.3000, "margin": 0.0383, "top1_lenient": 0.2183, "source": "benchmarks/vsa_routing_arena_20260911/questions_eval_mistral_everyday.tsv"},
+      "questions_extra:questions_eval_gemma_everyday.tsv": {"n": 600, "top1": 0.2017, "top3": 0.3850, "margin": 0.0475, "top1_lenient": 0.2650, "source": "benchmarks/vsa_routing_arena_20260911/questions_eval_gemma_everyday.tsv"},
+      "questions_extra:questions_indep_mistral_mid_20260912.tsv": {"n": 400, "top1": 0.2650, "top3": 0.4250, "margin": 0.0460, "top1_lenient": 0.3200, "source": "benchmarks/vsa_routing_arena_20260911/questions_indep_mistral_mid_20260912.tsv"},
+      "separability": {"0.90/0.95": {"count": 609, "fraction": 0.5702}, "0.80/0.90": {"count": 1035, "fraction": 0.9691}, "0.70/0.90": {"count": 1065, "fraction": 0.9972}},
+      "evaluated": 1068, "null_sd": 0.0481, "in_domain_mean_cos": 0.2632,
+      "aliens": {"n": 12, "best_cos_mean": 0.1426, "z_mean": 4.161},
+      "encode_us": 7.05
+    },
+    "lex_trained": {
+      "test_sentences": {"n": 2136, "top1": 0.3371, "top3": 0.4991, "margin": 0.0467, "top1_lenient": 0.3408},
+      "questions": {"n": 5258, "top1": 0.6424, "top3": 0.8271, "margin": 0.0701, "top1_lenient": 0.6461},
+      "questions_extra:questions_fresh_20260912.tsv": {"n": 88, "top1": 0.5568, "top3": 0.7841, "margin": 0.0491, "top1_lenient": 0.5682, "source": "benchmarks/vsa_routing_arena_20260911/questions_fresh_20260912.tsv"},
+      "questions_extra:questions_colloquial_eval.tsv": {"n": 1877, "top1": 0.5706, "top3": 0.7587, "margin": 0.0550, "top1_lenient": 0.5754, "source": "benchmarks/vsa_routing_arena_20260911/questions_colloquial_eval.tsv"},
+      "questions_extra:questions_contrast_eval.tsv": {"n": 549, "top1": 0.3370, "top3": 0.5282, "margin": 0.0379, "top1_lenient": 0.3479, "source": "benchmarks/vsa_routing_arena_20260911/questions_contrast_eval.tsv"},
+      "questions_extra:questions_eval_mistral_everyday.tsv": {"n": 600, "top1": 0.1783, "top3": 0.2883, "margin": 0.0309, "top1_lenient": 0.2367, "source": "benchmarks/vsa_routing_arena_20260911/questions_eval_mistral_everyday.tsv"},
+      "questions_extra:questions_eval_gemma_everyday.tsv": {"n": 600, "top1": 0.2417, "top3": 0.3850, "margin": 0.0385, "top1_lenient": 0.3033, "source": "benchmarks/vsa_routing_arena_20260911/questions_eval_gemma_everyday.tsv"},
+      "questions_extra:questions_indep_mistral_mid_20260912.tsv": {"n": 400, "top1": 0.2475, "top3": 0.4150, "margin": 0.0383, "top1_lenient": 0.3100, "source": "benchmarks/vsa_routing_arena_20260911/questions_indep_mistral_mid_20260912.tsv"},
+      "separability": {"0.90/0.95": {"count": 633, "fraction": 0.5927}, "0.80/0.90": {"count": 1045, "fraction": 0.9785}, "0.70/0.90": {"count": 1066, "fraction": 0.9981}},
+      "evaluated": 1068, "null_sd": 0.0436, "in_domain_mean_cos": 0.2427,
+      "aliens": {"n": 12, "best_cos_mean": 0.1425, "z_mean": 4.144},
+      "encode_us": 6.53
+    }
+  }
+}

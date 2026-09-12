@@ -29,6 +29,23 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 TEACHER_URL = os.getenv("CNET_TEACHER_URL", "http://127.0.0.1:8081/v1/chat/completions")
 CNET_CLI = os.getenv("CNET_CLI", "./bin/cnet_vsa_cli")
+CALIB_TARGET_IN = os.environ.get("CNET_CALIB_TARGET_IN", "0.80")   # in-domain accept fraction (measured operating point, see result/cnet_vsa_margin_gate_calibration_20260911.md)
+CALIB_TARGET_NEG = os.environ.get("CNET_CALIB_TARGET_NEG", "0.90") # negative reject fraction
+VSA_ENCODER = os.environ.get("CNET_VSA_ENCODER", "default")   # "default" = the encoder the C sweep gate selected
+# A registry that ships a lexicon (<output_dir>/registry.lex, 2026-09-12 rollout) is sealed with the LEX encoder under
+# that table: new capsules must use the same encoder and the same lexicon or the registry refuses them at admission.
+_REGISTRY_LEX = os.environ.get("CNET_VSA_LEXICON", "")
+def _lexicon_env(output_dir):
+    """Environment for CLI calls: CNET_VSA_LEXICON pointing at the registry's shipped table when it exists."""
+    env = dict(os.environ)
+    lex = _REGISTRY_LEX or os.path.join(str(output_dir), "registry.lex")
+    if os.path.exists(lex):
+        env["CNET_VSA_LEXICON"] = lex
+    return env
+def _encoder_for(output_dir):
+    if VSA_ENCODER != "default":
+        return VSA_ENCODER
+    return "lex" if os.path.exists(_REGISTRY_LEX or os.path.join(str(output_dir), "registry.lex")) else "default"
 STATE_DIR = Path("var/curiosity_crawler")
 STATE_FILE = STATE_DIR / "state.json"
 STATUS_MD = Path("docs/CURIOSITY_NETWORK_STATUS.md")
@@ -314,14 +331,39 @@ def distill_and_certify(topic: str, output_dir: Path) -> dict | None:
     with open(corpus_file, "w") as f:
         for s in unique_sentences:
             f.write(s + "\n")
+    # Held-out in-domain probes for radius calibration. probes[0] is kept out of
+    # calibration so Gate 2 below remains a genuine held-out check.
+    probes_file = corpus_dir / f"{domain_key}_probes.txt"
+    with open(probes_file, "w") as f:
+        for q in probes[1:]:
+            f.write(q + "\n")
 
     # Step 6: Native VSA Capsule Compilation & Sealing
     output_dir.mkdir(parents=True, exist_ok=True)
     capsule_file = output_dir / f"{domain_key}.gencap"
-    cmd_create = [CNET_CLI, "gencap-create", domain_key, tag_clean, str(corpus_file), str(capsule_file)]
-    res_create = subprocess.run(cmd_create, capture_output=True, text=True)
+    # Per-capsule radius calibration: leave-one-out corpus sentences plus the
+    # held-out probes are the in-domain set; sentences sampled from every other
+    # corpus under var/distill are the negatives. The CLI refuses to seal when
+    # no radius meets both targets (NOT_SEPARABLE) or evidence is thin.
+    cmd_create = [CNET_CLI, "gencap-create", domain_key, tag_clean, str(corpus_file), str(capsule_file),
+                  "--encoder", _encoder_for(output_dir),
+                  "--probes", str(probes_file), "--negatives", str(corpus_dir),
+                  "--target-in", CALIB_TARGET_IN, "--target-neg", CALIB_TARGET_NEG]
+    res_create = subprocess.run(cmd_create, capture_output=True, text=True, env=_lexicon_env(output_dir))
     if res_create.returncode != 0:
-        return {"ok": False, "reason": f"Compilation failed: {res_create.stderr}"}
+        if "NOT_SEPARABLE" in res_create.stdout:
+            m_sep = re.search(r"separation=([+-]?[0-9.]+)", res_create.stdout)
+            sep = m_sep.group(1) if m_sep else "?"
+            return {"ok": False, "reason": f"Calibration refused: not separable from other domains (separation={sep})"}
+        if "INSUFFICIENT_EVIDENCE" in res_create.stdout:
+            return {"ok": False, "reason": "Calibration refused: insufficient held-out evidence"}
+        return {"ok": False, "reason": f"Compilation failed: {res_create.stderr or res_create.stdout[-300:]}"}
+    if "CALIBRATED (held-out evidence)" not in res_create.stdout:
+        return {"ok": False, "reason": "Capsule sealed without a calibration receipt"}
+    m_radius = re.search(r"Safe Radius:\s+([0-9.]+)", res_create.stdout)
+    calibrated_radius = float(m_radius.group(1)) if m_radius else None
+    m_rates = re.search(r"negatives:.*measured=([0-9.]+)", res_create.stdout)
+    neg_reject_rate = float(m_rates.group(1)) if m_rates else None
 
     # Extract digest and stats from compilation output
     digest = "unknown"

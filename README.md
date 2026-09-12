@@ -88,6 +88,43 @@ FP16/BF16 did not clear the unchanged numerical floor. Read the
 [GPU guide](docs/GPU_TRAINING.md) and
 [bound experiment results](result/cnet_gpu_product_sequence_20260906.md).
 
+## Measured against transformer embeddings
+
+A frozen routing arena (`make vsa_routing_arena`, fixture and hashes under
+`benchmarks/vsa_routing_arena_20260911/`) scores the VSA topic router against
+transformer embedding models on one protocol: 1068 teacher-written corpora,
+held-out sentences, 5,258 teacher-written questions, seeded negatives. On that
+task the learned lexicon over 2 KB int8 centroids matches a 137M-parameter
+embedding model on ranking, exceeds a 4B-parameter one on the separability the
+router gates on, and costs microseconds on a CPU instead of milliseconds on a
+GPU; the 4B model leads on ranking accuracy by about nine points, and that loss
+is a claim the gate checks too. Blending the 4B model's word vectors into the
+lexicon offline (distillation, runtime unchanged) lifts separability and
+question top-3 but not that gap (`result/cnet_vsa_lexicon_distillation_20260911.md`).
+Learned phrase entries, learned subword backoff, and a supervised pass that
+pairs each capsule's own sentences and teacher questions with its centroid
+(lexicon v3, still a static int8 table, about 5 microseconds per query) take
+teacher-question routing past the 4B model on the frozen arena while the
+held-out sentence loss stays recorded
+(`result/cnet_vsa_lexicon_phrases_subwords_training_20260912.md`). Retraining on
+mixed-register paraphrase families with contrast pairs extends that lead to
+the everyday register those families were written in, but everyday sets from
+writers it never saw reverse it by 5 to 12 points, and training on those
+writers' registers does not recover it: the advantage is bound to the content
+of the training pairs, not their register
+(`result/cnet_vsa_lexicon_register_training_20260912.md`). Capsule text
+generation itself was measured once: on-topic seven-word phrase runs with no
+sentence structure, never answering the prompt, against 85% for the capsule's
+own passage returned verbatim; answers come from retrieval, not generation
+(`result/cnet_vsa_generation_coherence_20260912.md`). The production
+registry was resealed under the v3 block and the shipped lexicon
+(`bin/registry.lex`, auto-activated by every registry load): on the
+never-probed teacher questions wrong accepts fell from 35% to 1.2%, with a
+term-dependence gate that refuses any route a single word could flip
+(`result/cnet_vsa_registry_reseal_20260912.md`). Generation,
+answer correctness and open-ended language are not compared. See
+`result/cnet_vsa_routing_arena_20260911.md`.
+
 ## Verification and evidence
 
 ```sh
