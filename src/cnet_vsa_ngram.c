@@ -142,6 +142,27 @@ int cnet_vsa_ngram_ingest_corpus(CnetVsaNgramEngine *eng) {
     return (int)count;
 }
 
+int cnet_vsa_ngram_lookup(const CnetVsaNgramEngine *eng, const char *word) {
+    if (!eng || !word) return -1;
+    char clean[CNET_VSA_NGRAM_WORD_LEN];
+    normalize_token(word, clean, sizeof(clean));
+    if (!clean[0]) return -1;
+    for (size_t i = 0; i < eng->vocab_count; ++i) if (strcmp(eng->vocab[i].word, clean) == 0) return (int)i;
+    return -1;
+}
+
+void cnet_vsa_ngram_context_key(const CnetVsaNgramEngine *eng, int prev2, int prev1, float *out_key) {
+    const int D = eng->dim;
+    float pi1_vec[CNET_VSA_DEFAULT_DIM];
+    cnet_vsa_permute(pi1_vec, eng->vocab[prev1].vector, 1, D);
+    if (prev2 < 0) { memcpy(out_key, pi1_vec, (size_t)D * sizeof(float)); return; }
+    float pi2_vec[CNET_VSA_DEFAULT_DIM], tri[CNET_VSA_DEFAULT_DIM];
+    cnet_vsa_permute(pi2_vec, eng->vocab[prev2].vector, 2, D);
+    cnet_vsa_bind(tri, pi2_vec, pi1_vec, D);
+    for (int d = 0; d < D; ++d) out_key[d] = 0.65f * tri[d] + 0.35f * pi1_vec[d];
+    cnet_vsa_normalize(out_key, D);
+}
+
 int cnet_vsa_ngram_generate(CnetVsaNgramEngine *eng,
                             const char *seed_word,
                             const float *target_intent_vec,
@@ -151,7 +172,25 @@ int cnet_vsa_ngram_generate(CnetVsaNgramEngine *eng,
                             char *out_text,
                             size_t out_text_size,
                             int *out_tokens_generated) {
+    return cnet_vsa_ngram_generate_ex(eng, seed_word, target_intent_vec, intent_steer_weight, repetition_penalty,
+                                      max_tokens, 3u /* table | bundle */, NULL, NULL, out_text, out_text_size, out_tokens_generated);
+}
+
+int cnet_vsa_ngram_generate_ex(CnetVsaNgramEngine *eng,
+                               const char *seed_word,
+                               const float *target_intent_vec,
+                               float intent_steer_weight,
+                               float repetition_penalty,
+                               int max_tokens,
+                               unsigned mem,
+                               void (*delta_read)(const void *ctx, const float *key, float *out_v),
+                               const void *delta_ctx,
+                               char *out_text,
+                               size_t out_text_size,
+                               int *out_tokens_generated) {
     if (!eng || !out_text || out_text_size < 16) return -1;
+    if (!(mem & 4u) || !delta_read) mem &= ~4u;
+    if (mem == 0) return -1;
     if (eng->vocab_count == 0 || eng->transition_count == 0) return -1;
 
     char clean_seed[CNET_VSA_NGRAM_WORD_LEN];
@@ -200,17 +239,26 @@ int cnet_vsa_ngram_generate(CnetVsaNgramEngine *eng,
 
         /* 1. Scan transition memory for matching contexts */
         memset(scores, 0, sizeof(float) * eng->vocab_count);
-        for (size_t tr = 0; tr < eng->transition_count; ++tr) {
+        if (mem & 1u) for (size_t tr = 0; tr < eng->transition_count; ++tr) {
             float match = cnet_vsa_similarity(query_ctx, eng->transitions[tr].context_key, D);
             if (match > 0.20f) {
                 int next_id = eng->transitions[tr].next_token_id;
                 scores[next_id] += match * 1.5f;
             }
         }
-
+        /* 1b. Delta-rule memory read: v_hat = S q, scored like the table */
+        if (mem & 4u) {
+            float vhat[CNET_VSA_DEFAULT_DIM];
+            delta_read(delta_ctx, query_ctx, vhat);
+            for (size_t v = 0; v < eng->vocab_count; ++v) {
+                float c = cnet_vsa_similarity(vhat, eng->vocab[v].vector, D);
+                if (c > 0.0f) scores[v] += c * 1.5f;
+            }
+        }
         /* 2. Unbind from global transition matrix: U = M * Q */
         float unbind_vec[CNET_VSA_DEFAULT_DIM];
         cnet_vsa_unbind(unbind_vec, eng->global_transition_matrix, query_ctx, D);
+        if (!(mem & 2u)) memset(unbind_vec, 0, sizeof(float) * (size_t)D);
         for (size_t v = 0; v < eng->vocab_count; ++v) {
             float dot_u = cnet_vsa_similarity(unbind_vec, eng->vocab[v].vector, D);
             if (dot_u > 0.0f) {

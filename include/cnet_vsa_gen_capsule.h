@@ -286,6 +286,20 @@ int cnet_vsa_gencap_generate(const CnetVsaGenCapsule *cap,
                              size_t out_text_size,
                              int *out_tokens);
 
+/* Generation memory sources for cnet_vsa_gencap_generate_mem (CNET_VSA_GEN_MEM_*
+ * in cnet_vsa_delta.h); generate_ex uses the default (table | bundle). A
+ * delta-rule memory is built from the capsule's passages when requested. */
+int cnet_vsa_gencap_generate_mem(const CnetVsaGenCapsule *cap,
+                                 const char *seed_word,
+                                 const float *intent_vec,
+                                 const int8_t *intent_q8,
+                                 float steer_weight,
+                                 int max_tokens,
+                                 unsigned mem,
+                                 char *out_text,
+                                 size_t out_text_size,
+                                 int *out_tokens);
+
 /* Same, with the scope gate taken in the wide int8 space when intent_q8 is
  * given and the capsule carries a topical block; intent_vec then only steers.
  * Falls back to the float gate otherwise. */
@@ -353,6 +367,15 @@ typedef struct {
     float ambiguity_k_float;
     /* 1 (default): the term-dependence gate runs on wide-space prompt routing */
     int term_gate;
+    /* 1: when the ambiguity gate refuses between two capsules that both passed the radius and margin gates,
+     * cnet_vsa_registry_answer ranks the passages of BOTH and answers from the better one under its floor
+     * (sparse top-2 activation, as a mixture of memories does). Default 1 with sibling_zgap 2.0 (measured on
+     * 3,994 never-probed questions: gold answers 26.7% -> 32.4%, wrong 2.1% -> 3.8%, judged precision unchanged
+     * at 76%; CNET_VSA_ANSWER_SIBLINGS=0 turns it off). */
+    int answer_siblings;
+    /* sibling path: the picked capsule's best-passage z must exceed the other tied capsule's by this much
+     * (0 = any); the passage-level ambiguity gate of the mixture path */
+    float sibling_zgap;
     /* 1 forces the float-512 space even when every entry has a topical block
      * (A/B measurement only). */
     int force_float;
@@ -465,6 +488,8 @@ typedef struct {
     float  z, z_min;          /* best passage vs the capsule's other passages */
     int    passages;          /* passages in the winning capsule */
     int    cold;              /* 1 when this call built the capsule's passage vectors */
+    int    sibling_pick;      /* 1 when the route was refused by the ambiguity gate and the answer came from
+                                 the better passage of the two tied capsules (mixture-of-memories style) */
     double route_us, rank_us;
 } CnetVsaAnswer;
 int cnet_vsa_registry_answer(CnetVsaGenRegistry *reg, const char *prompt, int k, CnetVsaAnswer *out);

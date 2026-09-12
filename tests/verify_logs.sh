@@ -76,6 +76,7 @@ cnet_vsa_lexicon_bench.log|||CNET_VSA_LEXICON_BENCH_PASS
 cnet_vsa_answer_bench.log|||CNET_VSA_ANSWER_BENCH_PASS
 cnet_vsa_q8_bench.log|||CNET_VSA_Q8_BENCH_PASS
 cnet_vsa_stem_bench.log|||CNET_VSA_STEM_BENCH_PASS
+cnet_vsa_delta_bench.log|||CNET_VSA_DELTA_BENCH_PASS
 '
 
 LONG='

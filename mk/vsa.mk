@@ -1,7 +1,7 @@
 # mk/vsa.mk -- CNET-VSA (hyperdimensional capsule router) targets: benches, CLI, lexicon, frozen arena.
 # Moved out of the root Makefile on 2026-09-12 (makefile budget). Gates in the verify ladder: see mk/verify_tiers.mk.
 
-.PHONY: cnet_vsa_answer_bench cnet_vsa_bench cnet_vsa_simd_bench cnet_vsa_index_bench cnet_vsa_reason_bench cnet_vsa_doc_graft_bench cnet_vsa_gpu_bench cnet_vsa_device_bench cnet_vsa_text_bench cnet_vsa_capsule_swap_bench cnet_vsa_sleep_bench cnet_vsa_ast_bench cnet_vsa_story_bench cnet_vsa_compare_bench cnet_vsa_cli cnet_vsa_cli_bench cnet_vsa_calibration_bench cnet_vsa_arena_bench cnet_vsa_stem_bench cnet_vsa_lexicon_bench cnet_vsa_encoder_sweep_bench cnet_vsa_all_bench
+.PHONY: cnet_vsa_delta_bench cnet_vsa_answer_bench cnet_vsa_bench cnet_vsa_simd_bench cnet_vsa_index_bench cnet_vsa_reason_bench cnet_vsa_doc_graft_bench cnet_vsa_gpu_bench cnet_vsa_device_bench cnet_vsa_text_bench cnet_vsa_capsule_swap_bench cnet_vsa_sleep_bench cnet_vsa_ast_bench cnet_vsa_story_bench cnet_vsa_compare_bench cnet_vsa_cli cnet_vsa_cli_bench cnet_vsa_calibration_bench cnet_vsa_arena_bench cnet_vsa_stem_bench cnet_vsa_lexicon_bench cnet_vsa_encoder_sweep_bench cnet_vsa_all_bench
 cnet_vsa_bench: src/cnet_vsa.c src/cnet_vsa_memory.c src/cnet_vsa_bus.c tests/test_cnet_vsa_bench.c include/cnet_vsa.h include/cnet_vsa_memory.h include/cnet_vsa_bus.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_vsa_bench \
@@ -107,13 +107,13 @@ cnet_vsa_compare_bench: src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_text.c sr
 	@./$(BIN_DIR)/test_cnet_vsa_generation_comparison | tee logs/cnet_vsa_compare_bench.log
 	@grep -q "CNET_GENERATION_COMPARISON_PASS" logs/cnet_vsa_compare_bench.log
 
-cnet_vsa_cli: src/cnet_vsa_evidence.c include/cnet_vsa_evidence.h tools/cnet_vsa_cli.c src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_gpu.hip src/cnet_vsa_device.c src/cnet_vsa_text.c src/cnet_vsa_lexicon.c src/cnet_vsa_capsule_swap.cpp src/cnet_vsa_sleep.c src/cnet_vsa_ast.c src/cnet_vsa_memory.c src/cnet_vsa_story.c src/cnet_vsa_ngram.c src/cnet_vsa_hybrid.c src/cnet_vsa_gen_capsule.c
+cnet_vsa_cli: src/cnet_vsa_evidence.c include/cnet_vsa_evidence.h tools/cnet_vsa_cli.c src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_gpu.hip src/cnet_vsa_device.c src/cnet_vsa_text.c src/cnet_vsa_lexicon.c src/cnet_vsa_capsule_swap.cpp src/cnet_vsa_sleep.c src/cnet_vsa_ast.c src/cnet_vsa_memory.c src/cnet_vsa_story.c src/cnet_vsa_ngram.c src/cnet_vsa_hybrid.c src/cnet_vsa_delta.c src/cnet_vsa_gen_capsule.c
 	@mkdir -p $(BIN_DIR)
 	hipcc -O3 -march=native --offload-arch=gfx1201 -Iinclude -D_GNU_SOURCE -DCNET_HAVE_CURL=1 \
 		src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_gpu.hip src/cnet_vsa_device.c \
 		src/cnet_vsa_text.c src/cnet_vsa_lexicon.c src/cnet_vsa_capsule_swap.cpp src/cnet_vsa_sleep.c \
 		src/cnet_vsa_ast.c src/cnet_vsa_memory.c src/cnet_vsa_story.c \
-		src/cnet_vsa_ngram.c src/cnet_vsa_hybrid.c src/cnet_vsa_gen_capsule.c src/cnet_vsa_evidence.c tools/cnet_vsa_cli.c \
+		src/cnet_vsa_ngram.c src/cnet_vsa_hybrid.c src/cnet_vsa_delta.c src/cnet_vsa_gen_capsule.c src/cnet_vsa_evidence.c tools/cnet_vsa_cli.c \
 		-o $(BIN_DIR)/cnet_vsa_cli -lm -lpthread -lcurl
 
 # Bounded signed-fact response operator; correctness and CLI refusal checks.
@@ -130,49 +130,49 @@ cnet_vsa_cli_bench: cnet_vsa_cli tests/test_cnet_vsa_cli_bench.sh
 	@./tests/test_cnet_vsa_cli_bench.sh | tee logs/cnet_vsa_cli_bench.log
 	@grep -q "CNET_VSA_CLI_BENCH_PASS" logs/cnet_vsa_cli_bench.log
 
-cnet_vsa_gencap_bench: src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_text.c src/cnet_vsa_lexicon.c src/cnet_vsa_memory.c src/cnet_vsa_ngram.c src/cnet_vsa_gen_capsule.c tests/test_cnet_vsa_gencap_bench.c include/cnet_vsa_gen_capsule.h
+cnet_vsa_gencap_bench: src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_text.c src/cnet_vsa_lexicon.c src/cnet_vsa_memory.c src/cnet_vsa_ngram.c src/cnet_vsa_delta.c src/cnet_vsa_gen_capsule.c tests/test_cnet_vsa_gencap_bench.c include/cnet_vsa_gen_capsule.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_vsa_gencap_bench \
 		src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_text.c src/cnet_vsa_lexicon.c src/cnet_vsa_memory.c \
-		src/cnet_vsa_ngram.c src/cnet_vsa_gen_capsule.c \
+		src/cnet_vsa_ngram.c src/cnet_vsa_delta.c src/cnet_vsa_gen_capsule.c \
 		tests/test_cnet_vsa_gencap_bench.c $(LDFLAGS) -pthread
 	@./$(BIN_DIR)/test_cnet_vsa_gencap_bench | tee logs/cnet_vsa_gencap_bench.log
 	@grep -q "CNET_VSA_GENCAP_BENCH_PASS" logs/cnet_vsa_gencap_bench.log
 
-cnet_vsa_router_bench: src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_text.c src/cnet_vsa_lexicon.c src/cnet_vsa_memory.c src/cnet_vsa_ngram.c src/cnet_vsa_gen_capsule.c tests/test_cnet_vsa_router_bench.c include/cnet_vsa_gen_capsule.h
+cnet_vsa_router_bench: src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_text.c src/cnet_vsa_lexicon.c src/cnet_vsa_memory.c src/cnet_vsa_ngram.c src/cnet_vsa_delta.c src/cnet_vsa_gen_capsule.c tests/test_cnet_vsa_router_bench.c include/cnet_vsa_gen_capsule.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_vsa_router_bench \
 		src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_text.c src/cnet_vsa_lexicon.c src/cnet_vsa_memory.c \
-		src/cnet_vsa_ngram.c src/cnet_vsa_gen_capsule.c \
+		src/cnet_vsa_ngram.c src/cnet_vsa_delta.c src/cnet_vsa_gen_capsule.c \
 		tests/test_cnet_vsa_router_bench.c $(LDFLAGS) -pthread
 	@./$(BIN_DIR)/test_cnet_vsa_router_bench | tee logs/cnet_vsa_router_bench.log
 	@grep -q "CNET_VSA_ROUTER_BENCH_PASS" logs/cnet_vsa_router_bench.log
 
-cnet_vsa_calibration_bench: src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_text.c src/cnet_vsa_lexicon.c src/cnet_vsa_memory.c src/cnet_vsa_ngram.c src/cnet_vsa_gen_capsule.c tests/test_cnet_vsa_calibration_bench.c include/cnet_vsa_gen_capsule.h
+cnet_vsa_calibration_bench: src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_text.c src/cnet_vsa_lexicon.c src/cnet_vsa_memory.c src/cnet_vsa_ngram.c src/cnet_vsa_delta.c src/cnet_vsa_gen_capsule.c tests/test_cnet_vsa_calibration_bench.c include/cnet_vsa_gen_capsule.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_vsa_calibration_bench \
 		src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_text.c src/cnet_vsa_lexicon.c src/cnet_vsa_memory.c \
-		src/cnet_vsa_ngram.c src/cnet_vsa_gen_capsule.c \
+		src/cnet_vsa_ngram.c src/cnet_vsa_delta.c src/cnet_vsa_gen_capsule.c \
 		tests/test_cnet_vsa_calibration_bench.c $(LDFLAGS) -pthread
 	@./$(BIN_DIR)/test_cnet_vsa_calibration_bench | tee logs/cnet_vsa_calibration_bench.log
 	@grep -q "CNET_VSA_CALIBRATION_BENCH_PASS" logs/cnet_vsa_calibration_bench.log
 
-cnet_vsa_arena_bench: src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_text.c src/cnet_vsa_lexicon.c src/cnet_vsa_memory.c src/cnet_vsa_ngram.c src/cnet_vsa_gen_capsule.c tests/test_cnet_vsa_arena_bench.c include/cnet_vsa_gen_capsule.h include/cnet_vsa_text.h
+cnet_vsa_arena_bench: src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_text.c src/cnet_vsa_lexicon.c src/cnet_vsa_memory.c src/cnet_vsa_ngram.c src/cnet_vsa_delta.c src/cnet_vsa_gen_capsule.c tests/test_cnet_vsa_arena_bench.c include/cnet_vsa_gen_capsule.h include/cnet_vsa_text.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_vsa_arena_bench \
 		src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_text.c src/cnet_vsa_lexicon.c src/cnet_vsa_memory.c \
-		src/cnet_vsa_ngram.c src/cnet_vsa_gen_capsule.c \
+		src/cnet_vsa_ngram.c src/cnet_vsa_delta.c src/cnet_vsa_gen_capsule.c \
 		tests/test_cnet_vsa_arena_bench.c $(LDFLAGS) -pthread
 	@./$(BIN_DIR)/test_cnet_vsa_arena_bench | tee logs/cnet_vsa_arena_bench.log
 	@grep -q "CNET_VSA_ARENA_BENCH_PASS" logs/cnet_vsa_arena_bench.log
 
 # ---- frozen routing arena: CNET encoders vs transformer embeddings on one protocol ----
 ARENA_DIR := benchmarks/vsa_routing_arena_20260911
-bin/cnet_vsa_arena: tools/cnet_vsa_arena.c src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_text.c src/cnet_vsa_lexicon.c src/cnet_vsa_memory.c src/cnet_vsa_ngram.c src/cnet_vsa_gen_capsule.c include/cnet_vsa_lexicon.h
+bin/cnet_vsa_arena: tools/cnet_vsa_arena.c src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_text.c src/cnet_vsa_lexicon.c src/cnet_vsa_memory.c src/cnet_vsa_ngram.c src/cnet_vsa_delta.c src/cnet_vsa_gen_capsule.c include/cnet_vsa_lexicon.h
 	@mkdir -p $(BIN_DIR)
 	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/cnet_vsa_arena \
 		src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_text.c src/cnet_vsa_lexicon.c src/cnet_vsa_memory.c \
-		src/cnet_vsa_ngram.c src/cnet_vsa_gen_capsule.c tools/cnet_vsa_arena.c $(LDFLAGS) -pthread
+		src/cnet_vsa_ngram.c src/cnet_vsa_delta.c src/cnet_vsa_gen_capsule.c tools/cnet_vsa_arena.c $(LDFLAGS) -pthread
 
 # Reproduces the CNET side from the frozen fixture, re-scores every cached
 # transformer from its small cache (no model needed), verifies fixture hashes
@@ -208,11 +208,11 @@ vsa_routing_arena_embed:
 
 .PHONY: vsa_routing_arena vsa_routing_arena_embed
 
-cnet_vsa_lexicon_bench: src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_text.c src/cnet_vsa_lexicon.c src/cnet_vsa_memory.c src/cnet_vsa_ngram.c src/cnet_vsa_gen_capsule.c tests/test_cnet_vsa_lexicon_bench.c include/cnet_vsa_lexicon.h
+cnet_vsa_lexicon_bench: src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_text.c src/cnet_vsa_lexicon.c src/cnet_vsa_memory.c src/cnet_vsa_ngram.c src/cnet_vsa_delta.c src/cnet_vsa_gen_capsule.c tests/test_cnet_vsa_lexicon_bench.c include/cnet_vsa_lexicon.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_vsa_lexicon_bench \
 		src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_text.c src/cnet_vsa_lexicon.c src/cnet_vsa_memory.c \
-		src/cnet_vsa_ngram.c src/cnet_vsa_gen_capsule.c \
+		src/cnet_vsa_ngram.c src/cnet_vsa_delta.c src/cnet_vsa_gen_capsule.c \
 		tests/test_cnet_vsa_lexicon_bench.c $(LDFLAGS) -pthread
 	@./$(BIN_DIR)/test_cnet_vsa_lexicon_bench | tee logs/cnet_vsa_lexicon_bench.log
 	@grep -q "CNET_VSA_LEXICON_BENCH_PASS" logs/cnet_vsa_lexicon_bench.log
@@ -225,35 +225,44 @@ cnet_vsa_stem_bench: src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_text.c src/c
 	@./$(BIN_DIR)/test_cnet_vsa_stem_bench | tee logs/cnet_vsa_stem_bench.log
 	@grep -q "CNET_VSA_STEM_BENCH_PASS" logs/cnet_vsa_stem_bench.log
 
-cnet_vsa_encoder_sweep_bench: src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_text.c src/cnet_vsa_lexicon.c src/cnet_vsa_memory.c src/cnet_vsa_ngram.c src/cnet_vsa_gen_capsule.c tests/test_cnet_vsa_encoder_sweep_bench.c include/cnet_vsa_gen_capsule.h include/cnet_vsa_text.h
+cnet_vsa_encoder_sweep_bench: src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_text.c src/cnet_vsa_lexicon.c src/cnet_vsa_memory.c src/cnet_vsa_ngram.c src/cnet_vsa_delta.c src/cnet_vsa_gen_capsule.c tests/test_cnet_vsa_encoder_sweep_bench.c include/cnet_vsa_gen_capsule.h include/cnet_vsa_text.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_vsa_encoder_sweep_bench \
 		src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_text.c src/cnet_vsa_lexicon.c src/cnet_vsa_memory.c \
-		src/cnet_vsa_ngram.c src/cnet_vsa_gen_capsule.c \
+		src/cnet_vsa_ngram.c src/cnet_vsa_delta.c src/cnet_vsa_gen_capsule.c \
 		tests/test_cnet_vsa_encoder_sweep_bench.c $(LDFLAGS) -pthread
 	@./$(BIN_DIR)/test_cnet_vsa_encoder_sweep_bench | tee logs/cnet_vsa_encoder_sweep_bench.log
 	@grep -qE "CNET_VSA_ENCODER_SWEEP_BENCH_(PASS|SKIP)" logs/cnet_vsa_encoder_sweep_bench.log
 
 .PHONY: cnet_vsa_q8_bench
-cnet_vsa_q8_bench: src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_text.c src/cnet_vsa_lexicon.c src/cnet_vsa_memory.c src/cnet_vsa_ngram.c src/cnet_vsa_gen_capsule.c tests/test_cnet_vsa_q8_bench.c include/cnet_vsa_gen_capsule.h include/cnet_vsa_text.h
+cnet_vsa_q8_bench: src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_text.c src/cnet_vsa_lexicon.c src/cnet_vsa_memory.c src/cnet_vsa_ngram.c src/cnet_vsa_delta.c src/cnet_vsa_gen_capsule.c tests/test_cnet_vsa_q8_bench.c include/cnet_vsa_gen_capsule.h include/cnet_vsa_text.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_vsa_q8_bench \
 		src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_text.c src/cnet_vsa_lexicon.c src/cnet_vsa_memory.c \
-		src/cnet_vsa_ngram.c src/cnet_vsa_gen_capsule.c tests/test_cnet_vsa_q8_bench.c \
+		src/cnet_vsa_ngram.c src/cnet_vsa_delta.c src/cnet_vsa_gen_capsule.c tests/test_cnet_vsa_q8_bench.c \
 		-Wl,--wrap=cnet_vsa_text_q8_norm $(LDFLAGS) -pthread
 	@./$(BIN_DIR)/test_cnet_vsa_q8_bench | tee logs/cnet_vsa_q8_bench.log
 	@grep -q "CNET_VSA_Q8_BENCH_PASS" logs/cnet_vsa_q8_bench.log
 
-cnet_vsa_answer_bench: src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_text.c src/cnet_vsa_lexicon.c src/cnet_vsa_memory.c src/cnet_vsa_ngram.c src/cnet_vsa_gen_capsule.c tests/test_cnet_vsa_answer_bench.c include/cnet_vsa_gen_capsule.h
+cnet_vsa_answer_bench: src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_text.c src/cnet_vsa_lexicon.c src/cnet_vsa_memory.c src/cnet_vsa_ngram.c src/cnet_vsa_delta.c src/cnet_vsa_gen_capsule.c tests/test_cnet_vsa_answer_bench.c include/cnet_vsa_gen_capsule.h
 	@mkdir -p $(BIN_DIR) logs
 	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_vsa_answer_bench \
 		src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_text.c src/cnet_vsa_lexicon.c src/cnet_vsa_memory.c \
-		src/cnet_vsa_ngram.c src/cnet_vsa_gen_capsule.c \
+		src/cnet_vsa_ngram.c src/cnet_vsa_delta.c src/cnet_vsa_gen_capsule.c \
 		tests/test_cnet_vsa_answer_bench.c $(LDFLAGS) -pthread
 	@./$(BIN_DIR)/test_cnet_vsa_answer_bench | tee logs/cnet_vsa_answer_bench.log
 	@grep -q "CNET_VSA_ANSWER_BENCH_PASS" logs/cnet_vsa_answer_bench.log
 
-cnet_vsa_all_bench: cnet_vsa_evidence_bench cnet_vsa_bench cnet_vsa_simd_bench cnet_vsa_index_bench cnet_vsa_reason_bench cnet_vsa_doc_graft_bench cnet_vsa_gpu_bench cnet_vsa_device_bench cnet_vsa_text_bench cnet_vsa_capsule_swap_bench cnet_vsa_sleep_bench cnet_vsa_ast_bench cnet_vsa_story_bench cnet_vsa_compare_bench cnet_vsa_gencap_bench cnet_vsa_router_bench cnet_vsa_calibration_bench cnet_vsa_arena_bench cnet_vsa_stem_bench cnet_vsa_lexicon_bench cnet_vsa_encoder_sweep_bench cnet_vsa_cli_bench cnet_vsa_q8_bench cnet_vsa_answer_bench
+cnet_vsa_delta_bench: src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_text.c src/cnet_vsa_lexicon.c src/cnet_vsa_memory.c src/cnet_vsa_ngram.c src/cnet_vsa_delta.c src/cnet_vsa_gen_capsule.c tests/test_cnet_vsa_delta_bench.c include/cnet_vsa_delta.h
+	@mkdir -p $(BIN_DIR) logs
+	$(CC) $(CFLAGS) -Werror -Iinclude -o $(BIN_DIR)/test_cnet_vsa_delta_bench \
+		src/cnet_vsa.c src/cnet_vsa_bsc.c src/cnet_vsa_text.c src/cnet_vsa_lexicon.c src/cnet_vsa_memory.c \
+		src/cnet_vsa_ngram.c src/cnet_vsa_delta.c src/cnet_vsa_gen_capsule.c \
+		tests/test_cnet_vsa_delta_bench.c $(LDFLAGS) -pthread
+	@./$(BIN_DIR)/test_cnet_vsa_delta_bench | tee logs/cnet_vsa_delta_bench.log
+	@grep -q "CNET_VSA_DELTA_BENCH_PASS" logs/cnet_vsa_delta_bench.log
+
+cnet_vsa_all_bench: cnet_vsa_evidence_bench cnet_vsa_bench cnet_vsa_simd_bench cnet_vsa_index_bench cnet_vsa_reason_bench cnet_vsa_doc_graft_bench cnet_vsa_gpu_bench cnet_vsa_device_bench cnet_vsa_text_bench cnet_vsa_capsule_swap_bench cnet_vsa_sleep_bench cnet_vsa_ast_bench cnet_vsa_story_bench cnet_vsa_compare_bench cnet_vsa_gencap_bench cnet_vsa_router_bench cnet_vsa_calibration_bench cnet_vsa_arena_bench cnet_vsa_stem_bench cnet_vsa_lexicon_bench cnet_vsa_encoder_sweep_bench cnet_vsa_cli_bench cnet_vsa_q8_bench cnet_vsa_answer_bench cnet_vsa_delta_bench
 	@echo "\n================================================================="
 	@echo " ALL CNET-VSA BENCHMARKS (CLI INCLUDED) PASSED"
 	@echo "================================================================="

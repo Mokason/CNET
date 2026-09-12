@@ -55,6 +55,29 @@ int cnet_vsa_ngram_ingest_corpus(CnetVsaNgramEngine *eng);
  * one-by-one purely via hyperdimensional unbinding and cleanup.
  * NO TEMPLATES. NO PRE-AUTHORED STRINGS.
  */
+/* Vocabulary id of a word after the engine's own normalisation, -1 if unknown. */
+int cnet_vsa_ngram_lookup(const CnetVsaNgramEngine *eng, const char *word);
+/* The context key the engine stores and queries for predicting the word after
+ * (prev2, prev1): P^1(prev1) for a bigram (prev2 < 0), else the normalised
+ * 0.65 * (P^2(prev2) (x) P^1(prev1)) + 0.35 * P^1(prev1). */
+void cnet_vsa_ngram_context_key(const CnetVsaNgramEngine *eng, int prev2, int prev1, float *out_key);
+/* Generation with a chosen memory source set (CNET_VSA_GEN_MEM_*): the
+ * explicit transition table, the bundled global binding, and/or a delta-rule
+ * memory read (delta_read(delta_ctx, key, out_v) returns the predicted word
+ * vector). cnet_vsa_ngram_generate == mem TABLE|BUNDLE with no delta. */
+int cnet_vsa_ngram_generate_ex(CnetVsaNgramEngine *eng,
+                               const char *seed_word,
+                               const float *target_intent_vec,
+                               float intent_steer_weight,
+                               float repetition_penalty,
+                               int max_tokens,
+                               unsigned mem,
+                               void (*delta_read)(const void *ctx, const float *key, float *out_v),
+                               const void *delta_ctx,
+                               char *out_text,
+                               size_t out_text_size,
+                               int *out_tokens_generated);
+
 int cnet_vsa_ngram_generate(CnetVsaNgramEngine *eng,
                             const char *seed_word,
                             const float *target_intent_vec,

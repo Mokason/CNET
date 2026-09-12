@@ -522,3 +522,18 @@ Step 5 (Isekai epoch, same day): two epochs measured (result/cnet_vsa_isekai_epo
 technical table the Isekai block scores negative at every k (top-1 self 32%); a combined epoch routes Isekai
 more but 25% wrongly and costs the technical block 6 points. Nothing ships; bin/ stays epoch 1. Needs Isekai
 question pairs and sibling-trope handling at the frontier first.
+
+
+---
+
+## Decision 2026-09-12 (recurrent-memory transfers, items 1 and 2)
+
+1. Delta-rule capsule memory (`src/cnet_vsa_delta.c`, `make cnet_vsa_delta_bench`): exact where the Hebbian
+   bundle is useless (256/256 vs 26/256 pairs), ties the explicit table in-sample (83.9 vs 84.5) but generalises
+   worse on unseen sentences (top-5 27 vs 67), no read-time gain, no generation gain (perplexity 884 vs 724;
+   delta-only 1,644). Kept as an optional measured mode; the table stays the generative memory; nothing removed.
+2. Sibling answering (mixture-of-memories top-2): default on with a passage-level margin of 2: gold answers
+   26.7% -> 32.4% on never-probed questions, wrong 2.1% -> 3.8%, judged precision unchanged at 76%, score
+   +898 -> +992, aliens 0/12. Items 3 and 4 (recurrent LMs in C/HIP) not started.
+
+Evidence: result/cnet_vsa_recurrent_items_20260912.md.

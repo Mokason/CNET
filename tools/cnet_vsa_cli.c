@@ -37,6 +37,7 @@
 #include "cnet_vsa_hybrid.h"
 #include "cnet_vsa_gen_capsule.h"
 #include "cnet_vsa_lexicon.h"
+#include "cnet_vsa_delta.h"
 #include "cnet_vsa_evidence.h"
 
 #define CLI_MAX_LINE 1024
@@ -83,6 +84,7 @@ static void print_usage(const char *prog) {
     printf("  route <dir> <prompt>       Rank all capsules in directory against prompt intent\n");
     printf("  route-batch <dir>          Same, one prompt per stdin line, registry loaded once\n");
     printf("  answer <dir> <prompt> [k]  Route, then return the winning capsule's certified passages (v4)\n");
+    printf("  gencap-recall <cap> [f]    Next-word recall: delta-rule memory (derived from passages) vs table vs bundle\n");
     printf("  answer-batch <dir> [k]     Same, one prompt per stdin line\n");
     printf("  lexicon-build <dir> <out>  Learn a wide-space lexicon from *_corpus.txt (Random Indexing; phrases, subwords, distilled)\n");
     printf("  lexicon-train <in> <out> <dir> <pairs.tsv>  Supervised pass on (capsule, question) pairs toward corpus centroids\n");
@@ -1261,9 +1263,18 @@ static void cmd_gencap_gen(const char *capsule_path, const char *prompt, const c
 
     char out_buf[1024] = {0};
     int toks_out = 0;
-    int gen_rc = cnet_vsa_gencap_generate_ex(cap, seed, p_intent, p_bits, 0.45f,
-                                            max_tokens > 0 ? max_tokens : 28,
-                                            out_buf, sizeof(out_buf), &toks_out);
+    /* CNET_VSA_GEN_MEMORY = table | bundle | delta | both (table+bundle+delta) | default */
+    unsigned mem = CNET_VSA_GEN_MEM_DEFAULT;
+    const char *gm = getenv("CNET_VSA_GEN_MEMORY");
+    if (gm && *gm) {
+        if (strcmp(gm, "table") == 0) mem = CNET_VSA_GEN_MEM_TABLE;
+        else if (strcmp(gm, "bundle") == 0) mem = CNET_VSA_GEN_MEM_BUNDLE;
+        else if (strcmp(gm, "delta") == 0) mem = CNET_VSA_GEN_MEM_DELTA;
+        else if (strcmp(gm, "both") == 0) mem = CNET_VSA_GEN_MEM_DEFAULT | CNET_VSA_GEN_MEM_DELTA;
+    }
+    int gen_rc = cnet_vsa_gencap_generate_mem(cap, seed, p_intent, p_bits, 0.45f,
+                                             max_tokens > 0 ? max_tokens : 28, mem,
+                                             out_buf, sizeof(out_buf), &toks_out);
 
     printf("=================================================================\n");
     printf(" CNET Autonomous Capsule Generation (Pure VSA, Zero LLM)\n");
@@ -1272,6 +1283,7 @@ static void cmd_gencap_gen(const char *capsule_path, const char *prompt, const c
     if (prompt) printf("  Prompt:     \"%s\"\n", prompt);
     if (seed)   printf("  Seed:       \"%s\"\n", seed);
     printf("  Gate space: %s\n", p_bits ? "wide int8 (v3 topical block)" : (p_intent ? "float-512" : "none"));
+    printf("  Memory:     %s%s%s\n", (mem & CNET_VSA_GEN_MEM_TABLE) ? "table " : "", (mem & CNET_VSA_GEN_MEM_BUNDLE) ? "bundle " : "", (mem & CNET_VSA_GEN_MEM_DELTA) ? "delta(derived from passages)" : "");
     printf("  Result:     %s\n", (gen_rc == 0) ? "SUCCESS (In-Domain)" : "REFUSED (Out-of-Domain)");
     printf("  Tokens:     %d\n", toks_out);
     printf("  Output:     \"%s\"\n\n", out_buf);
@@ -1290,6 +1302,10 @@ static void registry_apply_env(CnetVsaGenRegistry *reg) {
     if (t && *t && strcmp(t, "0") == 0) reg->term_gate = 0;
     const char *zm = getenv("CNET_VSA_Z_MARGIN");   /* margin gate: z_min = sqrt(2 ln N) + z_margin */
     if (zm && *zm) reg->z_margin = (float)atof(zm);
+    const char *sb = getenv("CNET_VSA_ANSWER_SIBLINGS");   /* 1: answer from the better of two ambiguity-tied capsules */
+    if (sb && *sb) reg->answer_siblings = atoi(sb) != 0;
+    const char *zg = getenv("CNET_VSA_SIBLING_ZGAP");
+    if (zg && *zg) reg->sibling_zgap = (float)atof(zg);
 }
 
 /* Route one prompt against an already loaded registry and print the decision. */
@@ -1605,8 +1621,8 @@ static void answer_print(CnetVsaGenRegistry *reg, const char *prompt, int k) {
                     : (a.route.best_idx >= 0 ? reg->capsules[a.route.best_idx].header.name : "none");
     const char *why = (a.route.status == CNET_VSA_ROUTE_REFUSE_MARGIN) ? "margin" : (a.route.status == CNET_VSA_ROUTE_REFUSE_AMBIGUOUS) ? "ambiguity"
                     : (a.route.status == CNET_VSA_ROUTE_REFUSE_TERM) ? "term" : (a.route.status == CNET_VSA_ROUTE_ACCEPT) ? "accept" : "radius";
-    printf("  Answer: %s capsule=%s route=%s dist=%.4f z=%.2f z_min=%.2f passages=%d cold=%d route_us=%.1f rank_us=%.1f\n",
-           st, cap, why, a.route.best_dist, a.z, a.z_min, a.passages, a.cold, a.route_us, a.rank_us);
+    printf("  Answer: %s capsule=%s route=%s dist=%.4f z=%.2f z_min=%.2f passages=%d cold=%d route_us=%.1f rank_us=%.1f sibling=%d\n",
+           st, cap, why, a.route.best_dist, a.z, a.z_min, a.passages, a.cold, a.route_us, a.rank_us, a.sibling_pick);
     for (int i = 0; i < a.n && a.status == CNET_VSA_ANSWER_OK; ++i)
         printf("  P%d: sim=%.4f | %s\n", i + 1, a.sim[i], cnet_vsa_registry_passage(reg, a.capsule_idx, a.passage_idx[i]));
 }
@@ -1650,6 +1666,45 @@ static void cmd_answer_batch(const char *dir_path, int k) {
     }
     cnet_vsa_registry_release(reg);
     free(reg);
+}
+
+/* gencap-recall <cap> [sentences.txt]: next-word recall of the delta memory vs the table and the bundle,
+ * on the capsule's own passages (train) and on the given held-out sentences */
+static int cmd_gencap_recall(const char *capsule_path, const char *heldout_path) {
+    CnetVsaGenCapsule *cap = (CnetVsaGenCapsule *)calloc(1, sizeof(CnetVsaGenCapsule));
+    if (!cap) return 1;
+    int rc = cnet_vsa_gencap_load(cap, capsule_path);
+    if (rc != 0) { fprintf(stderr, "Error: cannot load capsule '%s' (rc=%d).\n", capsule_path, rc); free(cap); return 1; }
+    if (cnet_vsa_gencap_encoder_id(cap) == CNET_VSA_ENCODER_LEX) {
+        char dir[1024]; snprintf(dir, sizeof(dir), "%s", capsule_path); char *sl = strrchr(dir, '/'); if (sl) *sl = 0; else snprintf(dir, sizeof(dir), ".");
+        cnet_vsa_lexicon_activate_default(dir);
+    }
+    CnetVsaDeltaMemory dm; memset(&dm, 0, sizeof(dm));
+    int pairs = cnet_vsa_delta_build_from_capsule(&dm, cap, 4, 0.5f);
+    if (pairs <= 0) { fprintf(stderr, "Error: no passages to derive a memory from (rc=%d).\n", pairs); free(cap); return 2; }
+    printf("  Capsule:    %s  vocab %zu  transitions %zu  passages %u\n", cap->name, cap->ngram.vocab_count, cap->ngram.transition_count, cap->passages.count);
+    printf("  Delta:      %u pairs x %u passes (beta %.2f) into %dx%d, built in %.1f ms\n", dm.pairs, dm.passes, dm.beta, dm.dim, dm.dim, dm.build_ms);
+    const char *own[CNET_VSA_PASSAGE_MAX];
+    for (uint32_t i = 0; i < cap->passages.count; ++i) own[i] = cap->passages.text + cap->passages.offset[i];
+    CnetVsaDeltaRecall r;
+    cnet_vsa_delta_recall(&dm, cap, own, cap->passages.count, &r);
+    printf("  RECALL train n=%d  delta %.1f%%/%.1f%%  table %.1f%%/%.1f%%  bundle %.1f%%/%.1f%%  (top-1/top-5)  read us: delta %.1f table %.1f bundle %.1f\n",
+           r.positions, 100.0 * r.delta_top1 / r.positions, 100.0 * r.delta_top5 / r.positions, 100.0 * r.table_top1 / r.positions, 100.0 * r.table_top5 / r.positions,
+           100.0 * r.bundle_top1 / r.positions, 100.0 * r.bundle_top5 / r.positions, r.delta_read_us, r.table_read_us, r.bundle_read_us);
+    if (heldout_path && *heldout_path) {
+        LineList ho; memset(&ho, 0, sizeof(ho));
+        if (linelist_read_file(&ho, heldout_path) >= 0 && ho.count > 0) {
+            cnet_vsa_delta_recall(&dm, cap, (const char *const *)ho.lines, ho.count, &r);
+            if (r.positions)
+                printf("  RECALL heldout n=%d  delta %.1f%%/%.1f%%  table %.1f%%/%.1f%%  bundle %.1f%%/%.1f%%\n",
+                       r.positions, 100.0 * r.delta_top1 / r.positions, 100.0 * r.delta_top5 / r.positions, 100.0 * r.table_top1 / r.positions, 100.0 * r.table_top5 / r.positions,
+                       100.0 * r.bundle_top1 / r.positions, 100.0 * r.bundle_top5 / r.positions);
+            linelist_free(&ho);
+        }
+    }
+    cnet_vsa_delta_free(&dm);
+    free(cap);
+    return 0;
 }
 
 static void cmd_auto(const char *dir_path, const char *prompt) {
@@ -2011,6 +2066,9 @@ int main(int argc, char **argv) {
         return cmd_lexicon_build(argc - (arg_offset + 1), argv + arg_offset + 1);
     } else if (strcmp(cmd, "stem-words") == 0) {
         return cmd_stem_words();
+    } else if (strcmp(cmd, "gencap-recall") == 0) {
+        if (arg_offset + 1 < argc) return cmd_gencap_recall(argv[arg_offset + 1], arg_offset + 2 < argc ? argv[arg_offset + 2] : NULL);
+        fprintf(stderr, "Usage: %s gencap-recall <file.gencap> [heldout_sentences.txt]\n", argv[0]); return 1;
     } else if (strcmp(cmd, "answer") == 0) {
         if (arg_offset + 2 < argc) cmd_answer(argv[arg_offset + 1], argv[arg_offset + 2], arg_offset + 3 < argc ? atoi(argv[arg_offset + 3]) : 2);
         else { fprintf(stderr, "Usage: %s answer <dir> \"<prompt>\" [k]\n", argv[0]); return 1; }
