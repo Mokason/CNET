@@ -1,0 +1,52 @@
+{
+  "seed": 20260913,
+  "shapes": {
+    "wide": [
+      1,
+      2,
+      4,
+      8,
+      16,
+      32
+    ],
+    "chain": [
+      1,
+      2,
+      4,
+      8,
+      16,
+      32
+    ],
+    "tree_leaves": [
+      1,
+      2,
+      4,
+      8,
+      16
+    ]
+  },
+  "numeric_cases_per_cell": 256,
+  "residency": [
+    "all_resident",
+    "lru4",
+    "reload_all"
+  ],
+  "oracle": "f_i(x)=((2*(i%8)+1)*x+(3*i+1))%64; dependency adapter sums parent values mod64",
+  "rules": "all dependencies must be covered and share request context; no composite training labels; exact oracle, unchanged certification floors",
+  "qa_widths": [
+    1,
+    2,
+    4,
+    8,
+    16
+  ],
+  "qa_groups": "nested contiguous groups of previously fixed shuffled pair indices; no correctness selection",
+  "qa_previous_protocol_sha256": "bbb91b8652fbf839b3d5a3ebd7a8f57011a266eb305681bda486abc04bd179aa",
+  "qa_control": "single merged route asks for up to width passages; existing CLI limits reported",
+  "qa_quality": "judge accepted complete answers; incomplete compound requests refuse",
+  "warm_budget_us": {
+    "p95": 1000,
+    "p99": 5000
+  },
+  "claims": "measure scaling; no exponential quality law inferred from number of possible input combinations"
+}
