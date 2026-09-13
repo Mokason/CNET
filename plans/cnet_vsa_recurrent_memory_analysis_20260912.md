@@ -87,3 +87,18 @@ they should be built on the C/HIP trainer only after its throughput is fixed. Or
 DeltaNet first and RWKV-7 sharing its core, then 4.
 
 Not claimed: any number for items 1 to 4; those come from the gates when they run.
+
+## Outcome 2026-09-12 (items 3 and 4 built and measured)
+
+Built as `src/cnet_vsa_rlm.c` (one trainer, three mixers: Gated DeltaNet with short conv, RWKV-7 core, SSD as the
+state-space slot; explicit backward, double-precision gradient check in `make cnet_vsa_rlm_bench`; CPU + OpenMP, not
+the HIP block trainer: the chunk-level rank-n gradient restructure made the CPU path 0.57 ms per token and the corpus
+trains in a minute per epoch, so the GPU trainer was not needed). Measured in `result/cnet_vsa_recurrent_lm_20260912.md`:
+held-out perplexity 75 / 88 / 75 (deltanet / rwkv7 / ssd) against 147 for a trigram; generation fluent, unanchored,
+0% answers, ties the n-gram walk under the judge; the model as a coherence scorer reproduces the 26B judge's ordering
+on 68-71 of 71 items; on recall-with-rebinding RWKV-7 stores and overwrites exactly, the other two do not at the
+tried budget. Mamba-3's discretisation: still not in the tree, not claimed. Predictions above that held: the LMs are a
+scorer and a baseline, not an answer path. Prediction that did not hold: the delta rule winning exact recall at this
+scale (not reproduced; open). Scorer wired into the answer path (optional hook, gate check in the answer bench) and
+measured on the 400 judged questions: pmi rerank 77% -> 41-57% precision, fluency floor a no-op; rejected, off by
+default. The scorer's real finding is passage hygiene at sealing time (it flags the teacher truncations), not answering.

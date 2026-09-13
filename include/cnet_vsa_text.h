@@ -108,6 +108,11 @@ void cnet_vsa_text_wide_to_q8(const float *wide, int8_t *out_q8);
 float cnet_vsa_text_q8_similarity(const int8_t *a, const int8_t *b);
 
 /* Same, with the norms precomputed (routing hot path): dot / (norm_a * norm_b). */
+/* Exact leave-one-content-word-out distances, stopping after the first refusal.
+ * Returns measured count, 0 when token limits/phrase vectors require the normal
+ * encoder, or -1 on invalid inputs. No approximate guard decisions. */
+int cnet_vsa_text_leave_one_out_distances(const CnetVsaTokenList *tokens, uint32_t encoder_id,
+    const int8_t *target, float target_norm, float radius, float *distances, size_t capacity);
 float cnet_vsa_text_q8_similarity_n(const int8_t *a, float norm_a, const int8_t *b, float norm_b);
 
 /* L2 norm of an int8 vector. */

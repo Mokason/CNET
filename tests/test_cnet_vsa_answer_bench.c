@@ -23,6 +23,24 @@ static double now_us(void) { struct timespec ts; clock_gettime(CLOCK_MONOTONIC, 
 static uint64_t g = 0x9E3779B97F4A7C15ULL;
 static uint32_t rnd(void) { g ^= g << 13; g ^= g >> 7; g ^= g << 17; return (uint32_t)g; }
 
+/* stub text scorer for the hook check: a deterministic per-text "nll" (mean byte value / 32, plus a prefix term
+ * so that pmi is non-trivial); the recurrent LM plugs into the same hook (result/cnet_vsa_recurrent_lm_20260912.md) */
+static double stub_nll(void *ctx, const char *prefix, const char *text, int *ntok) {
+    (void)ctx; double s = 0; int n = 0; for (const unsigned char *p = (const unsigned char *)text; *p; ++p) { s += *p; n++; }
+    if (ntok) *ntok = n;
+    double v = n ? s / n / 32.0 : 0;
+    if (prefix) { int m = 0; for (const char *p = prefix; *p; ++p) m += *p == ' '; v += 0.01 * (double)((n + m) % 7); }
+    return v;
+}
+static double invalid_nll(void *ctx, const char *prefix, const char *text, int *ntok) {
+    (void)text;
+    int mode = *(const int *)ctx;
+    *ntok = mode == 3 ? 0 : 1;
+    if (mode == 0 || (mode == 4 && prefix)) return NAN;
+    if (mode == 1) return INFINITY;
+    if (mode == 2) return -1.0;
+    return 1.0;
+}
 static const char *A_W[] = { "coating", "ceramic", "furnace", "gradient", "thermal", "stress", "crack", "layer", "quench", "sinter", "glaze", "kiln" };
 static const char *B_W[] = { "levain", "crumb", "hydration", "flour", "proof", "oven", "crust", "starter", "knead", "ferment", "bake", "loaf" };
 static const char *A_SUBJ[] = { "spallation", "delamination", "porosity", "adhesion", "oxidation", "creep" };
@@ -70,12 +88,12 @@ static int build(const char *path, const char *name, const char **w, int nw, con
 
 int main(void) {
     printf("=================================================================\n");
-    printf(" CNET-VSA Certified Answer Bench (v4 passages, fail-closed)\n");
+    printf(" CNET-VSA Certified Answer Bench (v4 passages, fail-closed, scorer hook)\n");
     printf("=================================================================\n\n");
     const char *dir = "/tmp/cnet_vsa_answer_bench"; mkdir(dir, 0755);
     static char sa[64][256], sb[64][256], pa[6][256], pb[6][256];
 
-    printf("[1/3] Format: passages persist, are digest-covered, and v3 files still load\n");
+    printf("[1/4] Format: passages persist, are digest-covered, and v3 files still load\n");
     build("/tmp/cnet_vsa_answer_bench/topic_a.gencap", "topic_a", A_W, 12, A_SUBJ, 6, 48, 0, sa, pa);
     build("/tmp/cnet_vsa_answer_bench/topic_b.gencap", "topic_b", B_W, 12, B_SUBJ, 6, 48, 0, sb, pb);
     {
@@ -106,7 +124,7 @@ int main(void) {
     remove("/tmp/cnet_vsa_answer_bench/topic_c_v3.gencap");
     printf("  passages persist, tamper -> -5, v3 file loads without passages PASS\n");
 
-    printf("\n[2/3] Answers: the passage the question came from, refusal off-topic\n");
+    printf("\n[2/4] Answers: the passage the question came from, refusal off-topic\n");
     CnetVsaGenRegistry *reg = (CnetVsaGenRegistry *)calloc(1, sizeof(CnetVsaGenRegistry)); assert(reg);
     assert(cnet_vsa_registry_init(reg, CNET_VSA_DEFAULT_DIM) == 0);
     reg->min_null_count = 1000; /* two capsules: no margin statistics, radius + passage floor decide */
@@ -139,7 +157,7 @@ int main(void) {
         printf("  off-topic prompt refused at the route; topic-b answered from topic_b PASS\n");
     }
 
-    printf("\n[3/3] Latency (hermetic registry, 48 passages): cold vs warm\n");
+    printf("\n[3/4] Latency (hermetic registry, 48 passages): cold vs warm\n");
     {
         CnetVsaAnswer a; double cold = 0, warm = 0; int nw = 0;
         cnet_vsa_registry_release(reg); cnet_vsa_registry_init(reg, CNET_VSA_DEFAULT_DIM); reg->min_null_count = 1000; reg->term_gate = 0;
@@ -147,6 +165,44 @@ int main(void) {
         cnet_vsa_registry_answer(reg, "how is spallation measured with coating and furnace under layer conditions", 2, &a); assert(a.cold == 1); cold = a.route_us + a.rank_us;
         for (int i = 0; i < 200; ++i) { cnet_vsa_registry_answer(reg, "how is spallation measured with coating and furnace under layer conditions", 2, &a); assert(a.cold == 0); warm += a.route_us + a.rank_us; nw++; }
         printf("  cold %.1f us (builds %d passage vectors), warm %.1f us per answer (route + rank)\n", cold, a.passages, warm / nw);
+    }
+
+    printf("\n[4/4] Text scorer hook: reorders only within the accepted set, the fluency floor only removes\n");
+    {
+        const char *qs[6]; char qb[6][256];
+        for (int i = 0; i < 6; ++i) { snprintf(qb[i], 256, "how is %s measured with %s and %s under %s conditions", A_SUBJ[i], A_W[(i + 5) % 12], A_W[(i + 3) % 12], A_W[(i + 8) % 12]); qs[i] = qb[i]; }
+        CnetVsaAnswer base[6], rr[6]; int changed = 0, ok = 0; float maxnll = 0, minnll = 1e9f;
+        for (int i = 0; i < 6; ++i) cnet_vsa_registry_answer(reg, qs[i], 4, &base[i]);
+        cnet_vsa_registry_set_scorer(reg, stub_nll, NULL, 1, 0.0f);
+        for (int i = 0; i < 6; ++i) {
+            cnet_vsa_registry_answer(reg, qs[i], 4, &rr[i]);
+            assert(rr[i].status == base[i].status && rr[i].capsule_idx == base[i].capsule_idx && rr[i].n == base[i].n);   /* the accepted set and the certification are unchanged */
+            if (rr[i].status != CNET_VSA_ANSWER_OK) continue;
+            ok++; assert(rr[i].lm_scored); changed += rr[i].lm_reranked;
+            for (int j = 0; j < rr[i].n; ++j) { int found = 0; for (int l = 0; l < base[i].n; ++l) found |= base[i].passage_idx[l] == rr[i].passage_idx[j]; assert(found);
+                assert(rr[i].lm_nll[j] > 0); if (rr[i].lm_nll[j] > maxnll) maxnll = rr[i].lm_nll[j]; if (rr[i].lm_nll[j] < minnll) minnll = rr[i].lm_nll[j];
+                if (j) assert(rr[i].lm_pmi[j - 1] >= rr[i].lm_pmi[j]); }   /* ordered by pmi, a permutation of the accepted set */
+        }
+        printf("  rerank (stub scorer): %d answered, top passage changed in %d, sets identical to the baseline\n", ok, changed);
+        cnet_vsa_registry_set_scorer(reg, stub_nll, NULL, 0, maxnll + 1.0f);
+        for (int i = 0; i < 6; ++i) { CnetVsaAnswer a; cnet_vsa_registry_answer(reg, qs[i], 4, &a); assert(a.status == base[i].status && (a.status != CNET_VSA_ANSWER_OK || a.passage_idx[0] == base[i].passage_idx[0])); }
+        cnet_vsa_registry_set_scorer(reg, stub_nll, NULL, 0, minnll * 0.5f);
+        int refused = 0; for (int i = 0; i < 6; ++i) { CnetVsaAnswer a; int rc = cnet_vsa_registry_answer(reg, qs[i], 4, &a); if (base[i].status == CNET_VSA_ANSWER_OK) { assert(a.status == CNET_VSA_ANSWER_REFUSE_FLUENCY && rc < 0); refused++; } else assert(a.status == base[i].status); }
+        printf("  floor above every score: answers unchanged; floor below every score: %d/%d accepted answers refused as REFUSE_FLUENCY, refusals unchanged PASS\n", refused, ok);
+        assert(ok > 0);
+        for (int mode = 0; mode < 6; ++mode) {
+            cnet_vsa_registry_set_scorer(reg, invalid_nll, &mode, 1, mode == 5 ? NAN : 100.0f);
+            for (int i = 0; i < 6; ++i) {
+                CnetVsaAnswer a; int rc = cnet_vsa_registry_answer(reg, qs[i], 4, &a);
+                if (base[i].status == CNET_VSA_ANSWER_OK &&
+                    (a.status != CNET_VSA_ANSWER_REFUSE_FLUENCY || rc >= 0)) {
+                    fprintf(stderr, "CNET_VSA_SCORER_INVALID_RED mode=%d\n", mode);
+                    abort();
+                }
+            }
+        }
+        printf("  CNET_VSA_SCORER_INVALID_PASS nonfinite, negative, empty and conditional failures refuse\n");
+        cnet_vsa_registry_set_scorer(reg, NULL, NULL, 0, 0.0f);
     }
     cnet_vsa_registry_release(reg); free(reg);
 

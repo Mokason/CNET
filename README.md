@@ -126,7 +126,19 @@ registry was resealed under the v3 block and the shipped lexicon
 (`bin/registry.lex`, auto-activated by every registry load): on the
 never-probed teacher questions wrong accepts fell from 35% to 1.2%, with a
 term-dependence gate that refuses any route a single word could flip
-(`result/cnet_vsa_registry_reseal_20260912.md`). Generation,
+(`result/cnet_vsa_registry_reseal_20260912.md`). A recurrent language
+model trained from scratch in C on the same corpora (Gated DeltaNet, RWKV-7
+core and SSD mixers, `make cnet_vsa_rlm_bench`) reaches half the trigram's
+held-out perplexity, writes fluent but unanchored sentences that answer 0% of
+prompts, and works as a coherence scorer that reproduces the judge's ordering
+on one core; wired into the answer path as an optional rerank and fluency
+floor it was measured and rejected, precision 77% -> 41% under the rerank and
+nothing removed by the floor (`result/cnet_vsa_recurrent_lm_20260912.md`).
+The path's 59% refusals were then forced through and judged: every refused
+class is right to refuse (42% correct for the route gates, 44% and below under
+the passage floor, against a 67% break-even), the capsule holds the answer in
+91% of floor refusals, and a lexical-overlap passage statistic is the one
+lever measured (`result/cnet_vsa_refusals_20260913.md`). Generation,
 answer correctness and open-ended language are not compared. See
 `result/cnet_vsa_routing_arena_20260911.md`.
 

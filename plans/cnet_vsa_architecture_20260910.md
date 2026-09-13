@@ -537,3 +537,23 @@ question pairs and sibling-trope handling at the frontier first.
    +898 -> +992, aliens 0/12. Items 3 and 4 (recurrent LMs in C/HIP) not started.
 
 Evidence: result/cnet_vsa_recurrent_items_20260912.md.
+
+## Decision 2026-09-12 (items 3 and 4: recurrent LMs in C)
+
+Gated DeltaNet, RWKV-7 core and SSD trained from scratch in C on the retained corpora (`make cnet_vsa_rlm`,
+gate `make cnet_vsa_rlm_bench`): held-out perplexity 75 / 88 / 75 vs trigram 147; as generators fluent but unanchored
+and 0% answers (the passage answer path stays the only answer source); as a coherence scorer they reproduce the judge's
+fluency ordering on 68-71 of 71 items in C on one core. Wired into the answer path through an optional scorer hook
+(`cnet_vsa_registry_set_scorer`, CLI `CNET_VSA_RLM_MODEL` / `_RERANK` / `_FLOOR`) and measured on the 400 judged
+questions: a pmi rerank drops precision 77% -> 41-57%, a fluency floor removes nothing; both rejected and off by
+default, the hook kept. Nothing existing was changed or removed. Evidence: result/cnet_vsa_recurrent_lm_20260912.md.
+
+## Decision 2026-09-13 (refusals)
+
+Measured on the production registry (result/cnet_vsa_refusals_20260913.md): every refused-answer class forced through
+is below the cost rule's break-even (route gates 42% right, passage floor 44% / 26% / 0% by band under the floor);
+a margin-rescue path (sibling logic on margin refusals) was 50% right and was removed. No floor lowered; the path is
+unchanged (+992 on 3,994, +50 on 400). Lever found: a hybrid passage statistic (VSA similarity + idf-weighted
+lexical overlap) raises precision and net score monotonically in simulation (+19 -> +64 over lambda 0 -> 0.5) at
+fewer answers; shipping it needs a v5 passage block (weight recorded), the lexicon's idf at seal and answer time, and
+a reseal of 812 capsules. Open, user's call. The recurrent-LM scorer was unlinked from the CLI (hook kept, stub-gated).

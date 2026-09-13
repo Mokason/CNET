@@ -376,9 +376,23 @@ typedef struct {
     /* sibling path: the picked capsule's best-passage z must exceed the other tied capsule's by this much
      * (0 = any); the passage-level ambiguity gate of the mixture path */
     float sibling_zgap;
+    /* Measured and rejected 2026-09-13: running the same passage-evidence path on MARGIN refusals answers 3 more
+     * points of questions at 50% precision (score +992 -> +933 on the 3,994 never-probed questions); margin
+     * refusals are right to refuse. Not a knob. */
     /* 1 forces the float-512 space even when every entry has a topical block
      * (A/B measurement only). */
     int force_float;
+    /* Optional text scorer (a language model; see cnet_vsa_registry_set_scorer): mean per-token negative
+     * log-likelihood of text after an optional prefix. Used by the answer path only AFTER a passage is accepted
+     * by the calibrated floor: scorer_rerank reorders the accepted top-k by pmi = nll(text) - nll(text | prompt),
+     * scorer_floor > 0 refuses an answer whose top passage scores above it. Neither can admit a passage the VSA
+     * floor refused. The registry does not own the scorer context. Measured 2026-09-12 with the recurrent LM on 400
+     * judged questions: pmi rerank 77% -> 41% precision, floor a no-op; both off by default, the hook stays for
+     * other scorers (result/cnet_vsa_recurrent_lm_20260912.md). */
+    double (*scorer_fn)(void *ctx, const char *prefix, const char *text, int *ntok);
+    void  *scorer_ctx;
+    int    scorer_rerank;
+    float  scorer_floor;
     CnetVsaRegisteredCap capsules[CNET_VSA_REGISTRY_MAX_CAPSULES];
 } CnetVsaGenRegistry;
 
@@ -478,6 +492,7 @@ int cnet_vsa_registry_route_ex(const CnetVsaGenRegistry *reg, const float *query
 #define CNET_VSA_ANSWER_ROUTE_REFUSED   1
 #define CNET_VSA_ANSWER_NO_PASSAGES     2   /* the winner is a pre-v4 capsule */
 #define CNET_VSA_ANSWER_REFUSE_PASSAGE  3   /* no passage stands out */
+#define CNET_VSA_ANSWER_REFUSE_FLUENCY  4   /* the scorer floor (when set) rejected the accepted top passage */
 typedef struct {
     CnetVsaRouteResult route;
     int    status;
@@ -491,8 +506,18 @@ typedef struct {
     int    sibling_pick;      /* 1 when the route was refused by the ambiguity gate and the answer came from
                                  the better passage of the two tied capsules (mixture-of-memories style) */
     double route_us, rank_us;
+    /* scorer (when installed): per returned passage, its nll and pmi; lm_reranked = the top passage changed */
+    int    lm_scored, lm_reranked;
+    float  lm_nll[CNET_VSA_ANSWER_MAX], lm_pmi[CNET_VSA_ANSWER_MAX];
+    double lm_us;
 } CnetVsaAnswer;
 int cnet_vsa_registry_answer(CnetVsaGenRegistry *reg, const char *prompt, int k, CnetVsaAnswer *out);
+/* Install (fn != NULL) or remove (fn == NULL) the answer path's text scorer; rerank and floor as described on the
+ * registry fields. The caller keeps ownership of ctx. Scores must be finite,
+ * nonnegative float-representable NLLs with ntok > 0; invalid results or a
+ * nonfinite floor refuse the answer as REFUSE_FLUENCY. */
+void cnet_vsa_registry_set_scorer(CnetVsaGenRegistry *reg, double (*fn)(void *, const char *, const char *, int *),
+                                  void *ctx, int rerank, float floor);
 /* Text of one passage (NULL when out of range). */
 const char *cnet_vsa_registry_passage(const CnetVsaGenRegistry *reg, int cap_idx, int passage_idx);
 /* Free the owned passage copies and caches; the registry struct itself is the caller's. */

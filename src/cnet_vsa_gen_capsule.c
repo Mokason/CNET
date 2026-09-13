@@ -7,6 +7,7 @@
 #include <time.h>
 #include <ctype.h>
 #include <math.h>
+#include <float.h>
 #include <dirent.h>
 
 #define FNV_OFFSET_BASIS 14695981039346656037ULL
@@ -836,6 +837,7 @@ int cnet_vsa_registry_init(CnetVsaGenRegistry *reg, int dim) {
     reg->term_gate = 1;
     reg->answer_siblings = 1;      /* measured 2026-09-12: +5 points of correct answers at equal precision (76%) */
     reg->sibling_zgap = 2.0f;
+    reg->scorer_fn = NULL; reg->scorer_ctx = NULL; reg->scorer_rerank = 0; reg->scorer_floor = 0.0f;
     reg->ambiguity_k_float = CNET_VSA_ROUTE_AMBIGUITY_K_FLOAT_DEFAULT;
     reg->force_float = 0;
     return 0;
@@ -949,6 +951,48 @@ static int rank_passages(CnetVsaRegisteredCap *e, const int8_t *qv, float qn, fl
     return bi;
 }
 
+void cnet_vsa_registry_set_scorer(CnetVsaGenRegistry *reg, double (*fn)(void *, const char *, const char *, int *), void *ctx, int rerank, float floor) {
+    if (!reg) return;
+    reg->scorer_fn = fn; reg->scorer_ctx = fn ? ctx : NULL; reg->scorer_rerank = fn ? (rerank != 0) : 0; reg->scorer_floor = fn ? floor : 0.0f;
+}
+
+/* After the VSA floor accepted an answer: score the returned passages, optionally reorder them by pmi (the
+ * accepted set is unchanged, only its order), optionally refuse on the fluency floor. */
+static void answer_apply_scorer(CnetVsaGenRegistry *reg, const char *prompt, const CnetVsaRegisteredCap *e, CnetVsaAnswer *out) {
+    if (!reg->scorer_fn || out->status != CNET_VSA_ANSWER_OK || out->n < 1) return;
+    double t0 = answer_now_us(); int nt = 0, first = out->passage_idx[0];
+    if (!isfinite(reg->scorer_floor)) goto scorer_invalid;
+    for (int i = 0; i < out->n; ++i) {
+        const char *txt = e->passage_text + e->passage_off[out->passage_idx[i]];
+        nt = 0;
+        double nll = reg->scorer_fn(reg->scorer_ctx, NULL, txt, &nt);
+        if (nt <= 0 || !isfinite(nll) || nll < 0.0 || nll > FLT_MAX) goto scorer_invalid;
+        out->lm_nll[i] = (float)nll;
+        out->lm_pmi[i] = 0.0f;
+        if (reg->scorer_rerank) {
+            nt = 0;
+            double conditional = reg->scorer_fn(reg->scorer_ctx, prompt, txt, &nt);
+            if (nt <= 0 || !isfinite(conditional) || conditional < 0.0 || conditional > FLT_MAX) goto scorer_invalid;
+            out->lm_pmi[i] = (float)(nll - conditional);
+        }
+    }
+    out->lm_scored = 1;
+    if (reg->scorer_rerank && out->n > 1) {   /* stable insertion sort by pmi, descending; arrays stay aligned */
+        for (int i = 1; i < out->n; ++i) {
+            int pi = out->passage_idx[i]; float sm = out->sim[i], nl = out->lm_nll[i], pm = out->lm_pmi[i]; int j = i - 1;
+            while (j >= 0 && out->lm_pmi[j] < pm) { out->passage_idx[j + 1] = out->passage_idx[j]; out->sim[j + 1] = out->sim[j]; out->lm_nll[j + 1] = out->lm_nll[j]; out->lm_pmi[j + 1] = out->lm_pmi[j]; --j; }
+            out->passage_idx[j + 1] = pi; out->sim[j + 1] = sm; out->lm_nll[j + 1] = nl; out->lm_pmi[j + 1] = pm;
+        }
+        out->lm_reranked = out->passage_idx[0] != first;
+    }
+    if (reg->scorer_floor > 0.0f && out->lm_nll[0] > reg->scorer_floor) out->status = CNET_VSA_ANSWER_REFUSE_FLUENCY;
+    out->lm_us = answer_now_us() - t0;
+    return;
+scorer_invalid:
+    out->status = CNET_VSA_ANSWER_REFUSE_FLUENCY;
+    out->lm_us = answer_now_us() - t0;
+}
+
 int cnet_vsa_registry_answer(CnetVsaGenRegistry *reg, const char *prompt, int k, CnetVsaAnswer *out) {
     if (!out) return -1;
     memset(out, 0, sizeof(*out));
@@ -982,7 +1026,8 @@ int cnet_vsa_registry_answer(CnetVsaGenRegistry *reg, const char *prompt, int k,
                     int n = (int)e->passage_count, used[CNET_VSA_PASSAGE_MAX]; memset(used, 0, sizeof(int) * (size_t)n);
                     for (int j = 0; j < k && j < n; ++j) { int bi = -1; float bs = -2.0f; for (int i = 0; i < n; ++i) if (!used[i] && sims[i] > bs) { bs = sims[i]; bi = i; } used[bi] = 1; out->passage_idx[j] = bi; out->sim[j] = bs; out->n = j + 1; }
                     out->status = CNET_VSA_ANSWER_OK;
-                    return cidx;
+                    answer_apply_scorer(reg, prompt, e, out);
+                    return out->status == CNET_VSA_ANSWER_OK ? cidx : -1;
                 }
                 out->route.term_checked = tr.term_checked; out->route.term_ok = tr.term_ok;
             }
@@ -1037,7 +1082,8 @@ int cnet_vsa_registry_answer(CnetVsaGenRegistry *reg, const char *prompt, int k,
     out->rank_us = answer_now_us() - t0;
     if (out->z < out->z_min) { out->status = CNET_VSA_ANSWER_REFUSE_PASSAGE; return -1; }
     out->status = CNET_VSA_ANSWER_OK;
-    return winner;
+    answer_apply_scorer(reg, prompt, e, out);
+    return out->status == CNET_VSA_ANSWER_OK ? winner : -1;
 }
 
 int cnet_vsa_registry_binary_space(const CnetVsaGenRegistry *reg) {
@@ -1260,6 +1306,22 @@ static int term_gate_check(const CnetVsaGenRegistry *reg, const char *prompt, Cn
     }
     const CnetVsaRegisteredCap *w = &reg->capsules[r->best_idx];
     uint32_t enc = wide_rep_encoder(wide_rep_of(w->encoder_id));
+    float distances[CNET_VSA_MAX_TOKENS];
+    int measured = cnet_vsa_text_leave_one_out_distances(&tl, enc, w->topical, w->topical_norm,
+                                                        r->radius, distances, CNET_VSA_MAX_TOKENS);
+    if (measured < 0) { r->status = CNET_VSA_ROUTE_REFUSE_TERM; return -1; }
+    if (measured > 0) {
+        for (int k = 0; k < measured; ++k) {
+            if (distances[k] > r->term_worst_dist) r->term_worst_dist = distances[k];
+            if (distances[k] > r->radius) {
+                snprintf(r->term_word, sizeof(r->term_word), "%s", tl.tokens[content[k]].token);
+                r->status = CNET_VSA_ROUTE_REFUSE_TERM;
+                return -1;
+            }
+        }
+        r->term_ok = 1;
+        return r->best_idx;
+    }
     char *buf = (char *)malloc(tl.count * (CNET_VSA_TOKEN_LEN + 1) + 1);
     if (!buf) { r->status = CNET_VSA_ROUTE_REFUSE_TERM; return -1; }
     int8_t vq[CNET_VSA_TOPICAL_DIM];

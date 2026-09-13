@@ -48,18 +48,21 @@ float __wrap_cnet_vsa_text_q8_norm(const int8_t *v) {
 }
 
 static void check_arithmetic(void) {
-    int8_t v[CNET_VSA_TOPICAL_DIM];
+    int8_t v[CNET_VSA_TOPICAL_DIM], other[CNET_VSA_TOPICAL_DIM];
     uint32_t rng = 7;
     assert(cnet_vsa_text_q8_norm(NULL) == 0.0f);
     for (int sample = 0; sample < 1256; ++sample) {
-        int64_t squared = 0;
+        int64_t squared = 0, dot = 0;
         for (int d = 0; d < CNET_VSA_TOPICAL_DIM; ++d) {
             rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5;
             v[d] = (int8_t)(sample < 256 ? sample - 128 : (int)(rng & 255) - 128);
             squared += (int64_t)v[d] * v[d];
+            other[d] = (int8_t)(d + sample);
+            dot += (int64_t)v[d] * other[d];
         }
         float expected = (float)sqrt((double)squared);
         assert(cnet_vsa_text_q8_norm(v) == expected);
+        assert(cnet_vsa_text_q8_similarity_n(v, 4000.f, other, 4000.f) == (float)dot / (4000.f * 4000.f));
     }
     /* Wide encoders have exactly two representations, including fallback on
      * all-stopword input. This equivalence is required by shared encoding. */
@@ -162,9 +165,92 @@ static void benchmark(CnetVsaGenRegistry *reg, const char *label) {
                (double)r.z, (double)r.gap);
     }
 }
+static int cmp_entry_key(const void *a, const void *b) {
+    uint64_t x = ((const CnetVsaLexiconEntry *)a)->key, y = ((const CnetVsaLexiconEntry *)b)->key;
+    return (x > y) - (x < y);
+}
+
+static void check_leave_one_out(void) {
+    const char *words[] = {"alpha", "beta", "gamma", "delta"};
+    char boundary[6][2048];
+    const int lengths[] = {124, 125, 126, 249, 250, 251};
+    for (int j = 0; j < 6; ++j) {
+        boundary[j][0] = 0;
+        for (int i = 0; i < lengths[j]; ++i)
+            strcat(boundary[j], i % 5 == 3 ? "the " : (i % 2 ? "alpha " : "beta "));
+    }
+    const char *texts[] = {"alpha beta gamma delta", "the alpha and beta gamma", "alpha beta alpha gamma", "delta gamma beta alpha",
+        "alpha beta", "delta delta", "alpha quux beta", "alpha zephyr beta",
+        boundary[0], boundary[1], boundary[2], boundary[3], boundary[4], boundary[5]};
+    CnetVsaLexicon lex; memset(&lex, 0, sizeof(lex));
+    lex.hdr.count = 7; lex.hdr.phrases = 3; lex.hdr.dim = CNET_VSA_TOPICAL_DIM;
+    lex.entries = calloc(7, sizeof(*lex.entries)); lex.keys = calloc(7, sizeof(*lex.keys));
+    assert(lex.entries && lex.keys);
+    for (int i = 0; i < 4; ++i) lex.entries[i].key = cnet_vsa_lexicon_word_key(words[i]);
+    lex.entries[4].key = cnet_vsa_lexicon_phrase_key(lex.entries[0].key, lex.entries[1].key);
+    lex.entries[5].key = cnet_vsa_lexicon_phrase_key(lex.entries[1].key, lex.entries[2].key);
+    lex.entries[6].key = cnet_vsa_lexicon_phrase_key(lex.entries[0].key, lex.entries[2].key);
+    uint32_t rng = 17;
+    for (int i = 0; i < 7; ++i) for (int d = 0; d < CNET_VSA_TOPICAL_DIM; ++d) {
+        rng = rng * 1664525u + 1013904223u; lex.entries[i].q8[d] = (int8_t)((rng >> 24) % 255 - 127);
+    }
+    memset(lex.entries[3].q8, 0, sizeof(lex.entries[3].q8)); /* zero residual */
+    lex.hdr.fallback_mag = 127;
+    lex.hdr.subwords = 1; lex.hdr.subword_min_n = 3; lex.hdr.subword_max_n = 3;
+    lex.hdr.subword_weight = 1.f;
+    lex.subwords = calloc(1, sizeof(*lex.subwords)); lex.skeys = calloc(1, sizeof(*lex.skeys));
+    assert(lex.subwords && lex.skeys);
+    uint64_t subkeys[128];
+    assert(cnet_vsa_lexicon_subword_keys("zephyr", 3, 3, subkeys, 128) > 0);
+    lex.skeys[0] = lex.subwords[0].key = subkeys[0]; lex.subwords[0].mag = 127;
+    for (int d = 0; d < CNET_VSA_TOPICAL_WORDS; ++d) lex.subwords[0].bits[d] = UINT64_C(0xa5a5a5a5a5a5a5a5);
+    int16_t oov[CNET_VSA_TOPICAL_DIM];
+    assert(cnet_vsa_lexicon_oov_vector(&lex, "zephyr", oov) == 1);
+    assert(cnet_vsa_lexicon_oov_vector(&lex, "quux", oov) == 0);
+    qsort(lex.entries, 7, sizeof(*lex.entries), cmp_entry_key);
+    for (int i = 0; i < 7; ++i) lex.keys[i] = lex.entries[i].key;
+    cnet_vsa_lexicon_set_active(&lex);
+    const uint32_t encoders[] = {CNET_VSA_ENCODER_BAG, CNET_VSA_ENCODER_STEM, CNET_VSA_ENCODER_LEX};
+    for (size_t ei = 0; ei < sizeof(encoders)/sizeof(encoders[0]); ++ei) {
+        uint32_t enc = encoders[ei]; int8_t target[CNET_VSA_TOPICAL_DIM];
+        assert(cnet_vsa_gencap_encode_intent_q8(texts[0], target, enc) == 0);
+        float tn = cnet_vsa_text_q8_norm(target);
+        for (size_t qi = 0; qi < sizeof(texts)/sizeof(texts[0]); ++qi) {
+            CnetVsaTokenList tl; assert(cnet_vsa_text_tokenize(texts[qi], &tl) > 0);
+            float distances[CNET_VSA_MAX_TOKENS];
+            if (tl.count > (enc == CNET_VSA_ENCODER_LEX ? 125u : 250u)) {
+                assert(cnet_vsa_text_leave_one_out_distances(&tl, enc, target, tn, 2.f, distances, CNET_VSA_MAX_TOKENS) == 0);
+                continue; /* caller must retain the legacy re-encoding path */
+            }
+            assert(cnet_vsa_text_leave_one_out_distances(&tl, enc, target, tn, 2.f, distances, 1) == -1);
+            for (int mode = 0; mode < 2; ++mode) {
+                float radius = mode ? .1f : 2.f;
+                int got = cnet_vsa_text_leave_one_out_distances(&tl, enc, target, tn, radius, distances, CNET_VSA_MAX_TOKENS), k = 0;
+                assert(got > 0);
+                for (size_t removed = 0; removed < tl.count; ++removed) {
+                    if (cnet_vsa_text_is_stopword(tl.tokens[removed].token)) continue;
+                    char text[8192]; size_t pos = 0;
+                    for (size_t i = 0; i < tl.count; ++i) if (i != removed) {
+                        size_t len = strlen(tl.tokens[i].token); memcpy(text + pos, tl.tokens[i].token, len); pos += len; text[pos++] = ' ';
+                    }
+                    text[pos] = 0; int8_t q[CNET_VSA_TOPICAL_DIM];
+                    assert(cnet_vsa_gencap_encode_intent_q8(text, q, enc) == 0);
+                    float d = 1.f - cnet_vsa_text_q8_similarity_n(q, cnet_vsa_text_q8_norm(q), target, tn);
+                    assert(k < got && distances[k++] == d);
+                    if (d > radius) break;
+                }
+                assert(k == got);
+            }
+        }
+    }
+    cnet_vsa_lexicon_set_active(NULL); free(lex.entries); free(lex.keys); free(lex.subwords); free(lex.skeys);
+    puts("CNET_VSA_Q8_LOO_PASS: exact deletion, phrase bridge, OOV/subwords, zero residual, token boundaries, early refusal");
+}
+
 int main(int argc, char **argv) {
     int timing_only = argc == 2 && strcmp(argv[1], "--timing-only") == 0;
     check_arithmetic();
+    check_leave_one_out();
     CnetVsaGenRegistry *reg = make_registry(101, 0);
     if (!timing_only && !check_overlap(reg)) {
         fprintf(stderr, "CNET_VSA_Q8_BENCH_RED: overlapping routes changed a query's result\n");

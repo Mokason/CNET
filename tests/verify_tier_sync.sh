@@ -110,8 +110,8 @@ if [ "$n2" -lt 10 ] || [ "$n2" -gt 30 ]; then
     echo "VERIFY_TIER_SYNC_FAIL T2 count $n2 outside [10,30]"
     fail=$((fail + 1))
 fi
-if [ "$ncore" -lt 20 ] || [ "$ncore" -gt 35 ]; then
-    echo "VERIFY_TIER_SYNC_FAIL CORE log count $ncore outside [20,35]"
+if [ "$ncore" -lt 20 ] || [ "$ncore" -gt 40 ]; then
+    echo "VERIFY_TIER_SYNC_FAIL CORE log count $ncore outside [20,40]"
     fail=$((fail + 1))
 fi
 

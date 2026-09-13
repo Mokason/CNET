@@ -266,3 +266,4 @@ cnet_vsa_all_bench: cnet_vsa_evidence_bench cnet_vsa_bench cnet_vsa_simd_bench c
 	@echo "\n================================================================="
 	@echo " ALL CNET-VSA BENCHMARKS (CLI INCLUDED) PASSED"
 	@echo "================================================================="
+include mk/vsa_rlm.mk

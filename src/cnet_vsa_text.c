@@ -5,6 +5,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#if defined(__AVX512VNNI__) && defined(__AVX512BW__)
+#include <immintrin.h>
+#endif
 
 static uint64_t fnv1a64(const char *str) {
     uint64_t hash = 14695981039346656037ULL;
@@ -684,12 +687,7 @@ int cnet_vsa_text_encode_topical_wide(const CnetVsaTokenList *tokens, float *out
     return 0;
 }
 
-int cnet_vsa_text_encode_topical_q8(const CnetVsaTokenList *tokens, int8_t *out_q8,
-                                    uint32_t encoder_id) {
-    if (!out_q8) return -1;
-    int16_t acc[CNET_VSA_TOPICAL_DIM];
-    int n = wide_accumulate_tokens(tokens, encoder_id, acc);
-    if (n <= 0) return -1;
+static int wide_acc_to_q8(const int16_t *acc, int8_t *out_q8) {
     /* hash encoders: counts are exact in int8 below 128 content words. Lexicon
      * vectors carry magnitudes up to 127 each, so their sums are rescaled by
      * the max-abs to the int8 range (cosine is scale-free); the hash path is
@@ -707,6 +705,60 @@ int cnet_vsa_text_encode_topical_q8(const CnetVsaTokenList *tokens, int8_t *out_
         }
     }
     return 0;
+}
+
+int cnet_vsa_text_encode_topical_q8(const CnetVsaTokenList *tokens, int8_t *out_q8,
+                                    uint32_t encoder_id) {
+    if (!out_q8) return -1;
+    int16_t acc[CNET_VSA_TOPICAL_DIM];
+    if (wide_accumulate_tokens(tokens, encoder_id, acc) <= 0) return -1;
+    return wide_acc_to_q8(acc, out_q8);
+}
+
+int cnet_vsa_text_leave_one_out_distances(const CnetVsaTokenList *tokens, uint32_t encoder_id,
+    const int8_t *target, float target_norm, float radius, float *distances, size_t capacity) {
+    if (!tokens || !target || !distances || !cnet_vsa_encoder_valid(encoder_id) ||
+        !isfinite(target_norm) || target_norm <= 0 || !isfinite(radius)) return -1;
+    if (tokens->count > 250) return 0; /* removal can change the token-cap boundary */
+    const CnetVsaLexicon *lex = encoder_id == CNET_VSA_ENCODER_LEX ? cnet_vsa_lexicon_active() : NULL;
+    if (encoder_id == CNET_VSA_ENCODER_LEX && (!lex || !lex->entries)) return -1;
+    if (lex && lex->hdr.phrases && tokens->count > 125) return 0;
+    size_t nc = 0;
+    for (size_t i = 0; i < tokens->count; ++i) nc += !cnet_vsa_text_is_stopword(tokens->tokens[i].token);
+    if (nc < 2) return 0; /* preserve the encoder's all-stopword fallback */
+    if (capacity < nc) return -1;
+    int16_t sum[CNET_VSA_TOPICAL_DIM], word[CNET_VSA_TOPICAL_DIM], residual[CNET_VSA_TOPICAL_DIM];
+    if (wide_accumulate_tokens(tokens, encoder_id, sum) <= 0) return -1;
+    uint64_t keys[CNET_VSA_MAX_TOKENS]; size_t nk = 0;
+    if (lex && lex->hdr.phrases) {
+        for (size_t i = 0; i < tokens->count; ++i) {
+            if (cnet_vsa_text_is_stopword(tokens->tokens[i].token)) continue;
+            char key[CNET_VSA_TOKEN_LEN];
+            wide_word_key(tokens->tokens[i].token, encoder_id, key, sizeof(key));
+            keys[nk++] = cnet_vsa_lexicon_key_hash(key);
+        }
+    }
+    int8_t q[CNET_VSA_TOPICAL_DIM]; int measured = 0;
+    for (size_t i = 0; i < tokens->count; ++i) {
+        if (cnet_vsa_text_is_stopword(tokens->tokens[i].token)) continue;
+        memset(word, 0, sizeof(word));
+        wide_add_word(word, tokens->tokens[i].token, encoder_id, lex, NULL);
+        for (int d = 0; d < CNET_VSA_TOPICAL_DIM; ++d) residual[d] = (int16_t)(sum[d] - word[d]);
+        if (lex && lex->hdr.phrases) {
+            size_t k = (size_t)measured;
+            const CnetVsaLexiconEntry *left = k ? cnet_vsa_lexicon_find_hash(lex, cnet_vsa_lexicon_phrase_key(keys[k-1], keys[k])) : NULL;
+            const CnetVsaLexiconEntry *right = k+1 < nk ? cnet_vsa_lexicon_find_hash(lex, cnet_vsa_lexicon_phrase_key(keys[k], keys[k+1])) : NULL;
+            const CnetVsaLexiconEntry *bridge = k && k+1 < nk ? cnet_vsa_lexicon_find_hash(lex, cnet_vsa_lexicon_phrase_key(keys[k-1], keys[k+1])) : NULL;
+            if (left) for (int d = 0; d < CNET_VSA_TOPICAL_DIM; ++d) residual[d] = (int16_t)(residual[d] - left->q8[d]);
+            if (right) for (int d = 0; d < CNET_VSA_TOPICAL_DIM; ++d) residual[d] = (int16_t)(residual[d] - right->q8[d]);
+            if (bridge) for (int d = 0; d < CNET_VSA_TOPICAL_DIM; ++d) residual[d] = (int16_t)(residual[d] + bridge->q8[d]);
+        }
+        wide_acc_to_q8(residual, q);
+        float distance = 1.0f - cnet_vsa_text_q8_similarity_n(q, cnet_vsa_text_q8_norm(q), target, target_norm);
+        distances[measured++] = distance;
+        if (distance > radius) break;
+    }
+    return measured;
 }
 
 void cnet_vsa_text_wide_to_q8(const float *wide, int8_t *out_q8) {
@@ -734,7 +786,24 @@ float cnet_vsa_text_q8_norm(const int8_t *v) {
 float cnet_vsa_text_q8_similarity_n(const int8_t *a, float norm_a, const int8_t *b, float norm_b) {
     if (!a || !b || norm_a <= 0.0f || norm_b <= 0.0f) return 0.0f;
     int32_t dot = 0;
+#if defined(__AVX512VNNI__) && defined(__AVX512BW__)
+    /* VNNI multiplies unsigned by signed bytes. Bias a by 128, then remove
+     * 128*sum(b); this is exact even for INT8_MIN (no saturating products).
+     * Keep the scalar path on hosts/builds without these instructions. */
+    _Static_assert(CNET_VSA_TOPICAL_DIM % 64 == 0, "VNNI requires complete lanes");
+    _Static_assert(CNET_VSA_TOPICAL_DIM <= INT32_MAX / (255 * 128), "VNNI accumulator bound");
+    __m512i products = _mm512_setzero_si512(), sum_b = _mm512_setzero_si512();
+    const __m512i bias = _mm512_set1_epi8((char)128), ones = _mm512_set1_epi8(1);
+    for (int d = 0; d < CNET_VSA_TOPICAL_DIM; d += 64) {
+        __m512i av = _mm512_xor_si512(_mm512_loadu_si512(a + d), bias);
+        __m512i bv = _mm512_loadu_si512(b + d);
+        products = _mm512_dpbusd_epi32(products, av, bv);
+        sum_b = _mm512_dpbusd_epi32(sum_b, ones, bv);
+    }
+    dot = _mm512_reduce_add_epi32(products) - 128 * _mm512_reduce_add_epi32(sum_b);
+#else
     for (int d = 0; d < CNET_VSA_TOPICAL_DIM; ++d) dot += (int32_t)a[d] * (int32_t)b[d];
+#endif
     return (float)dot / (norm_a * norm_b);
 }
 

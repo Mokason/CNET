@@ -1616,7 +1616,7 @@ static void answer_print(CnetVsaGenRegistry *reg, const char *prompt, int k) {
     CnetVsaAnswer a;
     cnet_vsa_registry_answer(reg, prompt, k, &a);
     const char *st = a.status == CNET_VSA_ANSWER_OK ? "OK" : a.status == CNET_VSA_ANSWER_ROUTE_REFUSED ? "ROUTE_REFUSED"
-                   : a.status == CNET_VSA_ANSWER_NO_PASSAGES ? "NO_PASSAGES" : "REFUSE_PASSAGE";
+                   : a.status == CNET_VSA_ANSWER_NO_PASSAGES ? "NO_PASSAGES" : a.status == CNET_VSA_ANSWER_REFUSE_FLUENCY ? "REFUSE_FLUENCY" : "REFUSE_PASSAGE";
     const char *cap = a.capsule_idx >= 0 ? reg->capsules[a.capsule_idx].header.name
                     : (a.route.best_idx >= 0 ? reg->capsules[a.route.best_idx].header.name : "none");
     const char *why = (a.route.status == CNET_VSA_ROUTE_REFUSE_MARGIN) ? "margin" : (a.route.status == CNET_VSA_ROUTE_REFUSE_AMBIGUOUS) ? "ambiguity"
@@ -1625,6 +1625,61 @@ static void answer_print(CnetVsaGenRegistry *reg, const char *prompt, int k) {
            st, cap, why, a.route.best_dist, a.z, a.z_min, a.passages, a.cold, a.route_us, a.rank_us, a.sibling_pick);
     for (int i = 0; i < a.n && a.status == CNET_VSA_ANSWER_OK; ++i)
         printf("  P%d: sim=%.4f | %s\n", i + 1, a.sim[i], cnet_vsa_registry_passage(reg, a.capsule_idx, a.passage_idx[i]));
+    /* CNET_VSA_ANSWER_DUMP_SIMS=1: every passage's similarity to the prompt for the routed capsule (diagnostics) */
+    static int dump_sims = -1; if (dump_sims < 0) { const char *d = getenv("CNET_VSA_ANSWER_DUMP_SIMS"); dump_sims = d && atoi(d) != 0; }
+    if (dump_sims && a.capsule_idx >= 0 && reg->capsules[a.capsule_idx].passage_q8) {
+        CnetVsaRegisteredCap *e = &reg->capsules[a.capsule_idx]; int8_t qv[CNET_VSA_TOPICAL_DIM];
+        if (cnet_vsa_gencap_encode_intent_q8(prompt, qv, e->encoder_id) == 0) {
+            float qn = cnet_vsa_text_q8_norm(qv); printf("  SIMS:");
+            for (uint32_t i = 0; i < e->passage_count; ++i) printf(" %.4f", cnet_vsa_text_q8_similarity_n(qv, qn, e->passage_q8 + (size_t)i * CNET_VSA_TOPICAL_DIM, e->passage_norm[i]));
+            printf("\n");
+        }
+    }
+    if (a.lm_scored) {
+        printf("  LM: reranked=%d lm_us=%.0f", a.lm_reranked, a.lm_us);
+        for (int i = 0; i < a.n; ++i) printf(" | P%d nll=%.3f pmi=%.3f", i + 1, a.lm_nll[i], a.lm_pmi[i]);
+        printf("\n");
+    }
+}
+
+/* passage-sims <dir> <capsule>: for each stdin line, the similarity of that text to every passage of the capsule
+ * (diagnostics: floor simulations need the sims of texts that do not route to the capsule) */
+static void cmd_passage_sims(const char *dir_path, const char *name) {
+    CnetVsaGenRegistry *reg = (CnetVsaGenRegistry *)calloc(1, sizeof(CnetVsaGenRegistry));
+    if (!reg) { fprintf(stderr, "Error: out of memory allocating registry.\n"); return; }
+    cnet_vsa_registry_init(reg, CNET_VSA_DEFAULT_DIM);
+    const char *dir = (dir_path && *dir_path) ? dir_path : "bin";
+    int n = cnet_vsa_registry_load_dir(reg, dir); int ci = -1;
+    for (size_t c = 0; c < reg->count; ++c) if (strcmp(reg->capsules[c].header.name, name) == 0) { ci = (int)c; break; }
+    if (ci < 0) { fprintf(stderr, "capsule %s not in %s (%d loaded)\n", name, dir, n); cnet_vsa_registry_release(reg); free(reg); return; }
+    CnetVsaRegisteredCap *e = &reg->capsules[ci];
+    if (!e->passage_text || e->passage_count == 0) { fprintf(stderr, "capsule %s has no passages\n", name); cnet_vsa_registry_release(reg); free(reg); return; }
+    int8_t *pq = (int8_t *)malloc((size_t)e->passage_count * CNET_VSA_TOPICAL_DIM); float *pn = (float *)malloc(sizeof(float) * e->passage_count);
+    for (uint32_t i = 0; i < e->passage_count; ++i) { int8_t *v = pq + (size_t)i * CNET_VSA_TOPICAL_DIM; if (cnet_vsa_gencap_encode_intent_q8(e->passage_text + e->passage_off[i], v, e->encoder_id) != 0) memset(v, 0, CNET_VSA_TOPICAL_DIM); pn[i] = cnet_vsa_text_q8_norm(v); }
+    char line[4096];
+    while (fgets(line, sizeof line, stdin)) {
+        line[strcspn(line, "\r\n")] = 0; if (!*line) { printf("\n"); continue; }
+        int8_t qv[CNET_VSA_TOPICAL_DIM]; if (cnet_vsa_gencap_encode_intent_q8(line, qv, e->encoder_id) != 0) { printf("\n"); continue; }
+        float qn = cnet_vsa_text_q8_norm(qv);
+        for (uint32_t i = 0; i < e->passage_count; ++i) printf("%s%.4f", i ? " " : "", cnet_vsa_text_q8_similarity_n(qv, qn, pq + (size_t)i * CNET_VSA_TOPICAL_DIM, pn[i]));
+        printf("\n");
+    }
+    free(pq); free(pn); cnet_vsa_registry_release(reg); free(reg);
+}
+
+/* passages-dump <dir>: every certified passage as "capsule<TAB>index<TAB>text" (for scoring and calibration) */
+static void cmd_passages_dump(const char *dir_path) {
+    CnetVsaGenRegistry *reg = (CnetVsaGenRegistry *)calloc(1, sizeof(CnetVsaGenRegistry));
+    if (!reg) { fprintf(stderr, "Error: out of memory allocating registry.\n"); return; }
+    cnet_vsa_registry_init(reg, CNET_VSA_DEFAULT_DIM);
+    const char *dir = (dir_path && *dir_path) ? dir_path : "bin";
+    int n = cnet_vsa_registry_load_dir(reg, dir);
+    fprintf(stderr, "  Registry Directory: %s (%d certified capsules indexed)\n", dir, n);
+    for (size_t c = 0; c < reg->count; ++c)
+        for (uint32_t i = 0; i < reg->capsules[c].passage_count; ++i)
+            printf("%s\t%u\t%s\n", reg->capsules[c].header.name, i, cnet_vsa_registry_passage(reg, (int)c, (int)i));
+    cnet_vsa_registry_release(reg);
+    free(reg);
 }
 
 /* answer <dir> "<prompt>" [k]: route, then return the winning capsule's certified passages */
@@ -2074,6 +2129,11 @@ int main(int argc, char **argv) {
         else { fprintf(stderr, "Usage: %s answer <dir> \"<prompt>\" [k]\n", argv[0]); return 1; }
     } else if (strcmp(cmd, "answer-batch") == 0) {
         cmd_answer_batch(arg_offset + 1 < argc ? argv[arg_offset + 1] : "bin", arg_offset + 2 < argc ? atoi(argv[arg_offset + 2]) : 2);
+    } else if (strcmp(cmd, "passages-dump") == 0) {
+        cmd_passages_dump(arg_offset + 1 < argc ? argv[arg_offset + 1] : "bin");
+    } else if (strcmp(cmd, "passage-sims") == 0) {
+        if (arg_offset + 2 < argc) cmd_passage_sims(argv[arg_offset + 1], argv[arg_offset + 2]);
+        else { fprintf(stderr, "Usage: %s passage-sims <dir> <capsule>  (texts on stdin)\n", argv[0]); return 1; }
     } else if (strcmp(cmd, "lexicon-train") == 0) {
         return cmd_lexicon_train(argc - (arg_offset + 1), argv + arg_offset + 1);
     } else if (strcmp(cmd, "lexicon-info") == 0) {

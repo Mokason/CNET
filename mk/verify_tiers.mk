@@ -61,7 +61,8 @@ VERIFY_T1_DEPS := \
 	cnet_vsa_answer_bench \
 	cnet_vsa_q8_bench \
 	cnet_vsa_stem_bench \
-	cnet_vsa_delta_bench
+	cnet_vsa_delta_bench \
+	cnet_vsa_rlm_bench
 
 # ---- T2: soak (not default) -------------------------------------------------
 # Specialty CCE + heavy PEFT + distrust/autonomy soak.
