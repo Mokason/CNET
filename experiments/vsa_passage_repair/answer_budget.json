@@ -1,0 +1,9 @@
+{
+  "scope": "complete warmed local answer path",
+  "target_p95_us": 1000,
+  "ceiling_p99_us": 5000,
+  "benchmark_workers": 1,
+  "cpu_threads_per_worker": 1,
+  "cold_loading_reported_separately": true,
+  "quality_requires_more_correct_and_higher_net": true
+}
